@@ -1,0 +1,315 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>References — Adv. Methods Tutorial</title><link rel="stylesheet" href="../styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="../index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="../chatterjee.html">Chatterjee ξ</a></li><li><a href="../hsic-dcor.html">HSIC/dCor</a></li><li><a href="../mutual-information.html">MI</a></li><li><a href="../optimal-transport.html">OT</a></li><li><a href="../persistent-homology.html">TDA</a></li><li><a href="../manifold-learning.html">Manifold</a></li><li><a href="../rna-velocity.html">Velocity</a></li><li><a href="../cycle-following.html">Cycle</a></li><li><a href="../graph-signal-gnn.html">GSP/GNN</a></li><li><a href="../spatial-statistics.html">Spatial</a></li><li><a href="../variational-inference.html">VAE</a></li><li><a href="../diffusion-models.html">Diffusion</a></li><li><a href="../scllms.html">scLLMs</a></li><li><a href="../causal-inference.html">Causal</a></li>
+<li><a href="../hyperbolic-embeddings.html">Hyper</a></li><li><a href="../neural-ode.html">NODE</a></li><li><a href="../flow-matching.html">FM</a></li><li><a href="../state-space-mamba.html">SSM</a></li><li><a href="../conformal-prediction.html">Conf</a></li><li><a href="../active-learning.html">AL</a></li><li><a href="../information-bottleneck.html">IB</a></li><li><a href="../tensor-decomposition.html">Tensor</a></li><li><a href="../contrastive-learning.html">CL</a></li><li><a href="../symbolic-regression.html">SymReg</a></li><li><a href="../sheaf-cellular.html">Sheaf</a></li><li><a href="../geometric-dl.html">GDL</a></li>
+<li><a href="../modern-hopfield.html">Hopfield</a></li><li><a href="../energy-based-dca.html">EBM</a></li><li><a href="../hawkes-point-processes.html">Hawkes</a></li><li><a href="../reinforcement-learning.html">RL</a></li><li><a href="../random-matrix-theory.html">RMT</a></li><li><a href="../sliced-wasserstein.html">SlicedW</a></li><li><a href="../compressed-sensing.html">CompSense</a></li><li><a href="../wavelets-multires.html">Wavelet</a></li><li><a href="../implicit-neural-rep.html">INR</a></li><li><a href="../dpp.html">DPP</a></li><li><a href="../federated-learning.html">Federated</a></li><li><a href="../hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="index.html" class="active" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav>
+
+<header class="page-hero"><h1 data-zh="參考資料與論文" data-en="References &amp; Papers">參考資料與論文</h1>
+<p class="subtitle" data-lang="zh">38 個主題的核心論文、軟體套件與最新 benchmark，附 DOI / arXiv 連結。</p>
+<p class="subtitle" data-lang="en">Core papers, software, and recent benchmarks for all 38 topics — with DOI / arXiv links.</p>
+</header>
+
+<main class="content-wrap">
+
+<section class="section"><h2>Ch 1 — Chatterjee's ξ Correlation</h2>
+<ul>
+<li><a href="https://doi.org/10.1080/01621459.2020.1758115" target="_blank">Chatterjee S. (2021). <em>A new coefficient of correlation</em>. JASA 116(536).</a></li>
+<li><a href="https://www.biorxiv.org/content/10.1101/2025.09.17.676530v1" target="_blank">Liu et al. (2025). <em>Constructing GRN using Chatterjee's Rank Correlation with scRNA-seq</em>. bioRxiv.</a></li>
+<li><a href="https://cran.r-project.org/web/packages/XICOR/" target="_blank">R XICOR</a> · <a href="https://pypi.org/project/xicor/" target="_blank">Python xicor</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 2 — HSIC &amp; Distance Correlation</h2>
+<ul>
+<li><a href="https://link.springer.com/chapter/10.1007/11564089_7" target="_blank">Gretton A. et al. (2005). <em>Measuring Statistical Dependence with Hilbert-Schmidt Norms</em>. ALT.</a></li>
+<li><a href="https://doi.org/10.1214/009053607000000505" target="_blank">Székely G., Rizzo M., Bakirov N. (2007). <em>Distance correlation</em>. Annals of Statistics 35(6).</a></li>
+<li><a href="https://dcor.readthedocs.io/" target="_blank">Python dcor</a> · <a href="https://cran.r-project.org/web/packages/dHSIC/" target="_blank">R dHSIC</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 3 — Mutual Information</h2>
+<ul>
+<li><a href="https://doi.org/10.1103/PhysRevE.69.066138" target="_blank">Kraskov A., Stögbauer H., Grassberger P. (2004). <em>KSG MI estimator</em>. PRE 69:066138.</a></li>
+<li><a href="https://arxiv.org/abs/1801.04062" target="_blank">Belghazi M.I. et al. (2018). <em>MINE: Mutual Information Neural Estimation</em>. ICML.</a></li>
+<li><a href="https://doi.org/10.1016/j.cels.2017.08.014" target="_blank">Chan T. et al. (2017). <em>PIDC</em>. Cell Systems 5(3).</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 4 — Optimal Transport</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1306.0895" target="_blank">Cuturi M. (2013). <em>Sinkhorn Distances</em>. NeurIPS.</a></li>
+<li><a href="https://doi.org/10.1016/j.cell.2019.01.006" target="_blank">Schiebinger G. et al. (2019). <em>Waddington-OT</em>. Cell 176(4).</a></li>
+<li><a href="https://www.nature.com/articles/s41586-024-08453-2" target="_blank">Klein D. et al. (2024). <em>moscot</em>. Nature.</a></li>
+<li><a href="https://pythonot.github.io/" target="_blank">POT</a> · <a href="https://github.com/theislab/moscot" target="_blank">moscot</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 5 — Persistent Homology &amp; TDA</h2>
+<ul>
+<li><a href="https://doi.org/10.1090/S0273-0979-09-01249-X" target="_blank">Carlsson G. (2009). <em>Topology and data</em>. Bull. AMS 46.</a></li>
+<li><a href="https://doi.org/10.1073/pnas.1102826108" target="_blank">Nicolau M., Levine A., Carlsson G. (2011). <em>Breast cancer subtypes via TDA</em>. PNAS.</a></li>
+<li><a href="https://gudhi.inria.fr/" target="_blank">GUDHI</a> · <a href="https://giotto-ai.github.io/gtda-docs/" target="_blank">giotto-tda</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 6 — Manifold Learning</h2>
+<ul>
+<li><a href="https://doi.org/10.1016/j.acha.2006.04.006" target="_blank">Coifman R., Lafon S. (2006). <em>Diffusion maps</em>. ACHA.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-019-0336-3" target="_blank">Moon K.R. et al. (2019). <em>PHATE</em>. Nat Biotech.</a></li>
+<li><a href="https://doi.org/10.1371/journal.pcbi.1011288" target="_blank">Chari T., Pachter L. (2023). <em>The specious art of single-cell genomics</em>. PLOS Comp Biol.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 7 — RNA Velocity &amp; Dynamics</h2>
+<ul>
+<li><a href="https://www.nature.com/articles/s41586-018-0414-6" target="_blank">La Manno G. et al. (2018). <em>RNA velocity</em>. Nature 560.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-020-0591-3" target="_blank">Bergen V. et al. (2020). <em>scVelo</em>. Nat Biotech.</a></li>
+<li><a href="https://www.cell.com/cell/fulltext/S0092-8674(21)01577-4" target="_blank">Qiu X. et al. (2022). <em>Dynamo</em>. Cell.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-021-01346-6" target="_blank">Lange M. et al. (2022). <em>CellRank</em>. Nat Methods.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 8 — Cycle-following</h2>
+<ul>
+<li><a href="https://genomebiology.biomedcentral.com/articles/10.1186/s13059-022-02675-1" target="_blank">Zheng S. et al. (2022). <em>tricycle</em>. Genome Biology.</a></li>
+<li><a href="https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-1953-3" target="_blank">Liang S. et al. (2020). <em>Cyclum</em>. Genome Biology.</a></li>
+<li><a href="https://www.pnas.org/doi/10.1073/pnas.1619320114" target="_blank">Anafi R. et al. (2017). <em>CYCLOPS</em>. PNAS.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 9 — Graph Signal Processing &amp; GNN</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1609.02907" target="_blank">Kipf T., Welling M. (2017). <em>GCN</em>. ICLR.</a></li>
+<li><a href="https://arxiv.org/abs/1710.10903" target="_blank">Veličković P. et al. (2018). <em>GAT</em>. ICLR.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-021-01255-8" target="_blank">Hu J. et al. (2021). <em>SpaGCN</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41467-022-29439-6" target="_blank">Dong K., Zhang S. (2022). <em>STAGATE</em>. Nat Commun.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 10 — Spatial Statistics</h2>
+<ul>
+<li><a href="https://www.nature.com/articles/nmeth.4636" target="_blank">Svensson V. et al. (2018). <em>SpatialDE</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-019-0701-7" target="_blank">Sun S. et al. (2020). <em>SPARK</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-023-01713-y" target="_blank">Weber L.M. et al. (2023). <em>nnSVG</em>. Nat Commun.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-021-00935-2" target="_blank">Zhao E. et al. (2021). <em>BayesSpace</em>. Nat Biotech.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 11 — Variational Inference / VAE</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1312.6114" target="_blank">Kingma D., Welling M. (2014). <em>Auto-Encoding VAE</em>. ICLR.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-018-0229-2" target="_blank">Lopez R. et al. (2018). <em>scVI</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-021-01206-w" target="_blank">Kleshchevnikov V. et al. (2022). <em>cell2location</em>. Nat Biotech.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 12 — Diffusion Models</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2006.11239" target="_blank">Ho J., Jain A., Abbeel P. (2020). <em>DDPM</em>. NeurIPS.</a></li>
+<li><a href="https://arxiv.org/abs/2011.13456" target="_blank">Song Y. et al. (2021). <em>Score-Based Generative Modeling</em>. ICLR.</a></li>
+<li><a href="https://www.nature.com/articles/s41467-024-50609-1" target="_blank">Luo E. et al. (2024). <em>scDiffusion</em>. Nat Commun.</a></li>
+<li><a href="https://www.nature.com/articles/s41586-023-06415-8" target="_blank">Watson J. et al. (2023). <em>RFdiffusion</em>. Nature.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 13 — scLLMs (Single-cell Foundation Models)</h2>
+<ul>
+<li><a href="https://www.nature.com/articles/s41592-024-02201-0" target="_blank">Cui H. et al. (2024). <em>scGPT</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41586-023-06139-9" target="_blank">Theodoris C. et al. (2023). <em>Geneformer</em>. Nature.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-024-02305-7" target="_blank">Hao M. et al. (2024). <em>scFoundation</em>. Nat Methods.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-025-02772-6" target="_blank">Wenkel F. et al. (2025). <em>Linear baselines vs scLLMs for perturbation</em>. Nat Methods.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 14 — Causal Inference</h2>
+<ul>
+<li>Pearl J. (2009). <em>Causality</em>, 2nd ed. Cambridge University Press.</li>
+<li><a href="https://arxiv.org/abs/1803.01422" target="_blank">Zheng X. et al. (2018). <em>NOTEARS</em>. NeurIPS.</a></li>
+<li><a href="https://www.cell.com/cell/fulltext/S0092-8674(22)00597-9" target="_blank">Replogle J. et al. (2022). <em>Genome-scale Perturb-seq</em>. Cell.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-023-01905-6" target="_blank">Roohani Y. et al. (2024). <em>GEARS</em>. Nat Biotech.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 15 — Hyperbolic Embeddings</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1705.08039" target="_blank">Nickel M., Kiela D. (2017). <em>Poincaré Embeddings</em>. NeurIPS.</a></li>
+<li><a href="https://www.nature.com/articles/s41467-020-16822-4" target="_blank">Klimovskaia A. et al. (2020). <em>Poincaré maps for single-cell hierarchies</em>. Nat Commun.</a></li>
+<li><a href="https://geoopt.readthedocs.io/" target="_blank">geoopt — Riemannian optimization</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 16 — Neural ODE</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1806.07366" target="_blank">Chen R.T.Q. et al. (2018). <em>Neural ODEs</em>. NeurIPS Best Paper.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-023-01935-7" target="_blank">Li Q. (2023). <em>scTour</em>. Nat Methods.</a></li>
+<li><a href="https://github.com/rtqichen/torchdiffeq" target="_blank">torchdiffeq</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 17 — Flow Matching</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2210.02747" target="_blank">Lipman Y. et al. (2023). <em>Flow Matching</em>. ICLR.</a></li>
+<li><a href="https://arxiv.org/abs/2402.04845" target="_blank">Jing B. et al. (2024). <em>AlphaFlow</em>. ICML.</a></li>
+<li><a href="https://github.com/atong01/conditional-flow-matching" target="_blank">torchcfm</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 18 — State Space Models / Mamba</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2111.00396" target="_blank">Gu A. et al. (2022). <em>S4</em>. ICLR.</a></li>
+<li><a href="https://arxiv.org/abs/2312.00752" target="_blank">Gu A., Dao T. (2024). <em>Mamba</em>. COLM.</a></li>
+<li><a href="https://arxiv.org/abs/2306.15794" target="_blank">Nguyen E. et al. (2023). <em>HyenaDNA</em>. NeurIPS.</a></li>
+<li><a href="https://www.science.org/doi/10.1126/science.ado9336" target="_blank">Nguyen E. et al. (2024). <em>Evo</em>. Science.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 19 — Conformal Prediction</h2>
+<ul>
+<li>Vovk V., Gammerman A., Shafer G. (2005). <em>Algorithmic Learning in a Random World</em>. Springer.</li>
+<li><a href="https://arxiv.org/abs/2107.07511" target="_blank">Angelopoulos A.N., Bates S. (2023). <em>Gentle Introduction</em>. FnT in ML.</a></li>
+<li><a href="https://mapie.readthedocs.io/" target="_blank">MAPIE</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 20 — Active Learning / Bayesian Optimization</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1206.2944" target="_blank">Snoek J., Larochelle H., Adams R. (2012). <em>Practical BO</em>. NeurIPS.</a></li>
+<li><a href="https://proceedings.mlr.press/v162/stanton22a.html" target="_blank">Stanton S. et al. (2022). <em>LaMBO</em>. ICML.</a></li>
+<li><a href="https://botorch.org/" target="_blank">BoTorch</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 21 — Information Bottleneck</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/physics/0004057" target="_blank">Tishby N. et al. (1999). <em>The Information Bottleneck Method</em>.</a></li>
+<li><a href="https://arxiv.org/abs/1612.00410" target="_blank">Alemi A. et al. (2017). <em>VIB</em>. ICLR.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 22 — Tensor Decompositions</h2>
+<ul>
+<li><a href="https://doi.org/10.1137/07070111X" target="_blank">Kolda T., Bader B. (2009). <em>Tensor Decompositions</em>. SIAM Review.</a></li>
+<li><a href="https://www.nature.com/articles/s41467-022-31369-2" target="_blank">Armingol E. et al. (2022). <em>Tensor-cell2cell</em>. Nat Commun.</a></li>
+<li><a href="http://tensorly.org/" target="_blank">TensorLy</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 23 — Self-supervised Contrastive Learning</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2002.05709" target="_blank">Chen T. et al. (2020). <em>SimCLR</em>. ICML.</a></li>
+<li><a href="https://arxiv.org/abs/2103.00020" target="_blank">Radford A. et al. (2021). <em>CLIP</em>. ICML.</a></li>
+<li><a href="https://www.nature.com/articles/s41467-022-29105-x" target="_blank">Yang F. et al. (2022). <em>Concerto</em>. Nat Commun.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 24 — Symbolic Regression</h2>
+<ul>
+<li><a href="https://www.pnas.org/doi/10.1073/pnas.1517384113" target="_blank">Brunton S., Proctor J., Kutz J.N. (2016). <em>SINDy</em>. PNAS.</a></li>
+<li><a href="https://arxiv.org/abs/2305.01582" target="_blank">Cranmer M. (2023). <em>PySR</em>.</a></li>
+<li><a href="https://github.com/MilesCranmer/PySR" target="_blank">PySR</a> · <a href="https://github.com/dynamicslab/pysindy" target="_blank">PySINDy</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 25 — Sheaves &amp; Cellular Sheaves</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1808.01513" target="_blank">Hansen J., Ghrist R. (2019). <em>Spectral Theory of Cellular Sheaves</em>. JACT.</a></li>
+<li><a href="https://arxiv.org/abs/2202.04579" target="_blank">Bodnar C. et al. (2022). <em>Neural Sheaf Diffusion</em>. NeurIPS.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 26 — Geometric Deep Learning</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2104.13478" target="_blank">Bronstein M. et al. (2021). <em>Geometric Deep Learning</em>.</a></li>
+<li><a href="https://arxiv.org/abs/2102.09844" target="_blank">Satorras V.G. et al. (2021). <em>E(n) EGNN</em>. ICML.</a></li>
+<li><a href="https://www.nature.com/articles/s41586-024-07487-w" target="_blank">Abramson J. et al. (2024). <em>AlphaFold 3</em>. Nature.</a></li>
+<li><a href="https://e3nn.org/" target="_blank">e3nn</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 27 — Modern Hopfield Networks</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2008.02217" target="_blank">Ramsauer H. et al. (2021). <em>Hopfield Networks is All You Need</em>. ICLR.</a></li>
+<li><a href="https://proceedings.neurips.cc/paper/2020/file/dc8f6989a1bbe6cef0e6e8f1ec3d2e6b-Paper.pdf" target="_blank">Widrich M. et al. (2020). <em>DeepRC for immune repertoire</em>. NeurIPS.</a></li>
+<li><a href="https://github.com/ml-jku/hopfield-layers" target="_blank">hflayers</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 28 — Energy-Based Models &amp; DCA</h2>
+<ul>
+<li><a href="https://www.pnas.org/doi/10.1073/pnas.1111471108" target="_blank">Morcos F. et al. (2011). <em>Direct Coupling Analysis</em>. PNAS.</a></li>
+<li><a href="https://journals.aps.org/pre/abstract/10.1103/PhysRevE.87.012707" target="_blank">Ekeberg M. et al. (2013). <em>plmDCA</em>. Phys Rev E.</a></li>
+<li><a href="https://www.nature.com/articles/nbt.3769" target="_blank">Hopf T.A. et al. (2017). <em>EVcouplings</em>. Nat Biotech.</a></li>
+<li><a href="https://github.com/debbiemarkslab/EVcouplings" target="_blank">EVcouplings</a> · <a href="https://github.com/pagnani/PlmDCA" target="_blank">PlmDCA</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 29 — Hawkes &amp; Point Processes</h2>
+<ul>
+<li>Hawkes A.G. (1971). <em>Spectra of some self-exciting and mutually exciting point processes</em>. Biometrika 58.</li>
+<li><a href="https://arxiv.org/abs/1612.09328" target="_blank">Mei H., Eisner J. (2017). <em>Neural Hawkes</em>. NeurIPS.</a></li>
+<li><a href="https://www.nature.com/articles/nature05610" target="_blank">Greenman C. et al. (2007). <em>Mutation timing</em>. Nature.</a></li>
+<li><a href="https://x-datainitiative.github.io/tick/" target="_blank">tick</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 30 — Reinforcement Learning for Bio</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1707.06347" target="_blank">Schulman J. et al. (2017). <em>PPO</em>.</a></li>
+<li><a href="https://jcheminf.biomedcentral.com/articles/10.1186/s13321-017-0235-x" target="_blank">Olivecrona M. et al. (2017). <em>REINVENT</em>. J Cheminform.</a></li>
+<li><a href="https://www.nature.com/articles/s41586-023-06415-8" target="_blank">Watson J. et al. (2023). <em>RFdiffusion</em> (含 RL 元素). Nature.</a></li>
+<li><a href="https://stable-baselines3.readthedocs.io/" target="_blank">stable-baselines3</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 31 — Random Matrix Theory</h2>
+<ul>
+<li>Marchenko V., Pastur L. (1967). <em>The distribution of eigenvalues of certain sets of random matrices</em>. Math. USSR Sb.</li>
+<li>Tracy C., Widom H. (1994). <em>Level-spacing distributions and the Airy kernel</em>. Commun Math Phys.</li>
+<li><a href="https://www.pnas.org/doi/10.1073/pnas.0530258100" target="_blank">Alter O. et al. (2000). <em>Eigengene / SVD analysis of gene expression</em>. PNAS.</a></li>
+<li><a href="https://arxiv.org/abs/1610.08104" target="_blank">Bun J., Bouchaud J.-P., Potters M. (2017). <em>Cleaning large correlation matrices</em>. Phys Rep.</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 32 — Sliced-Wasserstein / Fast OT</h2>
+<ul>
+<li><a href="https://link.springer.com/article/10.1007/s10851-014-0506-3" target="_blank">Bonneel N. et al. (2015). <em>Sliced and Radon-Wasserstein barycenters</em>. JMIV.</a></li>
+<li><a href="https://arxiv.org/abs/1804.01947" target="_blank">Kolouri S. et al. (2018). <em>Sliced-Wasserstein Autoencoder</em>. ICLR.</a></li>
+<li><a href="https://arxiv.org/abs/1902.06507" target="_blank">Deshpande I. et al. (2019). <em>Max-Sliced Wasserstein</em>. CVPR.</a></li>
+<li><a href="https://www.kernel-operations.io/geomloss/" target="_blank">geomloss</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 33 — Compressed Sensing</h2>
+<ul>
+<li><a href="https://doi.org/10.1109/TIT.2005.862083" target="_blank">Donoho D. (2006). <em>Compressed Sensing</em>. IEEE TIT.</a></li>
+<li><a href="https://doi.org/10.1126/science.aaa6090" target="_blank">Moffitt J.R. et al. (2016). <em>MERFISH</em>. Science.</a></li>
+<li><a href="https://www.cvxpy.org/" target="_blank">cvxpy</a> · <a href="https://scikit-learn.org/stable/modules/linear_model.html#lasso" target="_blank">sklearn Lasso</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 34 — Wavelets &amp; Multi-resolution</h2>
+<ul>
+<li>Mallat S. (1989). <em>A theory for multiresolution signal decomposition</em>. IEEE PAMI.</li>
+<li>Daubechies I. (1992). <em>Ten Lectures on Wavelets</em>. SIAM.</li>
+<li><a href="https://academic.oup.com/bioinformatics/article/30/1/14/237668" target="_blank">Mathelier A. et al. (2013). <em>Wavelet-based ChIP-seq peak detection</em>.</a></li>
+<li><a href="https://pywavelets.readthedocs.io/" target="_blank">PyWavelets</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 35 — Implicit Neural Representations</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/2006.09661" target="_blank">Sitzmann V. et al. (2020). <em>SIREN</em>. NeurIPS.</a></li>
+<li><a href="https://arxiv.org/abs/2003.08934" target="_blank">Mildenhall B. et al. (2020). <em>NeRF</em>. ECCV.</a></li>
+<li><a href="https://www.nature.com/articles/s41592-020-01049-4" target="_blank">Zhong E.D. et al. (2021). <em>CryoDRGN</em>. Nat Methods.</a></li>
+<li><a href="https://github.com/NVlabs/tiny-cuda-nn" target="_blank">tinycudann</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 36 — Determinantal Point Processes</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1207.6083" target="_blank">Kulesza A., Taskar B. (2012). <em>DPPs for Machine Learning</em>. FnT in ML.</a></li>
+<li>Macchi O. (1975). <em>The coincidence approach to stochastic point processes</em>. Adv Appl Prob.</li>
+<li><a href="https://dppy.readthedocs.io/" target="_blank">DPPy</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 37 — Federated Learning</h2>
+<ul>
+<li><a href="https://arxiv.org/abs/1602.05629" target="_blank">McMahan B. et al. (2017). <em>FedAvg</em>. AISTATS.</a></li>
+<li><a href="https://www.nature.com/articles/s41591-021-01506-3" target="_blank">Dayan I. et al. (2021). <em>Federated learning in COVID-19</em>. Nat Medicine.</a></li>
+<li><a href="https://www.nature.com/articles/s41587-021-01001-7" target="_blank">Lotfollahi M. et al. (2022). <em>scArches</em>. Nat Biotech.</a></li>
+<li><a href="https://flower.dev/" target="_blank">Flower</a> · <a href="https://www.tensorflow.org/federated" target="_blank">TF Federated</a></li>
+</ul></section>
+
+<section class="section"><h2>Ch 38 — Hypergraph Learning</h2>
+<ul>
+<li>Zhou D., Huang J., Schölkopf B. (2006). <em>Learning with hypergraphs</em>. NIPS.</li>
+<li><a href="https://ojs.aaai.org/index.php/AAAI/article/view/4235" target="_blank">Feng Y. et al. (2019). <em>Hypergraph Neural Networks</em>. AAAI.</a></li>
+<li><a href="https://github.com/iMoonLab/HGNN" target="_blank">HGNN</a> · <a href="https://pypi.org/project/dhg/" target="_blank">DHG</a></li>
+</ul></section>
+
+<section class="section"><h2 data-zh="📖 教科書與綜述" data-en="📖 Textbooks &amp; Reviews">📖 教科書與綜述</h2>
+<ul>
+<li>Murphy K. (2023). <em>Probabilistic Machine Learning: Advanced Topics</em>. MIT Press.</li>
+<li>Peyré G., Cuturi M. (2019). <em>Computational Optimal Transport</em>. Foundations and Trends in ML.</li>
+<li>Edelsbrunner H., Harer J. (2010). <em>Computational Topology: An Introduction</em>. AMS.</li>
+<li>Bronstein M. et al. (2021). <em>Geometric Deep Learning</em>. (online book)</li>
+<li>Argelaguet R. et al. (2021). <em>Computational principles and challenges in single-cell data integration</em>. Nature Biotechnology.</li>
+<li>Lähnemann D. et al. (2020). <em>Eleven grand challenges in single-cell data science</em>. Genome Biology.</li>
+</ul></section>
+
+<div style="height:30px"></div>
+<a href="../index.html" style="display:inline-block;padding:10px 20px;background:var(--c-accent,#1A6B5A);color:white;text-decoration:none;border-radius:6px;" data-zh="← 回首頁" data-en="← Back to Home">← 回首頁</a>
+<div style="height:30px"></div>
+
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="../i18n.js"></script>
+</body></html>
