@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>進階方法演算法 互動考題</title>
+<link rel="stylesheet" href="quiz.css">
+</head>
+<body>
+
+<header>
+  <div class="h-row">
+    <h1>🧠 <span data-zh="進階方法演算法 互動考題" data-en="Advanced Methods Quiz">進階方法演算法 互動考題</span></h1>
+    <a href="../index.html" class="homelink" data-zh="🏠 回首頁" data-en="🏠 Home">🏠 回首頁</a>
+    <span id="modeBadge" class="mode-pill practice hidden">PRACTICE</span>
+    <span id="statBox" class="stat hidden"><span data-zh="第" data-en="Q">第</span> <strong id="qCur">1</strong> / <strong id="qTotal">1</strong></span>
+    <button class="lang-btn" id="langBtn">中 / EN</button>
+  </div>
+</header>
+
+<main id="indexView">
+  <div class="panel">
+    <h2 data-zh="選擇主題開始練習" data-en="Pick a topic to start">選擇主題開始練習</h2>
+    <div class="desc" data-zh="38 章，每章單選/多選/是非。練習即時看答案；考試答完才公布。" data-en="38 chapters. Practice = immediate; Exam = revealed at end.">38 章，每章單選/多選/是非。練習即時看答案；考試答完才公布。</div>
+    <div class="global-prog">
+      <span class="gp-label" data-zh="整體進度" data-en="Overall">整體進度</span>
+      <div class="gp-bar"><div class="gp-fill" id="gpFill"></div></div>
+      <span class="gp-text" id="gpText">0 / 0</span>
+      <button class="gp-reset" id="gpReset" data-zh="🗑 清除全部紀錄" data-en="🗑 Reset all">🗑 清除全部紀錄</button>
+    </div>
+    <div class="special-row">
+      <button class="special-btn" id="reviewWrong"><span data-zh="🔁 錯題複習" data-en="🔁 Wrong">🔁 錯題複習</span> <span class="badge" id="wrongCount">0</span></button>
+      <button class="special-btn" id="randomAll" data-zh="🎲 隨機抽 20 題" data-en="🎲 Random 20">🎲 隨機抽 20 題</button>
+      <button class="special-btn" id="finalExam" data-zh="🎓 期末模擬考 (50 題)" data-en="🎓 Final (50Q)">🎓 期末模擬考 (50 題)</button>
+    </div>
+    <div class="legend">
+      <span><span class="ldot r"></span><span data-zh="未開始" data-en="Not started">未開始</span></span>
+      <span><span class="ldot ip"></span><span data-zh="進行中" data-en="In progress">進行中</span></span>
+      <span><span class="ldot done"></span><span data-zh="已完成" data-en="Done">已完成</span></span>
+    </div>
+  </div>
+  <div class="panel">
+    <h2 data-zh="章節" data-en="Chapters">章節</h2>
+    <div class="cards" id="chCards"></div>
+  </div>
+</main>
+
+<div id="quizView" class="hidden">
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div style="font-weight:600;font-size:14px;margin-bottom:10px;"><span id="sideTitle">—</span></div>
+    <div class="grid" id="qGrid"></div>
+  </aside>
+  <div id="qContent"></div>
+</div>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
