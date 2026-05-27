@@ -1,0 +1,511 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Normalizing Flows — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html" class="active">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 39 / 50</div><h1 data-zh="Normalizing Flows 正規化流" data-en="Normalizing Flows">Normalizing Flows 正規化流</h1>
+<p class="subtitle" data-lang="zh">用一連串可逆 (invertible) 神經網路把簡單分布（如 Gaussian）變換成複雜的目標分布——一個能「精確算出 likelihood」的生成模型。從 RealNVP、Glow、MAF 到連續流 FFJORD，再到 Boltzmann Generators 在分子物理的革命性應用。</p>
+<p class="subtitle" data-lang="en">Use a stack of invertible neural networks to morph a simple distribution (e.g. Gaussian) into a complex target — a generative model with <em>exact</em> likelihood. From RealNVP, Glow, MAF to continuous FFJORD, and Boltzmann Generators revolutionising molecular physics.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="變數變換與可逆網路" data-en="Change of Variables and Invertible Networks">變數變換與可逆網路</h2>
+<div data-lang="zh">
+<p><strong>基本想法：</strong>給定一個簡單分布 z ~ p_Z（通常是 N(0, I)），透過一個 <strong>可逆函數</strong> x = f(z) 把它推到目標分布 p_X。透過變數變換公式（change of variables）：</p>
+<p style="text-align:center;font-family:Georgia,serif;">p_X(x) = p_Z(f<sup>−1</sup>(x)) · |det(∂f<sup>−1</sup>/∂x)|</p>
+<p>或反過來寫：log p_X(x) = log p_Z(z) − log |det(∂f/∂z)|，其中 z = f<sup>−1</sup>(x)。</p>
+<p><strong>關鍵：</strong>f 必須是 <strong>可逆 (bijective)</strong> 且 Jacobian determinant 可以高效計算。一般神經網路不滿足這兩個條件，所以 normalizing flows 的所有研究都圍繞「如何設計能滿足 invertibility 且 Jacobian 易算的網路」展開。</p>
+<p><strong>訓練：</strong>直接做 maximum likelihood——對訓練資料 x，計算 log p_X(x) = log p_Z(f<sup>−1</sup>(x)) − log|det J|，然後梯度上升即可。<strong>不像 VAE 那樣需要 ELBO bound</strong>，也不像 GAN 那樣需要 discriminator。</p>
+<p><strong>採樣：</strong>z ~ N(0, I) 然後 x = f(z)。一次前向就 OK。</p>
+</div>
+<div data-lang="en">
+<p><strong>Core idea:</strong> given a simple base p_Z (typically N(0, I)), push it through an <strong>invertible</strong> function x = f(z) to land at the target p_X. By change of variables:</p>
+<p style="text-align:center;font-family:Georgia,serif;">p_X(x) = p_Z(f<sup>−1</sup>(x)) · |det(∂f<sup>−1</sup>/∂x)|</p>
+<p>Equivalently log p_X(x) = log p_Z(z) − log|det(∂f/∂z)| with z = f<sup>−1</sup>(x).</p>
+<p><strong>The catch:</strong> f must be <strong>bijective</strong> and its Jacobian determinant must be efficiently computable. Vanilla NNs satisfy neither — hence all normalizing-flow research designs networks that do.</p>
+<p><strong>Training:</strong> direct maximum likelihood — for data x, compute log p_X(x) = log p_Z(f<sup>−1</sup>(x)) − log|det J|, then gradient ascent. <strong>No ELBO bound (unlike VAE), no discriminator (unlike GAN)</strong>.</p>
+<p><strong>Sampling:</strong> z ~ N(0, I), then x = f(z). One forward pass.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="精確 likelihood" data-en="Exact likelihood">精確 likelihood</h4><p data-lang="zh">不像 VAE 只有 ELBO 下界、也不像 diffusion 算間接 score——NF 直接給出精確 log p(x)。</p><p data-lang="en">Unlike VAE (ELBO bound) or diffusion (indirect score) — NF gives exact log p(x) directly.</p></div>
+  <div class="card"><div class="card-icon">🔄</div><h4 data-zh="雙向都快" data-en="Bidirectional">雙向都快</h4><p data-lang="zh">訓練（密度估計）與採樣兩個方向都用同一個網路，設計得當兩邊都 O(N)。</p><p data-lang="en">Training (density estimation) and sampling use the same network — both O(N) when designed well.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="可逆 Jacobian" data-en="Tractable Jacobian">可逆 Jacobian</h4><p data-lang="zh">所有 flow 設計的本質：找出 Jacobian determinant 可在 O(d) 或 O(d²) 內算出的可逆變換。</p><p data-lang="en">The essence of flow design: invertible transforms whose Jacobian determinant computes in O(d) or O(d²).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="主要流模型架構" data-en="Major Flow Architectures">主要流模型架構</h2>
+<div data-lang="zh">
+<p><strong>① RealNVP (Dinh et al. 2017, ICLR) — Coupling Layers：</strong>把輸入 x 切成兩半 (x_A, x_B)：</p>
+<p style="text-align:center;font-family:Georgia,serif;">y_A = x_A,&nbsp;&nbsp; y_B = x_B ⊙ exp(s(x_A)) + t(x_A)</p>
+<p>其中 s, t 是任意神經網路（不需可逆）。Jacobian 是 <strong>三角矩陣</strong>，determinant = exp(Σ s(x_A))——O(d) 算出！堆疊多層並交替哪一半被變換。</p>
+
+<p><strong>② Glow (Kingma & Dhariwal 2018, NeurIPS)：</strong>RealNVP + <strong>可逆 1×1 convolution</strong> 取代固定的 channel-shuffle，讓「哪些 channel 進 s/t」是可學的。配上 ActNorm（data-dependent affine）。圖像生成達到 GAN 級品質且 likelihood 精確。</p>
+
+<p><strong>③ MAF (Masked Autoregressive Flow, Papamakarios et al. 2017, NeurIPS)：</strong>用 autoregressive 結構：</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i = z_i · exp(α_i(x_&lt;i)) + μ_i(x_&lt;i)</p>
+<p>Jacobian 是三角，determinant easy。<strong>密度估計快</strong>（一次 forward 用 MADE 即可），<strong>但採樣慢</strong>（需 d 步串行）。</p>
+
+<p><strong>④ IAF (Inverse Autoregressive Flow, Kingma et al. 2016, NeurIPS)：</strong>把 MAF 的方向反過來——z_i 是 condition 變數：</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i = z_i · exp(α_i(z_&lt;i)) + μ_i(z_&lt;i)</p>
+<p><strong>採樣快、密度估計慢</strong>。常作為 VAE 的 posterior 改良。</p>
+
+<p><strong>⑤ Neural Spline Flows (Durkan et al. 2019, NeurIPS)：</strong>把 coupling 的 affine 變換換成 <strong>monotonic rational-quadratic spline</strong>——表達力大幅提升，仍保持可逆與 tractable Jacobian。目前 tabular density estimation 的 SOTA 之一。</p>
+
+<p><strong>⑥ FFJORD (Grathwohl et al. 2019, ICLR) — 連續流：</strong>把離散 flow 推廣為 Neural ODE：dx/dt = v_θ(x, t)。Jacobian determinant 用 Hutchinson trace estimator + adjoint method 估計。<strong>連續、無 coupling 限制、表達力最強</strong>，但訓練慢（要解 ODE）。Flow Matching 後續就是 FFJORD 的 score-based 簡化版。</p>
+</div>
+<div data-lang="en">
+<p><strong>① RealNVP (Dinh et al. 2017, ICLR) — Coupling Layers:</strong> split input x = (x_A, x_B):</p>
+<p style="text-align:center;font-family:Georgia,serif;">y_A = x_A,&nbsp;&nbsp; y_B = x_B ⊙ exp(s(x_A)) + t(x_A)</p>
+<p>where s, t are arbitrary NNs (no invertibility needed). Jacobian is <strong>triangular</strong>, determinant = exp(Σ s(x_A)) — O(d). Stack many layers, alternating which half is transformed.</p>
+
+<p><strong>② Glow (Kingma & Dhariwal 2018, NeurIPS):</strong> RealNVP + <strong>invertible 1×1 convolution</strong> replaces fixed channel shuffle, making "which channels feed s/t" learnable. Plus ActNorm (data-dependent affine). Reaches GAN-level image quality with exact likelihood.</p>
+
+<p><strong>③ MAF (Masked Autoregressive Flow, Papamakarios et al. 2017, NeurIPS):</strong> autoregressive structure:</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i = z_i · exp(α_i(x_&lt;i)) + μ_i(x_&lt;i)</p>
+<p>Triangular Jacobian. <strong>Fast density estimation</strong> (one MADE pass), <strong>slow sampling</strong> (d serial steps).</p>
+
+<p><strong>④ IAF (Inverse Autoregressive Flow, Kingma et al. 2016, NeurIPS):</strong> reverse MAF — z_i as conditioning:</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i = z_i · exp(α_i(z_&lt;i)) + μ_i(z_&lt;i)</p>
+<p><strong>Fast sampling, slow density</strong>. Often used to improve VAE posteriors.</p>
+
+<p><strong>⑤ Neural Spline Flows (Durkan et al. 2019, NeurIPS):</strong> replace coupling's affine map with <strong>monotonic rational-quadratic splines</strong> — far higher expressivity, still invertible with tractable Jacobian. State of the art for tabular density.</p>
+
+<p><strong>⑥ FFJORD (Grathwohl et al. 2019, ICLR) — Continuous flow:</strong> generalise discrete flow to a Neural ODE: dx/dt = v_θ(x, t). Jacobian determinant via Hutchinson trace estimator + adjoint method. <strong>Continuous, no coupling restriction, maximum expressivity</strong> — but slow (ODE solver). Flow Matching is the score-free successor.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>方向性權衡：</strong>MAF 訓練快採樣慢；IAF 採樣快訓練慢；coupling (RealNVP/Glow) 兩邊都對稱；FFJORD 兩邊都慢但最有表達力。實務選擇取決於主要任務（生成？密度估計？兩者？）。</div>
+<div data-lang="en"><strong>Direction trade-off:</strong> MAF — train fast, sample slow. IAF — sample fast, train slow. Coupling (RealNVP/Glow) — both symmetric. FFJORD — both slow but most expressive. Choice depends on the main task (generate? estimate density? both?).</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Gaussian 經 affine coupling 變雙月分布" data-en="Gaussian → Two-moons via Affine Coupling">Gaussian 經 affine coupling 變雙月分布</h2>
+<div data-lang="zh"><p>下方視覺化 <strong>多層 affine coupling</strong> 如何把 N(0, I) 推到雙月。每一層 coupling 把點雲做局部 shear + scale；累積數層後幾乎可以擬合任意 2D 分布。調整層數與 coupling 強度，觀察每一層後的點雲變化（紅 = 原始 Gaussian、藍 = 第 k 層輸出）。</p></div>
+<div data-lang="en"><p>This visualises how <strong>stacked affine coupling layers</strong> push N(0, I) into the two-moons. Each coupling locally shears + scales the cloud; a few layers fit almost any 2D distribution. Adjust the number of layers and coupling strength, and watch the cloud evolve (red = source Gaussian, blue = output after k layers).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="Coupling 層數 K" data-en="Coupling layers K">Coupling 層數 K <span id="vK">6</span></label><input type="range" id="sK" min="0" max="12" value="6" step="1"></div>
+<div class="slider-group"><label data-zh="變換強度 α" data-en="Transform strength α">變換強度 α <span id="vA">1.00</span></label><input type="range" id="sA" min="0.2" max="1.8" value="1.0" step="0.05"></div>
+<div class="slider-group"><label data-zh="顯示" data-en="Show">顯示</label>
+  <select id="showMode" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="both" selected>Source (Gaussian) + Flow output</option>
+    <option value="src">Source only</option>
+    <option value="out">Flow output only</option>
+  </select>
+</div>
+<svg id="nfSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="nfInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Normalizing Flows 在生物資訊與分子科學" data-en="Normalizing Flows in Bioinformatics and Molecular Science">Normalizing Flows 在生物資訊與分子科學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Boltzmann Generators (Noé 2019, Science)" data-en="Boltzmann Generators (Noé 2019, Science)">Boltzmann Generators</h4>
+<p data-lang="zh">Noé et al. (2019, Science) 用 normalizing flows 直接從 Boltzmann 分布 p(x) ∝ exp(−U(x)/kT) 取樣——避免 MD/MCMC 的 ergodicity 瓶頸。應用於蛋白質 conformational sampling，可在毫秒級得到 MD 需要毫秒~秒級的 ensemble。</p>
+<p data-lang="en">Noé et al. (2019, Science) sample directly from the Boltzmann distribution p(x) ∝ exp(−U(x)/kT) using normalizing flows — bypassing the ergodicity bottleneck of MD/MCMC. Applied to protein conformational sampling, milliseconds to obtain what MD needs ms–s for.</p></div>
+
+<div class="card"><h4 data-zh="scVI-flow / 後驗改良" data-en="scVI-flow / Posterior refinement">scVI-flow / 後驗改良</h4>
+<p data-lang="zh">原始 scVI (Lopez 2018, Nat Methods) 用 mean-field VI；後續工作把 IAF 接在 encoder 後做更靈活的 posterior q(z|x)，提升 scRNA-seq 雜訊建模精度，特別是 batch correction 的不確定性估計。</p>
+<p data-lang="en">Original scVI (Lopez 2018, Nat Methods) used mean-field VI; later work stacks IAF on the encoder for richer q(z|x), improving scRNA-seq noise modelling and uncertainty estimates in batch correction.</p></div>
+
+<div class="card"><h4 data-zh="細胞流形學習 (Sokoła 2020)" data-en="Cell manifold learning (Sokoła 2020)">細胞流形學習</h4>
+<p data-lang="zh">Sokoła et al. (2020) 等工作將 NF 用於估計 single-cell 表達空間的真實 manifold 密度——比 KDE 與 GMM 更有彈性，可用來偵測 rare cell state（低密度區域）。</p>
+<p data-lang="en">Sokoła et al. (2020) and others apply NF to estimate the true manifold density of single-cell expression — more flexible than KDE/GMM. Useful for detecting rare cell states (low-density regions).</p></div>
+
+<div class="card"><h4 data-zh="Molecular Generation" data-en="Molecular Generation">分子生成</h4>
+<p data-lang="zh">MoFlow (Zang & Wang 2020, KDD)、GraphNVP (Madhawa 2019) 把 normalizing flows 用於分子圖生成，同時生成 atom types 與 bond structures。後續被 diffusion 與 flow matching 部分取代，但在「小資料、需要精確 likelihood」場景仍很常用。</p>
+<p data-lang="en">MoFlow (Zang & Wang 2020, KDD), GraphNVP (Madhawa 2019) apply NF to molecular graph generation — atom types and bonds jointly. Largely succeeded by diffusion / flow matching, but still useful where small data and exact likelihood matter.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質構象 sampling" data-en="Protein conformation sampling">蛋白質構象 sampling</h4>
+<p data-lang="zh">FlowSite (2023)、Timewarp (Klein 2023, NeurIPS) 等用 NF 替 MD 加速採樣 protein/peptide ensemble。對 IDR、cryptic pocket、allosteric site 的構象變化特別有用。</p>
+<p data-lang="en">FlowSite (2023), Timewarp (Klein 2023, NeurIPS) accelerate sampling of protein/peptide ensembles. Especially useful for IDRs, cryptic pockets, allosteric sites where conformational change matters.</p></div>
+
+<div class="card"><h4 data-zh="罕見變異偵測 / 密度估計" data-en="Rare variant detection / Density estimation">罕見變異偵測</h4>
+<p data-lang="zh">用 NF 在 large cohort 中學「正常 variant 分布」，然後在新樣本上計算 log p——低密度區即為 anomaly。比 GMM-based 方法更能捕捉高維非高斯結構，已用於 cancer rare variant calling。</p>
+<p data-lang="en">NF learns the "normal variant distribution" across a large cohort; new samples with low log p are anomalies. More expressive than GMM for high-dimensional non-Gaussian structure. Applied to cancer rare-variant calling.</p></div>
+
+<div class="card"><h4 data-zh="Mass spec spectra 校準" data-en="Mass spec spectra normalization">質譜光譜校準</h4>
+<p data-lang="zh">MS data 跨批次有複雜的非線性 shift；用 conditional NF 學「parent batch → reference」的映射做 normalization，比傳統 ComBat / loess 更精準保留生物變異。</p>
+<p data-lang="en">MS data has complex non-linear batch shifts; conditional NF learns "batch → reference" mappings for normalization, preserving biological variance better than ComBat / loess.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質 backbone NF" data-en="SE(3) NF for protein backbone">SE(3) NF</h4>
+<p data-lang="zh">EquiFlow (2024) 等用 SE(3)-equivariant normalizing flow 設計蛋白質 backbone——保留旋轉/平移等變性，採樣分布始終物理上合理。是 FrameFlow / RFdiffusion 的 likelihood-based 替代。</p>
+<p data-lang="en">EquiFlow (2024) and others use SE(3)-equivariant NF for protein backbone — preserves rotational/translational equivariance, samples are always physically valid. A likelihood-based alternative to FrameFlow / RFdiffusion.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Normalizing Flows 進階主題" data-en="Advanced NF Topics">Normalizing Flows 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Jacobian determinant 計算的關鍵</h3>
+<p>三角 Jacobian → determinant = 對角線連乘（O(d)）；coupling 的「上三角分塊」也是 O(d)。FFJORD 用 <strong>Hutchinson trace estimator</strong>：tr(A) ≈ E[v^T A v]，把 trace 換成 vector-Jacobian product，O(d) 完成。所有 flow 設計都圍繞「讓 Jacobian determinant 不變成 O(d³)」。</p>
+
+<h3>② 表達力 (expressivity) 的限制</h3>
+<p>RealNVP/Glow coupling 是局部 affine，理論上可逼近任意密度但需要極多層。Neural Spline Flows 用 spline 把每層表達力大幅提升。<strong>Universal approximation:</strong> Huang et al. (2018) 證明 NAF (Neural Autoregressive Flow) 可逼近任意連續密度。</p>
+
+<h3>③ 連續流的數值穩定性</h3>
+<p>FFJORD 訓練要解 ODE，且 Jacobian 需積分 ∫₀¹ tr(∂v/∂x) dt。常見問題：<strong>(a) trajectory 太彎</strong>（採樣慢），<strong>(b) Hutchinson estimator 高方差</strong>。Flow Matching (Lipman 2022) 用 conditional regression 直接學 velocity，避開這些問題——但代價是 likelihood 不再精確。</p>
+
+<h3>④ NF vs Diffusion vs Flow Matching</h3>
+<ul>
+<li><strong>NF：</strong>精確 likelihood、可逆網路、表達力受架構限制。</li>
+<li><strong>Diffusion：</strong>score-based、無限制網路、likelihood 是 ELBO 下界。</li>
+<li><strong>Flow Matching：</strong>regression on velocity、無限制網路、likelihood 需積分得到（仍精確但要算）。</li>
+</ul>
+<p>當你需要「給定 x 算精確 log p(x)」的場景（如 Bayes factor、anomaly detection、physics constraint），<strong>NF 仍是首選</strong>。</p>
+
+<h3>⑤ 離散資料的 NF</h3>
+<p>Categorical NF (Tran 2019)、Argmax flows (Hoogeboom 2021) 處理離散資料：先 dequantize 為連續變數、用連續 flow、再離散化（或 argmax）。對 DNA/protein sequence、SMILES 都適用。</p>
+
+<h3>⑥ Conditional NF</h3>
+<p>把條件 c 喂進 coupling 的 s/t 網路：y_B = x_B ⊙ exp(s(x_A, c)) + t(x_A, c)。可做 conditional generation（給標籤生成）、conditional density estimation（p(x|c)）、imputation 等。</p>
+
+<h3>⑦ 訓練實務</h3>
+<ul>
+<li><strong>初始化：</strong>ActNorm 用 data-dependent init 把初始輸出方差化為 1。</li>
+<li><strong>梯度 clipping：</strong>Jacobian determinant 的 log 可能爆炸，clip 必要。</li>
+<li><strong>架構深度：</strong>2D toy 6–12 層；圖像 ~30 層 (Glow)；分子 8–16 層 coupling。</li>
+<li><strong>Mixed precision：</strong>NF 對 fp16 比 diffusion 敏感（Jacobian 數值穩定性），通常用 bf16 或 fp32。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① The key: Jacobian determinant computation</h3>
+<p>Triangular Jacobian → determinant = product of diagonals (O(d)); coupling's block-triangular form is also O(d). FFJORD uses <strong>Hutchinson trace estimator</strong>: tr(A) ≈ E[v^T A v] — trace via vector-Jacobian product in O(d). All NF design centres on "keep Jacobian determinant out of O(d³) territory".</p>
+
+<h3>② Expressivity limits</h3>
+<p>RealNVP/Glow coupling is locally affine — theoretically universal but needs many layers. Neural Spline Flows boost per-layer expressivity dramatically. <strong>Universal approximation:</strong> Huang et al. (2018) proved NAF (Neural Autoregressive Flow) is a universal density approximator.</p>
+
+<h3>③ Numerical stability of continuous flow</h3>
+<p>FFJORD training solves an ODE plus integrates ∫₀¹ tr(∂v/∂x) dt. Common issues: <strong>(a) trajectory too curved</strong> (slow sampling), <strong>(b) high-variance Hutchinson estimator</strong>. Flow Matching (Lipman 2022) avoids both with direct regression — at the cost of losing exact likelihood.</p>
+
+<h3>④ NF vs Diffusion vs Flow Matching</h3>
+<ul>
+<li><strong>NF:</strong> exact likelihood, invertible network, expressivity bound by architecture.</li>
+<li><strong>Diffusion:</strong> score-based, unrestricted network, likelihood is an ELBO lower bound.</li>
+<li><strong>Flow Matching:</strong> velocity regression, unrestricted network, likelihood obtained via integration (still exact, but to be computed).</li>
+</ul>
+<p>When you genuinely need exact log p(x) (Bayes factors, anomaly detection, physics constraints), <strong>NF remains the first choice</strong>.</p>
+
+<h3>⑤ Discrete data via NF</h3>
+<p>Categorical NF (Tran 2019), Argmax flows (Hoogeboom 2021) handle discrete data: dequantize to continuous, apply continuous flow, then discretize (or argmax). Works for DNA/protein sequences, SMILES.</p>
+
+<h3>⑥ Conditional NF</h3>
+<p>Feed condition c into the coupling s/t nets: y_B = x_B ⊙ exp(s(x_A, c)) + t(x_A, c). Enables conditional generation (label→sample), conditional density estimation p(x|c), imputation, etc.</p>
+
+<h3>⑦ Training tips</h3>
+<ul>
+<li><strong>Init:</strong> ActNorm uses data-dependent init so the initial output has unit variance.</li>
+<li><strong>Gradient clipping:</strong> log|det J| can explode; clip generously.</li>
+<li><strong>Depth:</strong> 6–12 layers for 2D toys, ~30 for images (Glow), 8–16 coupling layers for molecules.</li>
+<li><strong>Mixed precision:</strong> NF is more sensitive to fp16 than diffusion (Jacobian stability). Prefer bf16 or fp32.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Normalizing Flows 還能改良哪些任務？" data-en="What Else Could Normalizing Flows Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Bayesian variant calling 的精確 posterior</h3>
+<p>多數 variant caller (GATK, DeepVariant) 用 EM 或粗略的 calibration。<strong>提案：</strong>用 NF 學每個 locus 的 read-count posterior，能給出精確的 variant probability，特別有助於 mosaic / low-VAF variant。</p>
+
+<h3>🎯 2. 蛋白質 conformational ensemble</h3>
+<p>Boltzmann Generators 已開先例，但只在 small peptide。<strong>提案：</strong>把 SE(3)-equivariant NF + AlphaFold prior 整合，做 protein ensemble 採樣，目標是 IDR、allosteric pocket、cryptic site 的構象多樣性。</p>
+
+<h3>🎯 3. 單細胞 anomaly detection</h3>
+<p>scRNA-seq 中的「異常細胞」（doublet、感染、應激）通常在密度低區。<strong>提案：</strong>用 NF 對全部 atlas 學密度，新樣本中 log p 最低的 1% 標為候選 anomaly，比 doublet detection method 更全面。</p>
+
+<h3>🎯 4. 多體學 joint density</h3>
+<p>用 conditional NF 學 p(RNA | ATAC) 或 p(protein | RNA)——精確 likelihood 讓我們可做 modality imputation 與 missingness reasoning。<strong>提案：</strong>OmniNF 多體學整合框架。</p>
+
+<h3>🎯 5. 罕見疾病 phenotype 模型</h3>
+<p>罕病患者表型分布通常極窄；常規 supervised learning 容易過擬合。<strong>提案：</strong>用 conditional NF 學 p(phenotype | genotype)，給每個變異一個 phenotype 不確定性區間，特別有助 trio 分析。</p>
+
+<h3>🎯 6. CRISPR off-target 精確 likelihood</h3>
+<p>off-target probability 目前用 MIT score 或 CFD score。<strong>提案：</strong>用 NF 學 guide-target binding energy 的條件分布，給出精確 off-target 機率而非啟發式 score。</p>
+
+<h3>🎯 7. Mass spec 跨平台校準</h3>
+<p>Orbitrap、TOF、Q-Exactive 等 MS 平台的光譜形狀差異複雜。<strong>提案：</strong>conditional NF 學「source platform → target platform」mapping，比 ComBat / harmonization 保留更多原生峰結構。</p>
+
+<h3>🎯 8. Hi-C contact map 密度模型</h3>
+<p>Hi-C 的接觸頻率有強尾分布（power law）。<strong>提案：</strong>NF 模擬 contact frequency distribution，用於 differential interaction detection 與 rare contact identification。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Exact Bayesian posterior for variant calling</h3>
+<p>Most callers (GATK, DeepVariant) rely on EM or coarse calibration. <strong>Proposal:</strong> NF learns per-locus read-count posterior — exact variant probability, especially helpful for mosaic / low-VAF variants.</p>
+
+<h3>🎯 2. Protein conformational ensembles</h3>
+<p>Boltzmann Generators set the precedent but only for small peptides. <strong>Proposal:</strong> combine SE(3)-equivariant NF + AlphaFold prior for protein ensemble sampling — targeting IDR, allosteric, cryptic conformational diversity.</p>
+
+<h3>🎯 3. Single-cell anomaly detection</h3>
+<p>"Aberrant cells" (doublets, infected, stressed) often live in low-density regions. <strong>Proposal:</strong> NF density over the whole atlas; flag bottom-1% log p as anomalies — more general than doublet-specific methods.</p>
+
+<h3>🎯 4. Multi-omics joint density</h3>
+<p>Conditional NF for p(RNA | ATAC) or p(protein | RNA) — exact likelihood enables modality imputation and missingness reasoning. <strong>Proposal:</strong> OmniNF, a multi-omics integration framework.</p>
+
+<h3>🎯 5. Rare disease phenotype modelling</h3>
+<p>Phenotype distributions are extremely narrow for rare diseases; supervised models overfit. <strong>Proposal:</strong> conditional NF for p(phenotype | genotype) — phenotype uncertainty intervals per variant, especially valuable for trios.</p>
+
+<h3>🎯 6. Exact CRISPR off-target probability</h3>
+<p>Off-target scores (MIT, CFD) are heuristic. <strong>Proposal:</strong> NF on guide-target binding energy distributions — exact off-target probability instead of a heuristic score.</p>
+
+<h3>🎯 7. Cross-platform mass-spec calibration</h3>
+<p>Orbitrap, TOF, Q-Exactive spectra differ non-linearly. <strong>Proposal:</strong> conditional NF learns "source platform → target" mapping — preserves more native peak structure than ComBat / harmonization.</p>
+
+<h3>🎯 8. Hi-C contact-map density</h3>
+<p>Hi-C contact frequencies follow power-law tails. <strong>Proposal:</strong> NF for contact frequency distribution — for differential interaction detection and rare-contact identification.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'nf1')">PyTorch / nflows</button>
+<button class="code-tab-btn" onclick="switchTab(this,'nf2')">RealNVP from scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'nf3')">Pyro / flow module</button>
+</div>
+
+<div class="code-tab-content active" id="nf1"><pre><span class="comment"># pip install nflows torch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> nflows.flows <span class="keyword">import</span> Flow
+<span class="keyword">from</span> nflows.distributions <span class="keyword">import</span> StandardNormal
+<span class="keyword">from</span> nflows.transforms <span class="keyword">import</span> (
+    CompositeTransform, ReversePermutation,
+    MaskedAffineAutoregressiveTransform)
+
+<span class="comment"># Build MAF with 5 layers</span>
+transforms = []
+<span class="keyword">for</span> _ <span class="keyword">in</span> range(<span class="num">5</span>):
+    transforms.append(ReversePermutation(features=<span class="num">2</span>))
+    transforms.append(MaskedAffineAutoregressiveTransform(
+        features=<span class="num">2</span>, hidden_features=<span class="num">64</span>))
+flow = Flow(CompositeTransform(transforms), StandardNormal([<span class="num">2</span>]))
+
+opt = torch.optim.Adam(flow.parameters(), lr=<span class="num">1e-3</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">5000</span>):
+    x = sample_two_moons(<span class="num">256</span>)              <span class="comment"># your data</span>
+    loss = -flow.log_prob(x).mean()       <span class="comment"># NLL</span>
+    opt.zero_grad(); loss.backward(); opt.step()
+
+samples = flow.sample(<span class="num">1000</span>)               <span class="comment"># generate</span>
+ll = flow.log_prob(x_test)                <span class="comment"># exact log p(x)</span></pre></div>
+
+<div class="code-tab-content" id="nf2"><pre><span class="comment"># Minimal RealNVP coupling layer</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> Coupling(nn.Module):
+    <span class="keyword">def</span> __init__(self, d=<span class="num">2</span>, h=<span class="num">64</span>, mask_type=<span class="num">0</span>):
+        super().__init__()
+        self.mask = torch.tensor([<span class="num">1</span>,<span class="num">0</span>] <span class="keyword">if</span> mask_type==<span class="num">0</span> <span class="keyword">else</span> [<span class="num">0</span>,<span class="num">1</span>],
+                                 dtype=torch.float32)
+        self.net = nn.Sequential(nn.Linear(d, h), nn.ReLU(),
+                                 nn.Linear(h, h), nn.ReLU(),
+                                 nn.Linear(h, <span class="num">2</span>*d))    <span class="comment"># outputs s, t</span>
+    <span class="keyword">def</span> forward(self, x):
+        x_a = x * self.mask
+        s, t = self.net(x_a).chunk(<span class="num">2</span>, dim=-<span class="num">1</span>)
+        s = s * (<span class="num">1</span>-self.mask)
+        t = t * (<span class="num">1</span>-self.mask)
+        y = x_a + (<span class="num">1</span>-self.mask) * (x*torch.exp(s) + t)
+        log_det = s.sum(-<span class="num">1</span>)
+        <span class="keyword">return</span> y, log_det
+
+    <span class="keyword">def</span> inverse(self, y):
+        y_a = y * self.mask
+        s, t = self.net(y_a).chunk(<span class="num">2</span>, dim=-<span class="num">1</span>)
+        s = s * (<span class="num">1</span>-self.mask); t = t * (<span class="num">1</span>-self.mask)
+        x = y_a + (<span class="num">1</span>-self.mask) * ((y - t) * torch.exp(-s))
+        <span class="keyword">return</span> x, -s.sum(-<span class="num">1</span>)
+
+<span class="comment"># Stack coupling layers alternating masks; train via NLL</span></pre></div>
+
+<div class="code-tab-content" id="nf3"><pre><span class="comment"># Pyro: combine flow with Bayesian inference</span>
+<span class="keyword">import</span> torch, pyro
+<span class="keyword">import</span> pyro.distributions <span class="keyword">as</span> dist
+<span class="keyword">from</span> pyro.distributions.transforms <span class="keyword">import</span> AffineCoupling, Permute
+
+base = dist.Normal(torch.zeros(<span class="num">2</span>), torch.ones(<span class="num">2</span>))
+
+<span class="comment"># Build flow</span>
+transforms = []
+<span class="keyword">for</span> _ <span class="keyword">in</span> range(<span class="num">6</span>):
+    transforms.append(AffineCoupling(<span class="num">1</span>, dim=-<span class="num">1</span>,
+                                     hypernet=nn.Sequential(...)))
+    transforms.append(Permute(torch.tensor([<span class="num">1</span>,<span class="num">0</span>])))
+flow_dist = dist.TransformedDistribution(base, transforms)
+
+<span class="comment"># Training</span>
+opt = torch.optim.Adam(
+    [p <span class="keyword">for</span> t <span class="keyword">in</span> transforms <span class="keyword">for</span> p <span class="keyword">in</span> t.parameters()], lr=<span class="num">1e-3</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">5000</span>):
+    loss = -flow_dist.log_prob(data).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Normalizing Flow 的訓練目標是什麼？</p><p data-lang="en">What is the training objective of a normalizing flow?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 最小化 GAN discriminator loss</span><span data-lang="en">A. Minimize GAN discriminator loss</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 最大化精確 log-likelihood = log p_Z(f⁻¹(x)) − log|det ∂f/∂z|</span><span data-lang="en">B. Maximize exact log-likelihood = log p_Z(f⁻¹(x)) − log|det ∂f/∂z|</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 最小化 score-matching loss</span><span data-lang="en">C. Minimize score-matching loss</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 最大化 ELBO 下界</span><span data-lang="en">D. Maximize ELBO bound</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">為什麼 RealNVP 的 coupling layer 的 Jacobian determinant 可以 O(d) 計算？</p><p data-lang="en">Why does RealNVP's coupling layer admit an O(d) Jacobian determinant?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 因為它是線性的</span><span data-lang="en">A. Because it's linear</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為 s, t 是恆等函數</span><span data-lang="en">B. Because s, t are identity functions</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 因為 Jacobian 是三角矩陣（一半變數保持不變），determinant 是對角線連乘 = exp(Σ s)</span><span data-lang="en">C. The Jacobian is triangular (half the variables are unchanged); det = product of diagonal = exp(Σ s)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 因為它用了 Hutchinson estimator</span><span data-lang="en">D. Because it uses Hutchinson estimator</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">MAF 與 IAF 的主要差別是什麼？</p><p data-lang="en">What is the main difference between MAF and IAF?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. MAF 訓練（密度估計）快、採樣慢；IAF 採樣快、密度估計慢——方向相反</span><span data-lang="en">A. MAF is fast at density estimation (training), slow at sampling; IAF is the opposite</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. MAF 用 spline、IAF 用 affine</span><span data-lang="en">B. MAF uses splines, IAF uses affine</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 兩者完全相同</span><span data-lang="en">C. They are identical</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. MAF 需要 ODE solver</span><span data-lang="en">D. MAF needs an ODE solver</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="hypergraph-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 38：Hypergraph Learning" data-en="Ch 38: Hypergraph Learning">Ch 38：Hypergraph Learning</span></a>
+<a href="gflownets.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 40：GFlowNets" data-en="Ch 40: GFlowNets">Ch 40：GFlowNets</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Gaussian -> two-moons via stacked affine coupling =====
+const NFS=document.getElementById('nfSvg');
+const Wn=600,Hn=360;
+const N_PTS=240;
+
+// Pre-sample base Gaussian (deterministic for visual stability)
+let baseZ=[];
+function makeBase(){
+  baseZ=[];
+  let seed=1;
+  function rnd(){seed=(seed*9301+49297)%233280;return seed/233280;}
+  for(let i=0;i<N_PTS;i++){
+    const u=rnd(),v=rnd();
+    const r=Math.sqrt(-2*Math.log(Math.max(1e-6,u)));
+    baseZ.push([r*Math.cos(2*Math.PI*v)*0.55, r*Math.sin(2*Math.PI*v)*0.55]);
+  }
+}
+makeBase();
+
+// One coupling layer: alternating masks; affine transform of the "non-mask" half
+// We design s,t so that successive layers shape the cloud into two crescents.
+function coupling(x,y,layer,alpha){
+  // even layer: transform y based on x; odd: transform x based on y
+  const phase = layer%2;
+  if(phase===0){
+    const s = 0.4*alpha*Math.tanh(1.2*x);
+    const t = alpha*0.6*Math.sin(1.5*x + 0.2*layer);
+    return [x, y*Math.exp(s) + t];
+  }else{
+    const s = -0.35*alpha*Math.tanh(1.1*y);
+    const t = alpha*0.55*Math.sin(1.4*y - 0.25*layer);
+    return [x*Math.exp(s) + t, y];
+  }
+}
+
+function applyFlow(z0,K,alpha){
+  let x=z0[0], y=z0[1];
+  for(let k=0;k<K;k++){
+    [x,y]=coupling(x,y,k,alpha);
+  }
+  return [x,y];
+}
+
+function toScrX(x){return Wn*0.5 + x*70;}
+function toScrY(y){return Hn*0.55 - y*70;}
+
+function render(){
+  const K=+document.getElementById('sK').value;
+  const A=+document.getElementById('sA').value;
+  const mode=document.getElementById('showMode').value;
+  document.getElementById('vK').textContent=K;
+  document.getElementById('vA').textContent=A.toFixed(2);
+
+  let svg='';
+  // Grid (helper)
+  for(let i=-2;i<=2;i++){
+    svg+=`<line x1="${toScrX(i)}" y1="0" x2="${toScrX(i)}" y2="${Hn}" stroke="#eee" stroke-width="0.8"/>`;
+    svg+=`<line x1="0" y1="${toScrY(i)}" x2="${Wn}" y2="${toScrY(i)}" stroke="#eee" stroke-width="0.8"/>`;
+  }
+  svg+=`<line x1="0" y1="${toScrY(0)}" x2="${Wn}" y2="${toScrY(0)}" stroke="#ccc" stroke-width="1"/>`;
+  svg+=`<line x1="${toScrX(0)}" y1="0" x2="${toScrX(0)}" y2="${Hn}" stroke="#ccc" stroke-width="1"/>`;
+
+  // Source ghost
+  if(mode==='src' || mode==='both'){
+    baseZ.forEach(p=>{
+      svg+=`<circle cx="${toScrX(p[0])}" cy="${toScrY(p[1])}" r="2.8" fill="rgba(192,57,43,0.55)"/>`;
+    });
+  }
+  // Flow output
+  if(mode==='out' || mode==='both'){
+    baseZ.forEach(p=>{
+      const q=applyFlow(p,K,A);
+      svg+=`<circle cx="${toScrX(q[0])}" cy="${toScrY(q[1])}" r="2.8" fill="rgba(37,99,168,0.7)"/>`;
+    });
+  }
+  // Legends
+  svg+=`<rect x="14" y="12" width="14" height="14" fill="rgba(192,57,43,0.55)" rx="2"/><text x="34" y="24" font-size="12" fill="#5a4632">p₀ = N(0, I)</text>`;
+  svg+=`<rect x="14" y="32" width="14" height="14" fill="rgba(37,99,168,0.7)" rx="2"/><text x="34" y="44" font-size="12" fill="#5a4632">f_K(z) — after K coupling layers</text>`;
+  svg+=`<text x="${Wn-14}" y="${Hn-12}" text-anchor="end" font-size="11" fill="#888">K=${K}, α=${A.toFixed(2)}</text>`;
+  NFS.innerHTML=svg;
+
+  // Rough "spread" metric: bounding-box volume of output
+  let xs=[],ys=[];
+  baseZ.forEach(p=>{const q=applyFlow(p,K,A);xs.push(q[0]);ys.push(q[1]);});
+  const dx=Math.max(...xs)-Math.min(...xs);
+  const dy=Math.max(...ys)-Math.min(...ys);
+  const L=I18n.get();
+  document.getElementById('nfInfo').innerHTML=L==='zh'?
+    `K = <strong>${K}</strong> 層 coupling、強度 α = <strong>${A.toFixed(2)}</strong>。<br>輸出範圍：x ∈ [${Math.min(...xs).toFixed(2)}, ${Math.max(...xs).toFixed(2)}]（寬度 ${dx.toFixed(2)}），y ∈ [${Math.min(...ys).toFixed(2)}, ${Math.max(...ys).toFixed(2)}]（高度 ${dy.toFixed(2)}）。<br>K = 0 時輸出 = 輸入；增加 K 與 α 可以看到點雲逐漸彎曲、分裂——這就是 normalizing flow 的「逐層形變」過程。實務的 RealNVP/Glow 用更多層、更深的 s/t 網路擬合真實資料分布。`
+    :
+    `K = <strong>${K}</strong> coupling layers, strength α = <strong>${A.toFixed(2)}</strong>.<br>Output range: x ∈ [${Math.min(...xs).toFixed(2)}, ${Math.max(...xs).toFixed(2)}] (width ${dx.toFixed(2)}), y ∈ [${Math.min(...ys).toFixed(2)}, ${Math.max(...ys).toFixed(2)}] (height ${dy.toFixed(2)}).<br>At K = 0 the output equals the input; raising K and α progressively bends and splits the cloud — that's exactly how a normalizing flow morphs distributions layer by layer. Real RealNVP/Glow use deeper s/t networks across many more layers.`;
+}
+
+document.getElementById('sK').addEventListener('input',render);
+document.getElementById('sA').addEventListener('input',render);
+document.getElementById('showMode').addEventListener('change',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！Normalizing flow 的精髓是精確最大化 log-likelihood。',
+  q1_n:'答案是 B。NF 直接最大化精確 log p(x) = log p_Z(z) − log|det J|，這是它最大的優勢。',
+  q2_y:'答對！coupling 把一半變數保持不變，所以 Jacobian 是三角矩陣。',
+  q2_n:'答案是 C。RealNVP 把一半變數 x_A 保持原值，另一半 affine 變換，Jacobian 三角，det = exp(Σ s)。',
+  q3_y:'答對！MAF 與 IAF 在密度估計與採樣之間的速度權衡完全相反。',
+  q3_n:'答案是 A。MAF：密度估計一次 forward 完成（快）、採樣需要 d 步串行（慢）。IAF 反之。'
+},en:{
+  q1_y:'Correct! Exact maximum likelihood is the heart of NF.',
+  q1_n:'Answer is B. NF directly maximizes exact log p(x) = log p_Z(z) − log|det J| — its key advantage.',
+  q2_y:'Correct! Coupling fixes half the variables, so the Jacobian is triangular.',
+  q2_n:'Answer is C. RealNVP keeps x_A unchanged, affine-transforms the other half — triangular Jacobian, det = exp(Σ s).',
+  q3_y:'Correct! MAF and IAF trade off density vs sampling speed in opposite directions.',
+  q3_n:'Answer is A. MAF: one-pass density (fast), serial d-step sampling (slow). IAF is the opposite.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

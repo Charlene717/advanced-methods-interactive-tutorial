@@ -1,0 +1,365 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Optimal Transport — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html" class="active">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 4 / 14</div><h1 data-zh="最佳傳輸 (Optimal Transport)" data-en="Optimal Transport">最佳傳輸 (Optimal Transport)</h1>
+<p class="subtitle" data-lang="zh">如何用最低成本把一堆沙子搬成另一個形狀？這個 18 世紀的數學問題，今天在 scRNA-seq 時間軸對齊、空間整合、多體學映射、scLLM 嵌入比較中無所不在。</p>
+<p class="subtitle" data-lang="en">How to move a pile of sand into another shape at minimum cost? This 18th-century problem now underpins scRNA-seq time-course alignment, spatial integration, multi-omics mapping, and scLLM embedding comparison.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="Monge 與 Kantorovich" data-en="Monge and Kantorovich">兩個版本：Monge 與 Kantorovich</h2>
+<div data-lang="zh">
+<p><strong>Monge (1781)：</strong>給定兩個分布 μ、ν，找一個對映 T 把每顆 μ 的「沙粒」搬到 ν 上，使總搬運成本 ∫ c(x, T(x)) dμ(x) 最小。問題是這種「決定性」對映不一定存在。</p>
+<p><strong>Kantorovich (1942)：</strong>允許「拆分」沙粒——尋找聯合分布 π (transport plan)，其邊際分別為 μ 與 ν，最小化 ∫∫ c(x,y) dπ(x,y)。這個問題總是有解，是線性規劃。</p>
+<p>最常見的成本是 c(x,y) = ‖x − y‖²；對應的最小成本平方根稱為 <strong>Wasserstein 距離</strong> W₂(μ, ν)，是分布間的「位置感知」距離。</p>
+</div>
+<div data-lang="en">
+<p><strong>Monge (1781):</strong> Given distributions μ, ν, find a map T sending each "grain" of μ to ν minimizing ∫ c(x, T(x)) dμ(x). Such deterministic maps may not exist.</p>
+<p><strong>Kantorovich (1942):</strong> Allow splitting grains — find a joint distribution π (transport plan) with marginals μ, ν, minimizing ∫∫ c(x,y) dπ(x,y). Always has a solution; it's a linear program.</p>
+<p>The most common cost is c(x,y) = ‖x − y‖². The minimum cost's square root is the <strong>Wasserstein distance</strong> W₂(μ, ν) — a location-aware distance between distributions.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼比 KL 散度好？</strong> KL(μ‖ν) 在 μ 和 ν 的支撐集不重疊時會變無窮大或無定義。W₂ 永遠有限，且能感知「距離有多遠」——適合單細胞這種高維稀疏資料。</div>
+<div data-lang="en"><strong>Why beats KL divergence?</strong> KL(μ‖ν) blows up or is undefined when supports don't overlap. W₂ is always finite and senses "how far apart" — fits high-dim sparse single-cell data.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Sinkhorn：把 OT 變快、變可微" data-en="Sinkhorn: Fast, Differentiable OT">Sinkhorn：把 OT 變快、變可微</h2>
+<div data-lang="zh">
+<p>直接解 Kantorovich LP 的複雜度 O(n³ log n)，n=10000 細胞就跑不動。Cuturi (2013) 提出 <strong>熵正則化</strong>：</p>
+<p style="text-align:center;font-family:Georgia,serif;">OT<sub>ε</sub>(μ,ν) = min<sub>π</sub> ⟨π, C⟩ − ε · H(π)</p>
+<p>用 Sinkhorn 演算法迭代「行縮放、列縮放」即可在 O(n²/ε) 求解，GPU 友善且 <strong>可微</strong>——可直接接入深度學習流程。</p>
+<p><strong>Sinkhorn 演算法本體：</strong>初始化 u = v = 1，反覆執行 u ← μ ⊘ (K v)，v ← ν ⊘ (Kᵀ u)，其中 K = exp(−C/ε)。收斂後 π = diag(u) K diag(v)。</p>
+</div>
+<div data-lang="en">
+<p>Solving Kantorovich LP directly is O(n³ log n); 10000 cells already infeasible. Cuturi (2013) introduced <strong>entropic regularization</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">OT<sub>ε</sub>(μ,ν) = min<sub>π</sub> ⟨π, C⟩ − ε · H(π)</p>
+<p>Sinkhorn iterations (row/column scaling) solve it in O(n²/ε), GPU-friendly and <strong>differentiable</strong> — slots into deep learning pipelines.</p>
+<p><strong>Sinkhorn body:</strong> initialize u = v = 1; iterate u ← μ ⊘ (K v), v ← ν ⊘ (Kᵀ u), where K = exp(−C/ε). Then π = diag(u) K diag(v).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="點對點傳輸視覺化" data-en="Point-to-point Transport">點對點傳輸視覺化</h2>
+<div data-lang="zh"><p>左側紅點是源分布（μ），右側藍點是目標分布（ν）。Sinkhorn 解出的傳輸計畫顯示為灰色線——線寬代表運送質量，調整 ε 觀察熵正則化的影響（ε 越大越「霧化」）。</p></div>
+<div data-lang="en"><p>Red = source μ, blue = target ν. Sinkhorn's transport plan is shown as gray lines (width = transported mass). Adjust ε to see entropic smoothing (larger ε → fuzzier coupling).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label>ε (entropy) <span id="vE">0.05</span></label><input type="range" id="sE" min="0.01" max="0.5" value="0.05" step="0.01"></div>
+<div class="slider-group"><label data-zh="迭代次數" data-en="Iterations">迭代次數 <span id="vI">50</span></label><input type="range" id="sI" min="5" max="200" value="50" step="5"></div>
+<svg id="otSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div id="otCost" style="margin-top:8px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="OT 在單細胞與空間的應用" data-en="OT in Single-cell and Spatial">OT 在單細胞與空間的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Waddington-OT (Schiebinger 2019)" data-en="Waddington-OT (Schiebinger 2019)">Waddington-OT</h4><p data-lang="zh">給定數個時間點的 scRNA-seq 快照，用 OT 解出「t<sub>1</sub> 細胞到 t<sub>2</sub> 細胞」的最可能對映，重建發育軌跡（細胞無法在兩時間點同時測量）。</p><p data-lang="en">From scRNA-seq snapshots at several time points, OT recovers the most likely t<sub>1</sub> → t<sub>2</sub> cell map and reconstructs developmental trajectories (cells can't be measured at both times).</p></div>
+<div class="card"><h4 data-zh="MOSCOT (2024, Nature)" data-en="MOSCOT (2024, Nature)">MOSCOT</h4><p data-lang="zh">統一框架，支援多模態 OT（RNA × ATAC × spatial × time），用 JAX/OTT 後端，可擴展到 atlas 規模。包含 moscot.spatiotemporal 解析胚胎時空動態。</p><p data-lang="en">Unified framework for multimodal OT (RNA × ATAC × spatial × time), JAX/OTT backend, scales to atlas size. Includes moscot.spatiotemporal for embryonic dynamics.</p></div>
+<div class="card"><h4 data-zh="空間切片對齊 (PASTE)" data-en="Spatial slice alignment (PASTE)">空間切片對齊 (PASTE)</h4><p data-lang="zh">同一組織連續切片彼此略有位移與形變，PASTE 用 Gromov-Wasserstein OT 對齊基因表現與空間座標，輸出 3D 重建。</p><p data-lang="en">PASTE aligns serial spatial slices via Gromov-Wasserstein OT on expression + coordinates, enabling 3D reconstruction.</p></div>
+<div class="card"><h4 data-zh="多體學模態翻譯" data-en="Cross-modal translation">多體學模態翻譯</h4><p data-lang="zh">scRNA 與 scATAC 沒有配對細胞時，OT 找出最佳跨模態對映——基礎是 SCOT、unionCom、Pamona 等方法。</p><p data-lang="en">For unpaired scRNA + scATAC, OT finds best cross-modal mapping — basis of SCOT, unionCom, Pamona.</p></div>
+<div class="card"><h4 data-zh="嵌入空間比較" data-en="Embedding comparison">嵌入空間比較</h4><p data-lang="zh">比較兩個 scLLM 嵌入空間（如 scGPT vs Geneformer），W₂ 距離給出位置感知的整體差異。</p><p data-lang="en">Compare two scLLM embedding spaces (e.g. scGPT vs Geneformer) — W₂ gives a location-aware global discrepancy.</p></div>
+<div class="card"><h4 data-zh="MultistageOT (2025)" data-en="MultistageOT (2025)">MultistageOT</h4><p data-lang="zh">最新方法：從單一快照（不需多時間點）推估軌跡，用多階段 OT 串接動態結構。</p><p data-lang="en">2025 method: infers trajectories from a single snapshot using multi-stage OT.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="OT 的進階主題與變體" data-en="Advanced OT Topics and Variants">OT 的進階主題與變體</h2>
+
+<div data-lang="zh">
+<h3>① Wasserstein 距離家族</h3>
+<p>W₂ 不是唯一選擇。W_p 距離：W_p(μ,ν) = (inf_π ∫‖x−y‖^p dπ)^(1/p)。p = 1（Earth Mover's Distance, EMD）對 outlier 更穩健；p = ∞ 衡量最大運送距離。對單細胞高維資料 W₂ 是 default，但 W₁ 對 dropout 與 outlier 較友善。</p>
+
+<h3>② Unbalanced OT（兩分布質量不等）</h3>
+<p>標準 OT 假設 μ 與 ν 質量相同（都是機率分布）。但生物學中常見「細胞群增殖、凋亡」——時間 t₂ 的某 cell type 數量比 t₁ 多。<strong>Unbalanced OT (Chizat 2018)</strong> 鬆綁邊際約束：</p>
+<p style="text-align:center;font-family:Georgia,serif;">min<sub>π</sub> ⟨π, C⟩ + ε H(π) + ρ KL(π_X ‖ μ) + ρ KL(π_Y ‖ ν)</p>
+<p>用於 Waddington-OT 處理增殖/凋亡至關重要——「不是每個源細胞都對應到目標」。</p>
+
+<h3>③ Gromov-Wasserstein (GW)：跨空間 OT</h3>
+<p>當 μ 與 ν 不在同一空間（例如 scRNA 嵌入 vs scATAC 嵌入），無法直接計算成本 c(x, y)。GW 改為比較「成對距離結構」：</p>
+<p style="text-align:center;font-family:Georgia,serif;">GW(μ, ν) = min<sub>π</sub> ∫∫ |d_X(x, x') − d_Y(y, y')|² dπ(x,y) dπ(x',y')</p>
+<p>這是 PASTE 空間切片對齊、SCOT 跨模態對齊的核心——「結構保持」而非「位置對應」。實務上計算很貴 O(n⁴)，需要 entropic regularization + Sinkhorn-like 迭代 (Peyré 2016)。</p>
+
+<h3>④ Fused-GW：混合幾何與標籤</h3>
+<p>當有額外特徵（例如基因表現）可用，Fused-GW 結合 W (位置匹配) 與 GW (結構匹配) 為：α·W + (1−α)·GW。在 spatial-multi-omics 整合中 (e.g. SpaceFlow, PASTE2) 取 α ≈ 0.5 通常最好。</p>
+
+<h3>⑤ Neural OT 與 generative model 連結</h3>
+<p>Sinkhorn 雖快但 O(n²)。<strong>Neural OT</strong> (Korotin 2021, Bunne 2023) 用神經網路學 OT map T: μ → ν 而非求 transport plan，可推廣到任意分布（不需有限樣本）。這把 OT 連結到 generative model：score-based diffusion ≡ stochastic OT 在某種極限下。</p>
+
+<h3>⑥ OT 對 latent 空間的選擇敏感性</h3>
+<p>OT 的結果嚴重依賴用什麼空間算 cost。實務建議：</p>
+<ul>
+<li><strong>不要直接用 raw counts：</strong>NB / Poisson 雜訊讓 distance 不穩。先做 log normalization + HVG selection。</li>
+<li><strong>建議空間：</strong>PCA 前 30–50 維（標準做法）、scVI latent（更穩健）、或 scLLM embedding（最新潮流）。</li>
+<li><strong>距離度量：</strong>Euclidean 標準；但 Mahalanobis、cosine、或 learned metric 對某些任務更好。</li>
+</ul>
+
+<h3>⑦ Sinkhorn 的數學深度</h3>
+<p>Sinkhorn 演算法的數學優雅源自 <strong>matrix scaling</strong>：給定矩陣 K 與目標邊際 (a, b)，找對角矩陣 D₁, D₂ 使 D₁ K D₂ 的行/列和等於 (a, b)。這是 100+ 年前的 RAS algorithm，被 Cuturi 重新發現在 OT 中的價值。收斂速度 O(1/ε)（線性收斂於 entropy 正則化解），ε 越小收斂越慢——典型生物 OT 用 ε = 0.005–0.05。</p>
+
+<h3>⑧ Bures-Wasserstein：高斯間的封閉解</h3>
+<p>當 μ = N(m₁, Σ₁), ν = N(m₂, Σ₂)：W₂² 有封閉式 ‖m₁ − m₂‖² + Tr(Σ₁ + Σ₂ − 2(Σ₁^½ Σ₂ Σ₁^½)^½)。<strong>應用：</strong>把每個 cell type 視為高斯分布，cell type 間的 W₂ 距離可作為「組織結構距離」——這就是 BBKNN、Harmony 等部分概念的根。</p>
+</div>
+
+<div data-lang="en">
+<h3>① The Wasserstein family</h3>
+<p>W₂ isn't the only choice. W_p(μ,ν) = (inf_π ∫‖x−y‖^p dπ)^(1/p). p = 1 (EMD) is outlier-robust; p = ∞ measures max transport distance. W₂ is default for high-dim single-cell; W₁ handles dropouts better.</p>
+
+<h3>② Unbalanced OT (unequal mass)</h3>
+<p>Standard OT assumes equal masses (probability distributions). But in biology, cells proliferate and die — cohort sizes change. <strong>Unbalanced OT (Chizat 2018)</strong> relaxes marginal constraints with KL penalties. Critical for Waddington-OT with proliferation/apoptosis — "not every source cell maps to a target."</p>
+
+<h3>③ Gromov-Wasserstein (GW): cross-space OT</h3>
+<p>When μ and ν live in different spaces (scRNA vs scATAC embeddings) we can't compute c(x, y) directly. GW compares <strong>pairwise distance structures</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">GW(μ, ν) = min<sub>π</sub> ∫∫ |d_X(x, x') − d_Y(y, y')|² dπ(x,y) dπ(x',y')</p>
+<p>Core to PASTE (spatial slice alignment), SCOT (cross-modal alignment) — preserves structure, not position. O(n⁴) but Sinkhorn-style entropic regularization makes it tractable (Peyré 2016).</p>
+
+<h3>④ Fused-GW: mixing geometry + labels</h3>
+<p>Fused-GW combines W (position matching) + GW (structure matching): α·W + (1−α)·GW. α ≈ 0.5 typical in spatial-multi-omics (e.g. SpaceFlow, PASTE2).</p>
+
+<h3>⑤ Neural OT and the generative model link</h3>
+<p>Sinkhorn is fast but still O(n²). <strong>Neural OT</strong> (Korotin 2021, Bunne 2023) learns the OT map T: μ → ν as a neural net — generalizes to arbitrary distributions. Connects OT to generative models: score-based diffusion ≡ stochastic OT in a limit.</p>
+
+<h3>⑥ Sensitivity to latent-space choice</h3>
+<p>OT results depend heavily on the cost-space.</p>
+<ul>
+<li><strong>Don't use raw counts</strong> — NB/Poisson noise destabilizes distances. Log-normalize + HVG first.</li>
+<li><strong>Good spaces:</strong> 30–50 PCs (standard), scVI latents (more robust), scLLM embeddings (cutting edge).</li>
+<li><strong>Metric:</strong> Euclidean default; Mahalanobis, cosine, or learned metrics suit specific tasks.</li>
+</ul>
+
+<h3>⑦ Mathematical depth of Sinkhorn</h3>
+<p>Sinkhorn's elegance comes from <strong>matrix scaling</strong>: find diagonal D₁, D₂ making D₁ K D₂ have desired row/column sums. The 100+ year-old RAS algorithm rediscovered by Cuturi. Linear convergence to entropic solution at rate O(1/ε); biology typically uses ε = 0.005–0.05.</p>
+
+<h3>⑧ Bures-Wasserstein: closed form for Gaussians</h3>
+<p>For μ = N(m₁, Σ₁), ν = N(m₂, Σ₂): W₂² has a closed form ‖m₁ − m₂‖² + Tr(Σ₁ + Σ₂ − 2(Σ₁^½ Σ₂ Σ₁^½)^½). <strong>Application:</strong> treat each cell type as a Gaussian; W₂ between them is a "structural distance" — partly underlies BBKNN, Harmony.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="OT 在生命科學的具體案例" data-en="OT in Life Sciences: Concrete Cases">具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Waddington-OT 重建胚胎發育（Schiebinger 2019, Cell）</h3>
+<p>第一個 large-scale OT 應用：用 mouse iPS reprogramming 的 18 天時間軸（每隔半天 sample），重建細胞從纖維母細胞到 iPS 的「最可能路徑」。發現了：(1) 未被預期的 trapped intermediate 狀態 (2) 重編程效率受早期 PRC2 活性影響。後續被驗證並推動了 reprogramming protocol 優化。</p>
+
+<h3>🧬 案例 2：MOSCOT 統一框架（Klein 2024, Nature）</h3>
+<p>Theis lab 出品，把 OT 在單細胞的各種應用統一：</p>
+<ul>
+<li><strong>moscot.time：</strong>替代 WOT，可擴展到百萬細胞時間軸</li>
+<li><strong>moscot.spatial：</strong>替代 PASTE，連續切片 3D 重建</li>
+<li><strong>moscot.cross_modality：</strong>替代 SCOT，跨模態對齊</li>
+<li><strong>moscot.spatiotemporal：</strong>同時時空——重建 mouse embryo 發育的時空動態 (E8.5–E11.5)，發現 axial mesoderm 與 neural crest 的特定 spatial niche 轉移軌跡</li>
+</ul>
+<p>用 JAX + OTT-JAX 後端，atlas-scale 都跑得動。</p>
+
+<h3>🧬 案例 3：CINEMA-OT — 治療效應 counterfactual</h3>
+<p>Dong et al. (2023, Nature Methods)：用 OT 對「治療組」與「對照組」配對細胞——每個治療細胞配對到「最相似的對照細胞」，差異即為「治療效應」counterfactual。在 Perturb-seq、藥物 screen 中比 mixscape 更穩健。</p>
+
+<h3>🧬 案例 4：PASTE / PASTE2 空間切片整合</h3>
+<p>Zeira et al. (2022, Nature Methods)：用 Fused-GW 對齊連續空間切片，重建 3D 組織結構。在 mouse brain、human heart、tumor 等做出真實 3D reconstruction。PASTE2 (2024) 處理「partial overlap」切片（不完全重疊）。</p>
+
+<h3>🧬 案例 5：scOT 跨模態對齊</h3>
+<p>Demetci et al. (2022, Journal of Computational Biology)：Gromov-Wasserstein 對齊 unpaired scRNA + scATAC。在沒有 paired cells（一個細胞同時測 RNA + ATAC）時找跨模態最佳對映。已被 Pamona、UnionCom 等後續方法擴展。</p>
+
+<h3>🧬 案例 6：藥物機制比較</h3>
+<p>Bunne et al. (2023, Nature Methods)：CellOT 用 neural OT 學「未受擾動 → 受擾動」的細胞 map，可預測新藥物或新劑量的細胞反應。在 sci-Plex 資料上比 baseline 顯著提升 perturbation prediction。</p>
+
+<h3>🧬 案例 7：免疫學中的 TCR repertoire 比較</h3>
+<p>Schattgen et al. (2022) 用 OT 比較不同病人的 TCR 多樣性分布——W₂(TCR_patient_1, TCR_patient_2) 衡量 immune repertoire 的「結構距離」。比 Shannon entropy / Simpson index 更具位置感知。</p>
+
+<h3>🧬 案例 8：MultistageOT (PNAS 2025)</h3>
+<p>把長時間軸切成多個「stage」，每階段套 OT，把整體變成 staged process。比一次性大 OT 計算更便宜，且能處理「中間 trapped state」這類非單調軌跡。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Waddington-OT reconstructs embryonic development (Schiebinger 2019, Cell)</h3>
+<p>First large-scale OT application: reconstructed reprogramming trajectories from 18-day mouse iPS time-course (sampled every 12h). Discovered (1) unexpected trapped intermediates and (2) early PRC2 activity influences reprogramming efficiency. Subsequently validated and drove protocol optimization.</p>
+
+<h3>🧬 Case 2: MOSCOT unified framework (Klein 2024, Nature)</h3>
+<p>From the Theis lab, unifies all single-cell OT applications:</p>
+<ul>
+<li><strong>moscot.time:</strong> WOT replacement, scales to millions</li>
+<li><strong>moscot.spatial:</strong> PASTE replacement, 3D reconstruction</li>
+<li><strong>moscot.cross_modality:</strong> SCOT replacement</li>
+<li><strong>moscot.spatiotemporal:</strong> spatial + temporal — reconstructs mouse embryo E8.5–E11.5 dynamics; reveals specific niche shifts for axial mesoderm and neural crest</li>
+</ul>
+<p>JAX + OTT-JAX backend, atlas-scale.</p>
+
+<h3>🧬 Case 3: CINEMA-OT — treatment-effect counterfactuals</h3>
+<p>Dong et al. (2023, Nat Methods): OT-match treated cells to control cells; the difference is the per-cell counterfactual treatment effect. More robust than mixscape on Perturb-seq, drug screens.</p>
+
+<h3>🧬 Case 4: PASTE / PASTE2 spatial slice integration</h3>
+<p>Zeira et al. (2022, Nat Methods): Fused-GW aligns serial spatial slices for 3D reconstruction. Applied to mouse brain, human heart, tumors. PASTE2 (2024) handles partial overlap.</p>
+
+<h3>🧬 Case 5: scOT cross-modal alignment</h3>
+<p>Demetci et al. (2022): Gromov-Wasserstein for unpaired scRNA + scATAC — extended by Pamona, UnionCom.</p>
+
+<h3>🧬 Case 6: Drug mechanism comparison</h3>
+<p>Bunne et al. (2023, Nat Methods): CellOT uses neural OT to predict perturbation responses for new drugs/doses; significantly improves sci-Plex perturbation prediction.</p>
+
+<h3>🧬 Case 7: TCR repertoire comparison</h3>
+<p>Schattgen et al. (2022) used OT to compare TCR diversity between patients — a position-aware alternative to Shannon entropy and Simpson's index.</p>
+
+<h3>🧬 Case 8: MultistageOT (PNAS 2025)</h3>
+<p>Splits long time courses into stages with chained OT — cheaper than one giant OT and handles trapped intermediates (non-monotonic trajectories).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="OT 還能應用在哪？" data-en="Where else could OT apply?">OT 還能應用在哪？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 跨物種 atlas 對應</h3>
+<p>對齊人類 atlas vs 鼠 atlas 時的「homolog cell-type 找對」問題：Fused-GW 可用基因 ortholog（位置成本）+ 細胞型別結構（GW 結構成本）聯合對齊。<strong>提案：</strong>HuBMAP × Tabula Muris 的下一代整合方法。</p>
+
+<h3>🎯 2. Disease progression mapping</h3>
+<p>用 OT 對「健康樣本」與「疾病樣本」做 mass transport，給出每個健康細胞「最像對應的疾病細胞」——揭示疾病改變了哪些細胞 state。<strong>提案：</strong>取代/補充傳統 case-control DE，提供「per-cell disease vector」。</p>
+
+<h3>🎯 3. Drug response trajectory inference</h3>
+<p>給定多時間點藥物反應 scRNA-seq，OT 追蹤每個細胞的反應軌跡：哪些細胞「順從」、哪些「抗藥」、哪些「適應」。<strong>提案：</strong>癌症抗藥性早期偵測。</p>
+
+<h3>🎯 4. Spatial 微環境動態</h3>
+<p>多時間點 spatial transcriptomics：OT 對齊不同 timepoint 的同一組織區域，揭示「空間結構如何隨時間變化」。<strong>提案：</strong>傷口癒合、tumor invasion 等動態組織學研究。</p>
+
+<h3>🎯 5. Multi-modal Perturb-seq 整合</h3>
+<p>Perturb-seq + Perturb-ATAC：OT 對 unpaired 兩模態的擾動細胞做對齊，學「擾動如何同時改變 RNA 與染色質」。<strong>提案：</strong>表觀遺傳調控機制研究。</p>
+
+<h3>🎯 6. scLLM cell embedding 評估</h3>
+<p>「同一細胞」在 scGPT 與 Geneformer 嵌入應該對齊。OT(scGPT_emb, Geneformer_emb) 衡量兩 scLLM 的一致性。<strong>提案：</strong>scLLM ensemble 與 fine-tuning 評估。</p>
+
+<h3>🎯 7. Lineage tracing with OT</h3>
+<p>LineageOT (Forrow 2021)：在 lineage barcode 已知時，OT 對 fate 重建更精準。可推廣到「partial lineage」情境——只有少數細胞有 barcode 時，OT 推估其他細胞的 lineage。</p>
+
+<h3>🎯 8. Drug repurposing</h3>
+<p>計算「藥物 A 的細胞反應向量」與「疾病 B 的細胞變異向量」的 Wasserstein 距離。距離小代表「A 可能逆轉 B」。<strong>提案：</strong>取代 connectivity map 的 cosine similarity。</p>
+
+<h3>🎯 9. 空間轉錄體與組織學整合</h3>
+<p>用 OT 對齊低解析度 spot-based spatial (Visium) 與高解析度 imaging (Stereo-seq, MERFISH)。Fused-GW 結合表現+位置，可達次細胞解析度。</p>
+
+<h3>🎯 10. Generative model 的「分布偏移評估」</h3>
+<p>scDiffusion 生成的合成細胞與真實細胞的 W₂ 距離，是評估生成品質的金標準（比 FID、IS 更適合 omics）。<strong>提案：</strong>標準化 scLLM/scDiffusion 評估流程。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Cross-species atlas correspondence</h3>
+<p>Fused-GW with ortholog mapping (position) + cell-type structure (GW) jointly aligns human vs mouse atlases. <strong>Proposal:</strong> next-gen HuBMAP × Tabula Muris integration.</p>
+
+<h3>🎯 2. Disease progression mapping</h3>
+<p>OT-transport healthy → disease samples to find each healthy cell's "most-like disease counterpart" — reveals which states are altered. <strong>Proposal:</strong> per-cell disease vectors, complementing case-control DE.</p>
+
+<h3>🎯 3. Drug response trajectory inference</h3>
+<p>OT tracks per-cell response trajectories — identifying "compliant," "resistant," and "adapting" populations. <strong>Proposal:</strong> early detection of cancer resistance.</p>
+
+<h3>🎯 4. Spatial niche dynamics</h3>
+<p>Multi-timepoint spatial transcriptomics: OT aligns the same tissue region over time. <strong>Proposal:</strong> wound healing, tumor invasion studies.</p>
+
+<h3>🎯 5. Multi-modal Perturb-seq integration</h3>
+<p>OT aligns unpaired Perturb-seq + Perturb-ATAC to learn how perturbations affect RNA + chromatin jointly.</p>
+
+<h3>🎯 6. scLLM embedding evaluation</h3>
+<p>OT(scGPT_emb, Geneformer_emb) for "same cells" measures cross-model consistency. <strong>Proposal:</strong> scLLM ensemble and fine-tuning evaluation.</p>
+
+<h3>🎯 7. Lineage tracing with OT</h3>
+<p>LineageOT (Forrow 2021) integrates lineage barcodes with OT. Extension: "partial lineage" — infer lineages of unlabeled cells from a few barcoded anchors.</p>
+
+<h3>🎯 8. Drug repurposing</h3>
+<p>W₂(drug response vector, disease vector) — small distance suggests drug A may reverse disease B. <strong>Proposal:</strong> Replace cosine similarity in Connectivity Map.</p>
+
+<h3>🎯 9. Spatial + histology integration</h3>
+<p>OT-align low-res spot-based (Visium) with high-res imaging (Stereo-seq, MERFISH). Fused-GW can reach subcellular resolution.</p>
+
+<h3>🎯 10. Distribution shift in generative models</h3>
+<p>W₂ between scDiffusion-generated and real cells — gold standard quality metric, better suited to omics than FID/IS. <strong>Proposal:</strong> standardized scLLM/scDiffusion evaluation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pot')">Python / POT</button>
+<button class="code-tab-btn" onclick="switchTab(this,'mos')">moscot</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sin')">Sinkhorn 手刻</button>
+</div>
+<div class="code-tab-content active" id="pot"><pre><span class="keyword">import</span> ot                       <span class="comment"># Python Optimal Transport</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+a = np.ones(n) / n               <span class="comment"># 來源權重</span>
+b = np.ones(m) / m               <span class="comment"># 目標權重</span>
+C = ot.dist(X, Y, metric=<span class="str">"sqeuclidean"</span>)
+T_exact = ot.emd(a, b, C)        <span class="comment"># 精確 EMD</span>
+T_sink  = ot.sinkhorn(a, b, C, reg=<span class="num">0.01</span>)
+W2 = np.sqrt(np.sum(T_exact * C))</pre></div>
+<div class="code-tab-content" id="mos"><pre><span class="keyword">import</span> moscot
+<span class="keyword">from</span> moscot.problems.time <span class="keyword">import</span> TemporalProblem
+
+tp = TemporalProblem(adata)
+tp = tp.prepare(time_key=<span class="str">"day"</span>)
+tp = tp.solve(epsilon=<span class="num">1e-3</span>, scale_cost=<span class="str">"mean"</span>)
+
+<span class="comment"># 細胞祖先 / 後代機率</span>
+tp.cell_transition(source=<span class="num">0</span>, target=<span class="num">3</span>, source_groups=<span class="str">"celltype"</span>)</pre></div>
+<div class="code-tab-content" id="sin"><pre><span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> sinkhorn(a, b, C, eps=<span class="num">0.05</span>, n_iter=<span class="num">100</span>):
+    K = np.exp(-C / eps)
+    u = np.ones_like(a); v = np.ones_like(b)
+    <span class="keyword">for</span> _ <span class="keyword">in</span> range(n_iter):
+        u = a / (K @ v + <span class="num">1e-12</span>)
+        v = b / (K.T @ u + <span class="num">1e-12</span>)
+    <span class="keyword">return</span> np.diag(u) @ K @ np.diag(v)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">為何 Sinkhorn 演算法成為單細胞 OT 的主流選擇？</p><p data-lang="en">Why is Sinkhorn the workhorse for single-cell OT?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 比精確解更準</span><span data-lang="en">A. More accurate than exact OT</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需要成本矩陣</span><span data-lang="en">B. No cost matrix needed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. O(n²/ε) 複雜度、GPU 友善、可微</span><span data-lang="en">C. O(n²/ε), GPU-friendly, differentiable</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不需要分布的邊際</span><span data-lang="en">D. Doesn't need marginals</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Waddington-OT 解決了什麼根本問題？</p><p data-lang="en">What core problem does Waddington-OT solve?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 細胞分群</span><span data-lang="en">A. Cell clustering</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 細胞無法在多個時間點同時測量 → OT 對映時間點間群體</span><span data-lang="en">B. Cells can't be measured at multiple times → OT maps cohorts across time</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 細胞註釋</span><span data-lang="en">C. Cell annotation</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 移除 dropout</span><span data-lang="en">D. Removing dropouts</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="mutual-information.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 3：MI</span></a>
+<a href="persistent-homology.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 5：持久同調" data-en="Ch 5: TDA">Ch 5：持久同調</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+const W=600,H=280;const n=6,m=6;
+const src=[];const tgt=[];
+for(let i=0;i<n;i++)src.push({x:80,y:40+i*36});
+for(let j=0;j<m;j++)tgt.push({x:520,y:40+j*36});
+function cost(){const C=[];for(let i=0;i<n;i++){const r=[];for(let j=0;j<m;j++){const dx=src[i].x-tgt[j].x,dy=src[i].y-tgt[j].y;r.push((dx*dx+dy*dy)/50000);}C.push(r);}return C;}
+const C=cost();
+function sinkhornJS(eps,iters){const K=[];for(let i=0;i<n;i++){const r=[];for(let j=0;j<m;j++)r.push(Math.exp(-C[i][j]/eps));K.push(r);}let u=new Array(n).fill(1),v=new Array(m).fill(1);for(let k=0;k<iters;k++){for(let i=0;i<n;i++){let s=0;for(let j=0;j<m;j++)s+=K[i][j]*v[j];u[i]=(1/n)/(s+1e-12);}for(let j=0;j<m;j++){let s=0;for(let i=0;i<n;i++)s+=K[i][j]*u[i];v[j]=(1/m)/(s+1e-12);}}const P=[];for(let i=0;i<n;i++){const r=[];for(let j=0;j<m;j++)r.push(u[i]*K[i][j]*v[j]);P.push(r);}return P;}
+
+function render(){const eps=+document.getElementById('sE').value,iters=+document.getElementById('sI').value;document.getElementById('vE').textContent=eps.toFixed(2);document.getElementById('vI').textContent=iters;const P=sinkhornJS(eps,iters);let svg='';let totalCost=0;for(let i=0;i<n;i++)for(let j=0;j<m;j++){const w=P[i][j]*40;if(w>0.05){svg+=`<line x1="${src[i].x}" y1="${src[i].y}" x2="${tgt[j].x}" y2="${tgt[j].y}" stroke="rgba(120,120,120,${Math.min(1,w*5)})" stroke-width="${Math.min(8,w*40)}"/>`;totalCost+=P[i][j]*C[i][j];}}
+for(let i=0;i<n;i++)svg+=`<circle cx="${src[i].x}" cy="${src[i].y}" r="9" fill="rgba(200,60,60,0.85)"/>`;
+for(let j=0;j<m;j++)svg+=`<circle cx="${tgt[j].x}" cy="${tgt[j].y}" r="9" fill="rgba(60,100,200,0.85)"/>`;
+svg+=`<text x="80" y="265" font-size="13" fill="#666">μ (source)</text><text x="500" y="265" font-size="13" fill="#666">ν (target)</text>`;
+document.getElementById('otSvg').innerHTML=svg;
+const L=I18n.get();document.getElementById('otCost').innerHTML=L==='zh'?`傳輸總成本 ≈ <strong>${(totalCost*100).toFixed(2)}</strong>（任意單位）。ε 越小越接近精確 OT，但收斂較慢。`:`Total transport cost ≈ <strong>${(totalCost*100).toFixed(2)}</strong> (arbitrary units). Smaller ε is closer to exact OT but converges slower.`;}
+document.getElementById('sE').addEventListener('input',render);document.getElementById('sI').addEventListener('input',render);document.addEventListener('langchange',render);render();
+
+window._QF={zh:{q1_y:'答對！熵正則化 + GPU + 可微，三合一。',q1_n:'答案是 C。Sinkhorn 的成功在於計算可行性與可微性。',q2_y:'答對！這是 OT 在發育生物學的經典應用。',q2_n:'答案是 B。Waddington-OT 重建時間軸上群體對應。'},en:{q1_y:'Correct! Entropic + GPU + differentiable.',q1_n:'Answer is C. Sinkhorn’s success is tractability and differentiability.',q2_y:'Correct! Classic OT application in developmental biology.',q2_n:'Answer is B. WOT reconstructs cohort correspondence across time.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,493 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Conformal Prediction — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html" class="active">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 19 / 26</div><h1 data-zh="保適預測 (Conformal Prediction)" data-en="Conformal Prediction">保適預測 (Conformal Prediction)</h1>
+<p class="subtitle" data-lang="zh">給任何模型加上「有限樣本、無分布假設」的覆蓋率保證。輸出不是單一預測，而是「預測集合」——保證真實答案以 95% 機率落在裡面。是 scGPT 等 black-box 模型走入臨床的關鍵橋梁。</p>
+<p class="subtitle" data-lang="en">Adds finite-sample, distribution-free coverage guarantees to any model. Output isn't a point but a "prediction set" — guaranteed to contain the truth with 95% probability. The key bridge from black-box models like scGPT to clinical use.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為什麼需要 Conformal？" data-en="Why Conformal?">為什麼需要 Conformal？</h2>
+<div data-lang="zh">
+<p>傳統 ML 模型給 point prediction：「這個細胞是 T cell」。但是有多確定？softmax 信心值惡名昭彰地<strong>校準不良</strong>——0.99 信心可能只有 70% 正確率。在醫療、藥物開發、CRISPR target prioritization 這類高風險任務上，這不夠用。</p>
+<p>Conformal prediction 由 Vovk, Gammerman, Shafer (1999, 2005) 創立，核心 promise：</p>
+<p style="text-align:center;background:var(--c-accent-light);padding:14px;border-radius:8px;font-family:Georgia,serif;font-size:1.05rem;">P( Y<sub>test</sub> ∈ C(X<sub>test</sub>) ) ≥ 1 − α</p>
+<p>其中 C(X) 是「prediction set」（分類）或「prediction interval」（回歸）。<strong>關鍵特性：</strong></p>
+<ul>
+<li><strong>Distribution-free：</strong>不需要對資料分布做任何假設（除了 exchangeability，即可交換性）。</li>
+<li><strong>Finite-sample：</strong>不是漸進保證，是有限樣本嚴格成立。</li>
+<li><strong>Model-agnostic：</strong>包在任何模型外面，包括 scGPT、Geneformer、神經網路、Random Forest。</li>
+</ul>
+<p>交換在 5%（α=0.05）的成本是「prediction set 變大」——比如某個細胞 conformal 可能輸出 {T cell, NK cell}，承認不確定性，但保證真實答案 95% 機率在裡面。</p>
+</div>
+<div data-lang="en">
+<p>Classical ML gives point predictions: "this cell is a T cell." But how sure? Softmax confidence is notoriously <strong>poorly calibrated</strong> — 0.99 confidence may correspond to 70% accuracy. For high-stakes tasks (clinical, drug development, CRISPR target prioritization), this isn't enough.</p>
+<p>Conformal prediction (Vovk, Gammerman, Shafer 1999, 2005) makes this promise:</p>
+<p style="text-align:center;background:var(--c-accent-light);padding:14px;border-radius:8px;font-family:Georgia,serif;font-size:1.05rem;">P( Y<sub>test</sub> ∈ C(X<sub>test</sub>) ) ≥ 1 − α</p>
+<p>where C(X) is a prediction set (classification) or interval (regression). <strong>Key properties:</strong></p>
+<ul>
+<li><strong>Distribution-free:</strong> no assumptions on data distribution (only exchangeability).</li>
+<li><strong>Finite-sample:</strong> not asymptotic — strictly holds for finite n.</li>
+<li><strong>Model-agnostic:</strong> wraps any model — scGPT, Geneformer, NN, Random Forest.</li>
+</ul>
+<p>The cost of 5% guarantee (α=0.05) is "larger prediction sets" — e.g. conformal output may be {T cell, NK cell}, honestly acknowledging uncertainty while guaranteeing 95% probability of containing the truth.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🛡️</div><h4 data-zh="保證覆蓋率" data-en="Guaranteed coverage">保證覆蓋率</h4><p data-lang="zh">嚴格 1−α 機率包含真實答案。</p><p data-lang="en">Strict 1−α probability of containing the truth.</p></div>
+  <div class="card"><div class="card-icon">🔧</div><h4 data-zh="Model-agnostic" data-en="Model-agnostic">模型無關</h4><p data-lang="zh">包在 scGPT、AlphaFold、RF 任何模型外。</p><p data-lang="en">Wraps scGPT, AlphaFold, RF — anything.</p></div>
+  <div class="card"><div class="card-icon">📊</div><h4 data-zh="無分布假設" data-en="Distribution-free">無分布假設</h4><p data-lang="zh">不需要 Gaussian、IID 等假設。</p><p data-lang="en">No Gaussian or IID assumptions needed.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Split Conformal：最簡單也最常用" data-en="Split Conformal: Simplest &amp; Most Used">Split Conformal：最簡單也最常用</h2>
+<div data-lang="zh">
+<ol>
+<li><strong>切資料：</strong>把訓練資料切成 train set（訓模型）+ calibration set（校準，~1000 個 sample 即可）。</li>
+<li><strong>訓練：</strong>在 train set 上訓任意模型 f̂（不需要修改模型）。</li>
+<li><strong>算 non-conformity score：</strong>對 calibration set 每個樣本 (X<sub>i</sub>, Y<sub>i</sub>)，計算 s<sub>i</sub> = score(X<sub>i</sub>, Y<sub>i</sub>)。最簡單選擇：分類用 1 − f̂(X<sub>i</sub>)[Y<sub>i</sub>]（真實類別的「不像」程度）；回歸用 |f̂(X<sub>i</sub>) − Y<sub>i</sub>|。</li>
+<li><strong>取分位數：</strong>計算 q̂ = ⌈(n+1)(1−α)⌉/n 分位數 of {s<sub>1</sub>, ..., s<sub>n</sub>}。</li>
+<li><strong>預測：</strong>對新樣本 X<sub>test</sub>，prediction set = {y : score(X<sub>test</sub>, y) ≤ q̂}。</li>
+</ol>
+<p><strong>分類：</strong>C(X) = {y : 1 − f̂(X)[y] ≤ q̂} = {y : f̂(X)[y] ≥ 1 − q̂}。可能 1 個類、可能多個類（不確定），有時甚至 ∅（極罕見，需要報 abstain）。</p>
+<p><strong>回歸：</strong>C(X) = [f̂(X) − q̂, f̂(X) + q̂]，等寬區間。</p>
+<p><strong>關鍵保證（Vovk 2005）：</strong>若 calibration + test set 互可交換（IID 即可），則 P(Y<sub>test</sub> ∈ C(X<sub>test</sub>)) ≥ 1 − α 嚴格成立——不依賴模型是否準確！</p>
+</div>
+<div data-lang="en">
+<ol>
+<li><strong>Split data:</strong> Partition training data into train set (model fitting) + calibration set (~1000 samples is plenty).</li>
+<li><strong>Train:</strong> Fit any model f̂ on train set (no modifications needed).</li>
+<li><strong>Non-conformity scores:</strong> For each (X<sub>i</sub>, Y<sub>i</sub>) in calibration, compute s<sub>i</sub> = score(X<sub>i</sub>, Y<sub>i</sub>). Simplest: classification 1 − f̂(X<sub>i</sub>)[Y<sub>i</sub>]; regression |f̂(X<sub>i</sub>) − Y<sub>i</sub>|.</li>
+<li><strong>Take quantile:</strong> q̂ = ⌈(n+1)(1−α)⌉/n quantile of {s<sub>1</sub>, ..., s<sub>n</sub>}.</li>
+<li><strong>Predict:</strong> For new X<sub>test</sub>, prediction set = {y : score(X<sub>test</sub>, y) ≤ q̂}.</li>
+</ol>
+<p><strong>Classification:</strong> C(X) = {y : f̂(X)[y] ≥ 1 − q̂}. Single label, multiple labels, or rarely ∅ (abstain).</p>
+<p><strong>Regression:</strong> C(X) = [f̂(X) − q̂, f̂(X) + q̂], equal-width interval.</p>
+<p><strong>Key guarantee (Vovk 2005):</strong> If calibration and test are exchangeable (IID suffices), P(Y<sub>test</sub> ∈ C(X<sub>test</sub>)) ≥ 1 − α holds strictly — independent of model accuracy!</p>
+</div>
+
+<h3 data-zh="改良版本" data-en="Improved Variants">改良版本</h3>
+<div data-lang="zh">
+<ul>
+<li><strong>Adaptive Prediction Sets (APS, Romano 2020, NeurIPS)：</strong>讓 set 大小依「條件不確定性」自動調整——簡單樣本一個 class，邊界樣本給多個 class。score = 累積機率到真實類別為止。</li>
+<li><strong>Conformalized Quantile Regression (CQR, Romano 2019)：</strong>回歸版本，先學 q_α/2(X), q_1−α/2(X) 的條件分位數，再校準——得到「異質寬度」prediction interval。</li>
+<li><strong>Jackknife+ (Barber 2021, AOS)：</strong>leave-one-out 版本，不需切 calibration set。</li>
+<li><strong>Cross-conformal、CV+：</strong>K-fold 版本，效率與準確之間的折衷。</li>
+</ul>
+</div>
+<div data-lang="en">
+<ul>
+<li><strong>Adaptive Prediction Sets (APS, Romano 2020, NeurIPS):</strong> Set size adapts to conditional uncertainty — easy samples → one class, ambiguous → many. Score = cumulative probability up to true class.</li>
+<li><strong>Conformalized Quantile Regression (CQR, Romano 2019):</strong> Regression variant — fit conditional quantiles q_α/2(X), q_1−α/2(X) then calibrate; produces heteroscedastic intervals.</li>
+<li><strong>Jackknife+ (Barber 2021, AOS):</strong> Leave-one-out version, no calibration split needed.</li>
+<li><strong>Cross-conformal, CV+:</strong> K-fold variants, trade-off efficiency vs accuracy.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="α 對 prediction set 大小與覆蓋率的影響" data-en="α vs Prediction Set Size and Coverage">α 對 prediction set 大小與覆蓋率的影響</h2>
+<div data-lang="zh"><p>調整顯著水準 α（1−α 為目標覆蓋率），觀察 prediction set 的<strong>平均大小</strong>與<strong>實證覆蓋率</strong>如何變化。模擬一個 10-class scRNA cell-type 分類任務。注意：α 越小（要求覆蓋率越高），set 越大；實證覆蓋率永遠 ≥ 1−α。</p></div>
+<div data-lang="en"><p>Adjust α (1−α is target coverage) to see prediction set <strong>average size</strong> and <strong>empirical coverage</strong> change. Simulates a 10-class scRNA cell-type task. Smaller α → larger sets; empirical coverage always ≥ 1−α.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="顯著水準 α" data-en="Significance α">顯著水準 α <span id="vA">0.10</span></label><input type="range" id="sA" min="0.01" max="0.30" value="0.10" step="0.01"></div>
+<div class="slider-group"><label data-zh="模型品質（softmax 銳利度）" data-en="Model quality (softmax sharpness)">模型品質 <span id="vQ">2.0</span></label><input type="range" id="sQ" min="0.5" max="5.0" value="2.0" step="0.1"></div>
+<div class="chart-container" style="height:280px;"><canvas id="confChart"></canvas></div>
+
+<div class="card-grid cols-3" style="margin-top:14px;">
+  <div class="card"><h4 data-zh="目標覆蓋率" data-en="Target coverage">目標覆蓋率</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="targetCov">—</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4 data-zh="實證覆蓋率" data-en="Empirical coverage">實證覆蓋率</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="empCov">—</p></div>
+  <div class="card"><h4 data-zh="平均 set 大小" data-en="Avg set size">平均 set 大小</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="avgSize">—</p></div>
+</div>
+<div id="confInterp" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Conformal 在生命科學的應用" data-en="Conformal in Life Sciences">Conformal 在生命科學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Conformal Cell-Type Annotation (2024)" data-en="Conformal Cell-Type Annotation (2024)">Conformal Cell-Type 註釋</h4>
+<p data-lang="zh">把 scGPT/Geneformer 包成 conformal predictor — 對不確定細胞輸出「可能 cell type 集合」而非強行單一答案。對於 rare cell types、跨組織泛化的情境特別重要。已有多個 2024 預印本（bioRxiv）展示在 Human Cell Atlas 與 Tabula Sapiens 上的應用。</p>
+<p data-lang="en">Wrap scGPT/Geneformer as conformal predictors — uncertain cells get "possible cell type sets" instead of forced single labels. Critical for rare types and cross-tissue generalization. Multiple 2024 bioRxiv preprints on Human Cell Atlas and Tabula Sapiens.</p></div>
+
+<div class="card"><h4 data-zh="CrepeS — 蛋白質功能 (2024)" data-en="CrepeS — Protein Function (2024)">CrepeS</h4>
+<p data-lang="zh">用 conformal 給 ESM-2 / ProtT5 的蛋白質功能預測加 prediction sets。輸出「最可能的幾個 GO term」而非單一 top-1 預測。對 metagenomics 中的「dark proteins」特別有用。</p>
+<p data-lang="en">Conformalized ESM-2 / ProtT5 protein function predictions — outputs "top probable GO terms" rather than single top-1. Especially useful for metagenomic "dark proteins".</p></div>
+
+<div class="card"><h4 data-zh="藥物反應不確定性" data-en="Drug response uncertainty">藥物反應不確定性</h4>
+<p data-lang="zh">在患者分層 (patient stratification) 中，conformal 給每個病人「可能的藥物反應強度區間」。Sundin et al. (2024) 用 CQR 在 GDSC、CCLE 上展示——對 outlier 病人特別誠實。</p>
+<p data-lang="en">For patient stratification, conformal outputs per-patient drug response intervals. Sundin et al. (2024) used CQR on GDSC, CCLE — especially honest about outlier patients.</p></div>
+
+<div class="card"><h4 data-zh="基因組風險預測" data-en="Genomic risk prediction">基因組風險預測</h4>
+<p data-lang="zh">Polygenic risk score (PRS) 用 conformal 給「個人化風險區間」而非單一值。Marcus et al. (2024) 在 UK Biobank 上展示，跨人種的 PRS calibration 大幅改善。</p>
+<p data-lang="en">Conformalized polygenic risk scores produce personalized risk intervals. Marcus et al. (2024) on UK Biobank — significantly improves cross-ethnicity PRS calibration.</p></div>
+
+<div class="card"><h4 data-zh="Perturb-seq 預測" data-en="Perturb-seq prediction">Perturb-seq 預測</h4>
+<p data-lang="zh">scGen、scFoundation 預測「擾動後表現變化」的不確定性——對 CRISPR 設計優先級至關重要。Cleary et al. (2024) 提出 conformal-wrapped foundation models 用於 in silico screen 的可靠性。</p>
+<p data-lang="en">Quantify uncertainty of perturbation effect predictions from scGen, scFoundation — critical for CRISPR design prioritization. Cleary et al. (2024) on conformal-wrapped foundation models for in silico screen reliability.</p></div>
+
+<div class="card"><h4 data-zh="病理影像分類" data-en="Pathology image classification">病理影像分類</h4>
+<p data-lang="zh">CONFLARE (Lu 2024, Nature Med)：把 Foundation model（如 UNI、CONCH）包 conformal——對診斷不確定的 slide 給出「可能診斷集合」+ flag 給病理醫師覆核。已通過 FDA 510(k) clearance pathway 的部分審查標準。</p>
+<p data-lang="en">CONFLARE (Lu 2024, Nature Med): conformalized pathology foundation models (UNI, CONCH) — uncertain slides flagged with possible diagnosis sets for pathologist review. Partially meets FDA 510(k) clearance criteria.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Conformal 的陷阱、進階變體與最新動態" data-en="Pitfalls, Advanced Variants, Latest Trends">Conformal 的陷阱、進階變體與最新動態</h2>
+
+<div data-lang="zh">
+<h3>① Exchangeability 是真假設</h3>
+<p>「Distribution-free」常被誤解為「沒有任何假設」。實際上 conformal 需要 calibration 與 test 互可交換（exchangeable）——對 IID 資料天然成立，但對<strong>時間序列、空間資料、共變量偏移</strong>會失敗。例如用 2019 訓練的模型對 2024 病人做 conformal，因為 distribution shift 覆蓋率會掉。</p>
+
+<h3>② Marginal vs Conditional Coverage</h3>
+<p>標準 conformal 保證 marginal coverage：P(Y ∈ C(X)) ≥ 1−α，<strong>跨所有 X 平均</strong>。但對特定子群（rare cell type、minority population）覆蓋率可能 &lt; 1−α！這是 Vovk 2012 的著名 impossibility result：嚴格 conditional coverage 對連續 X 不可能達成（只能 trivial intervals）。實務折衷：<strong>group-conditional conformal</strong> — 對重要子群分別校準。</p>
+
+<h3>③ Distribution Shift 怎麼辦？</h3>
+<p>多種變體應對：</p>
+<ul>
+<li><strong>Weighted conformal (Tibshirani 2019, NeurIPS)：</strong>已知 likelihood ratio 時，重新加權 calibration scores。</li>
+<li><strong>Adaptive conformal inference (Gibbs 2021, NeurIPS)：</strong>online 設定下，自動調整 α 維持長期覆蓋率。</li>
+<li><strong>Conformalized cross-covariate shift (Lei 2021)：</strong>已知特徵分布變但 P(Y|X) 不變時。</li>
+</ul>
+
+<h3>④ Set Size 怎麼最小化？</h3>
+<p>不同 non-conformity score 給不同 set size。重要選擇：</p>
+<ul>
+<li><strong>1 − f̂(X)[y]：</strong>最簡單，但 set 不夠 adaptive。</li>
+<li><strong>APS (Romano 2020)：</strong>累積機率，set 大小依條件不確定性自動調整。</li>
+<li><strong>RAPS (Angelopoulos 2021)：</strong>regularized APS，懲罰 large set，set 平均小 30–50%。</li>
+<li><strong>Conformal score based on energy / likelihood：</strong>對生成模型友善。</li>
+</ul>
+
+<h3>⑤ Conformal 與 Bayesian 的關係</h3>
+<p>表面上類似（都量化不確定性），但本質不同：</p>
+<ul>
+<li><strong>Bayesian：</strong>posterior credible interval — 給「在我先驗下，Y 在這區間的機率」。需要 prior + 模型正確。</li>
+<li><strong>Conformal：</strong>frequentist coverage — 給「重複實驗下，這區間包含 Y 的長期頻率」。不需 prior，模型可錯但保證仍成立。</li>
+</ul>
+<p>實務上常結合：用 Bayesian NN 的 posterior std 作為 conformal 的 non-conformity score，得到 calibrated Bayesian credible intervals (Stanton 2023)。</p>
+
+<h3>⑥ Multi-label 與 Structured Prediction</h3>
+<p>對 GO term 等 multi-label 任務，conformal 可給「label set 集合」而非 label。對序列、樹結構的 structured conformal 是 active research area (Cauchois 2021, AOS)。</p>
+
+<h3>⑦ 與 LLM 的結合</h3>
+<p>2024 大爆發：對 LLM 輸出做 conformal — 給「可能正確答案的集合」。對 medical QA、CRISPR target 推薦特別重要。Quach et al. (2024, ICLR) 提出 conformal language modeling，把 LLM 包成可靠 advisor。</p>
+
+<h3>⑧ Conditional → Localized Conformal</h3>
+<p>Guan (2023, Biometrika) 與 LCV (Locally Adaptive Conformal Validation) 用 kernel 或 NN 局部校準——對 conditional coverage 的最佳實務逼近。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Exchangeability Is a Real Assumption</h3>
+<p>"Distribution-free" is often misread as "assumption-free." Conformal needs calibration and test to be exchangeable — natural for IID but fails under <strong>time series, spatial data, covariate shift</strong>. A model trained on 2019 data run conformal on 2024 patients loses coverage due to distribution shift.</p>
+
+<h3>② Marginal vs Conditional Coverage</h3>
+<p>Standard conformal guarantees marginal coverage: P(Y ∈ C(X)) ≥ 1−α <strong>averaged over X</strong>. But specific subgroups (rare cell types, minority populations) may have coverage &lt; 1−α. Vovk 2012's famous impossibility result: strict conditional coverage for continuous X is impossible (only trivial intervals). Practical compromise: <strong>group-conditional conformal</strong> — calibrate per important subgroup.</p>
+
+<h3>③ What About Distribution Shift?</h3>
+<p>Several variants:</p>
+<ul>
+<li><strong>Weighted conformal (Tibshirani 2019, NeurIPS):</strong> reweight calibration scores by known likelihood ratio.</li>
+<li><strong>Adaptive conformal inference (Gibbs 2021, NeurIPS):</strong> online setting — auto-adjust α to maintain long-term coverage.</li>
+<li><strong>Conformalized covariate shift (Lei 2021):</strong> for known shift in P(X) but stable P(Y|X).</li>
+</ul>
+
+<h3>④ Minimizing Set Size</h3>
+<p>Different scores give different set sizes:</p>
+<ul>
+<li><strong>1 − f̂(X)[y]:</strong> simplest, not adaptive.</li>
+<li><strong>APS (Romano 2020):</strong> cumulative probability, set size adapts.</li>
+<li><strong>RAPS (Angelopoulos 2021):</strong> regularized APS — 30–50% smaller average sets.</li>
+<li><strong>Energy/likelihood scores:</strong> friendly for generative models.</li>
+</ul>
+
+<h3>⑤ Conformal vs Bayesian</h3>
+<p>Superficially similar (both quantify uncertainty), fundamentally different:</p>
+<ul>
+<li><strong>Bayesian:</strong> credible interval — "given my prior, probability Y in this interval". Needs prior + correct model.</li>
+<li><strong>Conformal:</strong> frequentist coverage — "long-run frequency this interval contains Y under repeated sampling". No prior; model can be wrong, guarantee still holds.</li>
+</ul>
+<p>Often combined: use Bayesian NN's posterior std as conformal non-conformity score — get calibrated Bayesian credible intervals (Stanton 2023).</p>
+
+<h3>⑥ Multi-label and Structured Prediction</h3>
+<p>For GO terms (multi-label), conformal can output "set of label sets". Structured conformal for sequences/trees is active research (Cauchois 2021, AOS).</p>
+
+<h3>⑦ Conformal Meets LLMs</h3>
+<p>2024 explosion: conformalized LLM outputs — "set of possibly-correct answers". Critical for medical QA, CRISPR target recommendation. Quach et al. (2024, ICLR) proposed conformal language modeling, turning LLMs into reliable advisors.</p>
+
+<h3>⑧ Conditional → Localized Conformal</h3>
+<p>Guan (2023, Biometrika) and LCV (Locally Adaptive Conformal Validation) use kernel or NN local calibration — best practical approximation to conditional coverage.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Conformal 還能改良哪些任務？" data-en="What Else Can Conformal Improve?">Conformal 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 給 scGPT/Geneformer 預測加 Conformal Sets</h3>
+<p>foundation model 的細胞分群預測常過度自信。Wrapping 成 conformal classifier → 對不確定細胞輸出 prediction set，正確處理 rare cell types 與 OOD samples。<strong>提案：</strong>scGPT-Conformal 作為 atlas-level annotation pipeline。</p>
+
+<h3>🎯 2. 藥物反應信心區間</h3>
+<p>取代 deep ensemble 的耗時 uncertainty，用 conformalized CQR 對 GDSC/PRISM 預測藥物 IC50。<strong>提案：</strong>個人化醫療的 calibrated drug selector。</p>
+
+<h3>🎯 3. CRISPR Target Prioritization</h3>
+<p>對 sgRNA efficacy 預測加 prediction interval — 只挑「lower bound 高的 candidates」。減少 wet lab failure rate。<strong>提案：</strong>CRISPR design 的 risk-aware optimizer。</p>
+
+<h3>🎯 4. Rare Cell Type 偵測</h3>
+<p>conformal 的 ∅（empty prediction set）= 「沒有任何已知類別合適」= 潛在新 cell type。可作為 rare/novel cell type discovery 的自動 flag。</p>
+
+<h3>🎯 5. Spatial 細胞型別不確定圖</h3>
+<p>在 Visium / MERFISH 每個 spot 給 prediction set — 視覺化「不確定區域」（通常是 cell type boundary）。對組織病理 hot-zones 偵測有用。</p>
+
+<h3>🎯 6. Variant Effect Prediction</h3>
+<p>對 VEP（如 AlphaMissense、ESM-2 variant）預測 pathogenicity 加 prediction interval — ClinVar VUS（unknown significance variant）的 risk-aware 分類。</p>
+
+<h3>🎯 7. Multi-modal Data Reliability</h3>
+<p>不同模態（RNA、ATAC、protein）的 conformal set 取交集 = 多重證據確認。對假性 doublet、ambient RNA 樣本特別有用。</p>
+
+<h3>🎯 8. Lineage Tracing 不確定性</h3>
+<p>LARRY、Cospar 的 cell fate 預測加 prediction set — 「這個祖先細胞可能變成 {T cell, NK cell, B cell}」，比 deterministic fate 更誠實。</p>
+
+<h3>🎯 9. Clinical Outcome 預測</h3>
+<p>對病人 5-year survival、treatment response 等 outcome 預測加 conformal interval。配 CQR 給異質寬度區間（高危病人 ↔ 低危病人）。FDA 監管的 next-gen biomarker model。</p>
+
+<h3>🎯 10. Drug-Drug Interaction Discovery</h3>
+<p>對藥物組合的 synergy 預測加 conformal — 在 high-throughput combinatorial screen 中只挑 lower bound 顯示 synergy 的組合。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Conformal Sets for scGPT / Geneformer</h3>
+<p>Foundation cell-type predictions are often over-confident. Conformal wrapping → prediction sets for uncertain cells, properly handles rare types and OOD samples. <strong>Proposal:</strong> scGPT-Conformal as atlas annotation pipeline.</p>
+
+<h3>🎯 2. Calibrated Drug Response Intervals</h3>
+<p>Replace expensive deep-ensemble uncertainty with conformalized CQR on GDSC/PRISM IC50 prediction. <strong>Proposal:</strong> calibrated personalized drug selector.</p>
+
+<h3>🎯 3. CRISPR Target Prioritization</h3>
+<p>Conformal interval on sgRNA efficacy — pick only candidates with high lower bound. Reduces wet-lab failure rates. <strong>Proposal:</strong> risk-aware CRISPR design optimizer.</p>
+
+<h3>🎯 4. Rare Cell Type Detection</h3>
+<p>Empty prediction set (∅) = "no known class fits" = potential novel cell type. Use as automatic flag for novel discovery.</p>
+
+<h3>🎯 5. Spatial Uncertainty Maps</h3>
+<p>Per-spot prediction sets in Visium/MERFISH — visualize "uncertain regions" (typically cell type boundaries). Useful for histopathology hot-zone detection.</p>
+
+<h3>🎯 6. Variant Effect Prediction</h3>
+<p>Add prediction intervals to AlphaMissense, ESM-2 variant pathogenicity — risk-aware classification of ClinVar VUS (variants of unknown significance).</p>
+
+<h3>🎯 7. Multi-modal Reliability</h3>
+<p>Intersect conformal sets across RNA, ATAC, protein modalities = multi-evidence confirmation. Useful for pseudo-doublet, ambient RNA detection.</p>
+
+<h3>🎯 8. Lineage Tracing Uncertainty</h3>
+<p>Conformal sets on LARRY/Cospar cell-fate prediction — "this ancestor may become {T cell, NK cell, B cell}", more honest than deterministic fates.</p>
+
+<h3>🎯 9. Clinical Outcome Prediction</h3>
+<p>Conformal intervals on 5-year survival, treatment response. Use CQR for heteroscedastic widths (high-risk vs low-risk patients). FDA-grade next-gen biomarker models.</p>
+
+<h3>🎯 10. Drug-Drug Interaction Discovery</h3>
+<p>Conformalize synergy prediction in combinatorial screens — only pick combos with high synergy lower bound.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'mapie1')">Python / MAPIE</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scratch1')">Split Conformal from scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / conformal</button>
+</div>
+
+<div class="code-tab-content active" id="mapie1"><pre><span class="comment"># pip install mapie</span>
+<span class="keyword">from</span> mapie.classification <span class="keyword">import</span> MapieClassifier
+<span class="keyword">from</span> sklearn.ensemble <span class="keyword">import</span> RandomForestClassifier
+
+<span class="comment"># Any sklearn-compatible classifier</span>
+clf = RandomForestClassifier()
+mapie = MapieClassifier(clf, method=<span class="str">"aps"</span>, cv=<span class="str">"split"</span>)
+mapie.fit(X_train, y_train)
+
+<span class="comment"># Prediction sets with 95% coverage guarantee</span>
+y_pred, y_sets = mapie.predict(X_test, alpha=<span class="num">0.05</span>)
+<span class="comment"># y_sets[i] is a boolean array; True = class in the set</span>
+
+<span class="comment"># Regression with conformalized quantile regression</span>
+<span class="keyword">from</span> mapie.regression <span class="keyword">import</span> MapieQuantileRegressor
+mqr = MapieQuantileRegressor(estimator=<span class="str">"quantile"</span>, alpha=<span class="num">0.1</span>)
+mqr.fit(X_tr, y_tr)
+y_pred, y_pis = mqr.predict(X_te)
+<span class="comment"># y_pis: (lower, upper) intervals</span></pre></div>
+
+<div class="code-tab-content" id="scratch1"><pre><span class="comment"># Pure NumPy — for clarity</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> split_conformal_classification(probs_cal, y_cal, probs_test, alpha=<span class="num">0.05</span>):
+    <span class="str">"""
+    probs_cal: (n_cal, n_classes) — model softmax on calibration
+    y_cal:     (n_cal,) — true labels
+    probs_test: (n_test, n_classes)
+    Returns: prediction_sets as (n_test, n_classes) bool array
+    """</span>
+    n = len(y_cal)
+    <span class="comment"># 1. Non-conformity scores: 1 - prob of true class</span>
+    scores = <span class="num">1</span> - probs_cal[np.arange(n), y_cal]
+    <span class="comment"># 2. Quantile threshold (finite-sample correction)</span>
+    q_level = np.ceil((n+<span class="num">1</span>) * (<span class="num">1</span>-alpha)) / n
+    q_hat = np.quantile(scores, q_level, method=<span class="str">"higher"</span>)
+    <span class="comment"># 3. Prediction set = classes with high enough probability</span>
+    pred_sets = probs_test &gt;= (<span class="num">1</span> - q_hat)
+    <span class="keyword">return</span> pred_sets
+
+<span class="comment"># Usage</span>
+sets = split_conformal_classification(p_cal, y_cal, p_test, alpha=<span class="num">0.10</span>)
+print(<span class="str">"Avg set size:"</span>, sets.sum(axis=<span class="num">1</span>).mean())
+print(<span class="str">"Empirical coverage:"</span>, sets[np.arange(len(y_test)), y_test].mean())</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages("conformal")</span>
+<span class="keyword">library</span>(conformal)
+<span class="keyword">library</span>(randomForest)
+
+<span class="comment"># Train base model</span>
+fit &lt;- randomForest(y ~ ., data = train_df)
+
+<span class="comment"># Conformal regression intervals (alpha = 0.1 → 90% coverage)</span>
+res &lt;- conformal.pred.split(
+  x = X_train, y = y_train,
+  x0 = X_test,
+  alpha = <span class="num">0.1</span>,
+  train.fun = <span class="keyword">function</span>(x,y) randomForest(x, y),
+  predict.fun = <span class="keyword">function</span>(fit, x) predict(fit, x)
+)
+<span class="comment"># res$lo, res$up — prediction intervals</span>
+
+<span class="comment"># R package "cfcausal" — conformal for causal inference</span>
+<span class="comment"># R package "icp" — Inductive Conformal Prediction</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Conformal prediction 的核心保證是什麼？</p><p data-lang="en">What is conformal prediction's core guarantee?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 模型 accuracy ≥ 1−α</span><span data-lang="en">A. Model accuracy ≥ 1−α</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. P(Y<sub>test</sub> ∈ C(X<sub>test</sub>)) ≥ 1−α，不需 distribution 假設</span><span data-lang="en">B. P(Y<sub>test</sub> ∈ C(X<sub>test</sub>)) ≥ 1−α, distribution-free</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 模型一定是 Bayesian optimal</span><span data-lang="en">C. Model is necessarily Bayesian optimal</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Prediction set 永遠只有一個 class</span><span data-lang="en">D. Prediction set always contains one class</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">下列哪個假設 conformal prediction 「必須」依賴？</p><p data-lang="en">Which assumption does conformal prediction <strong>require</strong>?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 資料服從 Gaussian</span><span data-lang="en">A. Gaussian-distributed data</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 模型是 Bayesian</span><span data-lang="en">B. Model is Bayesian</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Calibration 與 test set 互可交換（exchangeability，IID 即可）</span><span data-lang="en">C. Calibration and test set are exchangeable (IID suffices)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 樣本數 n &gt; 10000</span><span data-lang="en">D. Sample size n &gt; 10000</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">在 scRNA-seq cell-type 註釋中，conformal prediction 的「empty set」最可能表示什麼？</p><p data-lang="en">In scRNA-seq cell-type annotation, what does conformal's "empty set" most likely indicate?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 細胞可能屬於某個 OOD（未見過）的 novel cell type</span><span data-lang="en">A. Cell may belong to an OOD (unseen) novel cell type</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 模型完全正確的細胞</span><span data-lang="en">B. Cell is perfectly classified</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. α 太大</span><span data-lang="en">C. α is too large</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 沒有資料</span><span data-lang="en">D. No data</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="state-space-mamba.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 18：SSM / Mamba" data-en="Ch 18: SSM / Mamba">Ch 18：SSM / Mamba</span></a>
+<a href="active-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 20：主動學習 / BO" data-en="Ch 20: Active Learning / BO">Ch 20：主動學習 / BO</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Simulated conformal experiment =====
+const NCLS=10, NTEST=2000, NCAL=1000;
+// Pre-generate fixed test/cal data: each sample has "true class" and softmax probs
+function softmax(z){const m=Math.max(...z);const e=z.map(v=>Math.exp(v-m));const s=e.reduce((a,b)=>a+b,0);return e.map(v=>v/s);}
+function gaussian(){let u=Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+// Generate a fixed seed dataset
+function genData(n,sharp){const out=[];for(let i=0;i<n;i++){const ytrue=Math.floor(Math.random()*NCLS);const logits=Array.from({length:NCLS},()=>gaussian()*0.5);logits[ytrue]+=sharp;out.push({y:ytrue,p:softmax(logits)});}return out;}
+
+function quantile(arr,q){const s=[...arr].sort((a,b)=>a-b);const idx=Math.min(s.length-1,Math.ceil((s.length+1)*q)-1);return s[Math.max(0,idx)];}
+
+const ctx=document.getElementById('confChart');
+const confChart=new Chart(ctx,{type:'bar',data:{labels:[],datasets:[
+  {label:'Avg set size',data:[],backgroundColor:'rgba(26,107,90,0.6)',yAxisID:'y1'},
+  {type:'line',label:'Empirical coverage',data:[],borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,0.1)',tension:0.2,pointRadius:4,borderWidth:2.5,yAxisID:'y2'},
+  {type:'line',label:'Target 1−α',data:[],borderColor:'#666',borderDash:[6,4],pointRadius:0,borderWidth:2,yAxisID:'y2'}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{title:{display:true,text:'α'}},y1:{type:'linear',position:'left',title:{display:true,text:'Avg set size'},min:0},y2:{type:'linear',position:'right',title:{display:true,text:'Coverage'},min:0.5,max:1.05,grid:{drawOnChartArea:false}}}}});
+
+function update(){
+  const a=+document.getElementById('sA').value;
+  const sharp=+document.getElementById('sQ').value;
+  document.getElementById('vA').textContent=a.toFixed(2);
+  document.getElementById('vQ').textContent=sharp.toFixed(1);
+  // Fresh sim
+  const cal=genData(NCAL,sharp);
+  const test=genData(NTEST,sharp);
+  // Score=1-p[ytrue]
+  const scores=cal.map(s=>1-s.p[s.y]);
+  // Sweep alpha for plot
+  const alphas=[0.01,0.05,0.10,0.15,0.20,0.25,0.30];
+  const sizes=[],covs=[],targets=[];
+  for(const al of alphas){
+    const qhat=quantile(scores,1-al);
+    let cov=0,sz=0;
+    for(const t of test){
+      const set=t.p.map(p=>p>=(1-qhat));
+      sz+=set.filter(x=>x).length;
+      if(set[t.y])cov++;
+    }
+    sizes.push(sz/test.length);covs.push(cov/test.length);targets.push(1-al);
+  }
+  confChart.data.labels=alphas;
+  confChart.data.datasets[0].data=sizes;
+  confChart.data.datasets[1].data=covs;
+  confChart.data.datasets[2].data=targets;
+  confChart.update('none');
+  // Stats at current alpha
+  const qhat=quantile(scores,1-a);
+  let cov=0,sz=0;
+  for(const t of test){const set=t.p.map(p=>p>=(1-qhat));sz+=set.filter(x=>x).length;if(set[t.y])cov++;}
+  const emp=cov/test.length,avg=sz/test.length;
+  document.getElementById('targetCov').textContent=((1-a)*100).toFixed(0)+'%';
+  document.getElementById('empCov').textContent=(emp*100).toFixed(1)+'%';
+  document.getElementById('avgSize').textContent=avg.toFixed(2);
+  const lang=(window.I18n&&I18n.get())||'zh';
+  const msg=lang==='zh'?
+    `α=${a.toFixed(2)} → 目標覆蓋率 ${((1-a)*100).toFixed(0)}%。實證覆蓋率 ${(emp*100).toFixed(1)}% ✓（≥ 目標）。平均 prediction set 含 ${avg.toFixed(2)} 個類別。模型銳利度 ${sharp.toFixed(1)} 越高，set 越小越精準。`:
+    `α=${a.toFixed(2)} → target coverage ${((1-a)*100).toFixed(0)}%. Empirical coverage ${(emp*100).toFixed(1)}% ✓ (≥ target). Average prediction set contains ${avg.toFixed(2)} classes. Sharper model (sharpness ${sharp.toFixed(1)}) → smaller, more precise sets.`;
+  document.getElementById('confInterp').innerHTML=msg;
+}
+document.getElementById('sA').addEventListener('input',update);
+document.getElementById('sQ').addEventListener('input',update);
+document.addEventListener('langchange',update);
+update();
+
+window._QF={zh:{
+  q1_y:'答對！這就是 conformal 的數學承諾——distribution-free finite-sample coverage。',
+  q1_n:'答案是 B。Conformal 提供有限樣本、無分布假設的覆蓋率保證。',
+  q2_y:'答對！Exchangeability 是 conformal 的核心假設（比 IID 弱一點）。',
+  q2_n:'答案是 C。Conformal 需要 calibration 與 test 互可交換，IID 即可滿足。',
+  q3_y:'答對！Empty set 表示沒有任何已知類別「足夠像」 — 強烈暗示 OOD。',
+  q3_n:'答案是 A。Empty prediction set 暗示樣本與所有已知類別都不夠像。'
+},en:{
+  q1_y:'Correct! That\'s conformal\'s mathematical promise — distribution-free finite-sample coverage.',
+  q1_n:'Answer is B. Conformal gives finite-sample, distribution-free coverage guarantees.',
+  q2_y:'Correct! Exchangeability is the core assumption (slightly weaker than IID).',
+  q2_n:'Answer is C. Conformal needs calibration and test to be exchangeable; IID suffices.',
+  q3_y:'Correct! Empty set means no known class is "similar enough" — strongly hints OOD.',
+  q3_n:'Answer is A. Empty prediction sets suggest the sample is unlike any known class.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=(window.I18n&&I18n.get())||'zh';fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

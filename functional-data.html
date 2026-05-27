@@ -1,0 +1,625 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Functional Data Analysis — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html" class="active">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 46 / 50</div><h1 data-zh="泛函資料分析 (Functional Data Analysis)" data-en="Functional Data Analysis">泛函資料分析 (Functional Data Analysis)</h1>
+<p class="subtitle" data-lang="zh">把每筆資料看成一條「函式」而非數列——Ramsay & Silverman (2005) 經典框架。連續血糖、24h gene expression、fMRI BOLD、wearable signals 都是「曲線資料」，FPCA、functional regression 是處理它們的天然語言。</p>
+<p class="subtitle" data-lang="en">Treat each observation as a function rather than a sequence — the Ramsay & Silverman (2005) framework. Continuous glucose, 24h gene expression, fMRI BOLD, wearables — all are "curve data". FPCA and functional regression are their native language.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為什麼把資料看成函式？" data-en="Why View Data as Functions?">為什麼把資料看成函式？</h2>
+<div data-lang="zh">
+<p><strong>傳統 multivariate 視角的問題：</strong>若把 24h 內每小時測量的血糖視為 24 維向量，PCA 完全忽略「相鄰小時應該相關、應該光滑」的事實。同樣的數據如果採樣時間錯位（patient A 整點測、patient B 半點測），向量根本無法對齊。</p>
+<p><strong>FDA 的核心觀點 (Ramsay & Silverman 2005)：</strong>每筆觀測是一條<strong>函式</strong> x_i(t)，t ∈ [a, b] 是連續參數（時間、波長、空間位置）。資料的 dimension 是「無限」（function space），但實際只在有限離散點觀測 + 帶雜訊。</p>
+<p><strong>基底函式展開：</strong>用 K 個基底函式 φ_k(t)（splines、Fourier、wavelets）表示函式：</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i(t) = Σ_{k=1}^K c_{ik} φ_k(t)</p>
+<p>於是「無限維函式」變成「K 維係數向量 c_i」。<strong>關鍵差別：</strong>基底是光滑的，所以 c_i 自然編碼了 smoothness 結構；標準 multivariate 做不到這點。</p>
+<p><strong>常用基底：</strong></p>
+<ul>
+<li><strong>B-splines：</strong>局部支撐、可控光滑度 — 最常用，適合非周期資料。</li>
+<li><strong>Fourier：</strong>適合周期資料（circadian、cell cycle）。</li>
+<li><strong>Wavelets：</strong>適合多尺度 / 局部峰值（NMR spectra、ECG）。</li>
+<li><strong>RBF / Gaussian kernels：</strong>適合 scattered 不規則觀測（與 GP 等價）。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p><strong>The multivariate problem:</strong> Treating 24h hourly glucose as a 24-D vector ignores the fact that adjacent hours should be correlated and the function should be smooth. If patient A measures on the hour and patient B on the half-hour, the vectors don't even align.</p>
+<p><strong>FDA's core view (Ramsay & Silverman 2005):</strong> each observation is a <strong>function</strong> x_i(t), t ∈ [a, b] is a continuous parameter (time, wavelength, space). Data is infinite-dimensional (function space), observed only at finite, noisy points.</p>
+<p><strong>Basis expansion:</strong> represent each function with K basis functions φ_k(t) (splines, Fourier, wavelets):</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_i(t) = Σ_{k=1}^K c_{ik} φ_k(t)</p>
+<p>The "infinite-dim function" becomes a "K-D coefficient vector c_i". <strong>Key difference:</strong> the basis is smooth, so c_i naturally encodes smoothness — standard multivariate analysis cannot.</p>
+<p><strong>Common bases:</strong></p>
+<ul>
+<li><strong>B-splines:</strong> compact support, controlled smoothness — most common, for non-periodic data.</li>
+<li><strong>Fourier:</strong> periodic data (circadian, cell cycle).</li>
+<li><strong>Wavelets:</strong> multiscale / local peaks (NMR spectra, ECG).</li>
+<li><strong>RBF / Gaussian kernels:</strong> scattered irregular sampling (equivalent to GP).</li>
+</ul>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📈</div><h4 data-zh="函式 = 一筆資料" data-en="Function = one datum">函式 = 一筆資料</h4><p data-lang="zh">每位患者一條 24h 血糖曲線 → 1 筆 FDA 資料，不是 24 筆。</p><p data-lang="en">Each patient's 24h glucose curve = 1 FDA datum (not 24).</p></div>
+  <div class="card"><div class="card-icon">🌊</div><h4 data-zh="光滑性內建" data-en="Smoothness built-in">光滑性內建</h4><p data-lang="zh">基底展開天然光滑，無需事後 smoothing；可控連續可微階數。</p><p data-lang="en">Basis expansion is intrinsically smooth — no post-hoc smoothing needed; differentiability controlled.</p></div>
+  <div class="card"><div class="card-icon">🔬</div><h4 data-zh="FPCA 找主模態" data-en="FPCA finds main modes">FPCA 找主模態</h4><p data-lang="zh">解 covariance operator 的 eigenfunctions — 第 1 主成分 = 「最主要的曲線變異」。</p><p data-lang="en">Eigenfunctions of the covariance operator — PC1 = "dominant curve-shape variation".</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 raw curves 到 FPCA 與 functional regression" data-en="From Raw Curves to FPCA and Functional Regression">從 raw curves 到 FPCA 與 functional regression</h2>
+<div data-lang="zh">
+<p><strong>① Smoothing 與基底擬合：</strong>給定 noisy observations {(t_{ij}, y_{ij})}，用 penalized least squares 擬合每條 x_i(t)：</p>
+<p style="text-align:center;font-family:Georgia,serif;">argmin_{c_i} Σ_j (y_{ij} − Σ_k c_{ik} φ_k(t_{ij}))² + λ ∫ (D²x_i(t))² dt</p>
+<p>第二項是<strong>roughness penalty</strong>（二階導數平方積分），λ 控制光滑度。最佳 λ 用 generalized cross-validation (GCV) 選。</p>
+
+<p><strong>② FPCA (Functional PCA, Ramsay 2005)：</strong>函式版 PCA。先計算 sample covariance function</p>
+<p style="text-align:center;font-family:Georgia,serif;">v(s, t) = (1/n) Σ_i (x_i(s) − x̄(s))(x_i(t) − x̄(t))</p>
+<p>解 eigenvalue problem ∫ v(s, t) ξ_k(t) dt = λ_k ξ_k(s)，得到一系列 eigenfunctions ξ_k(t)。第 k 個 FPC score 為 s_{ik} = ∫(x_i(t) − x̄(t)) ξ_k(t) dt。一個典型結果是前 3–5 個 FPC 解釋 > 95% variance。</p>
+
+<p><strong>③ Sparse FPCA (Yao et al. 2005, JASA)：</strong>當每位 subject 只有少數 irregular sampling 點（如 longitudinal study），不能逐 subject smoothing。改為 <strong>borrow strength across subjects</strong>：把所有 (i, j) 點當 scattered observation，估計 mean function μ(t) 與 covariance function v(s, t)，然後對每位 subject 用 conditional expectation 預測 FPC score（PACE algorithm）。<strong>單細胞 longitudinal 資料的核心方法。</strong></p>
+
+<p><strong>④ Functional Linear Regression：</strong></p>
+<ul>
+<li><strong>Scalar-on-function：</strong>y_i (scalar) = α + ∫ β(t) x_i(t) dt + ε_i。係數函式 β(t) 用 basis 展開，係數 λ-penalize 估計。</li>
+<li><strong>Function-on-scalar：</strong>x_i(t) = α(t) + β(t) z_i + ε_i(t)（每位 subject 的曲線是 covariate 的函式）。</li>
+<li><strong>Function-on-function：</strong>y_i(s) = α(s) + ∫ β(s, t) x_i(t) dt + ε_i(s)。最一般、但需更多資料。</li>
+</ul>
+
+<p><strong>⑤ Multivariate / Multi-dimensional FDA：</strong>每筆資料是「多條曲線」（如 multi-channel ECG）→ 用 product basis 或共同 covariance。Chen et al. (2017) 提 functional manifold learning，允許函式分布在 manifold 上。</p>
+
+<p><strong>⑥ Deep FDA：</strong>近年用 neural network 學 functional representation：NN 從 dense observations 預測 mean + variance + warping (curve registration)。比 splines 更靈活，但需要更多資料。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Smoothing and basis fitting:</strong> Given noisy observations {(t_{ij}, y_{ij})}, fit each x_i(t) by penalized least squares:</p>
+<p style="text-align:center;font-family:Georgia,serif;">argmin_{c_i} Σ_j (y_{ij} − Σ_k c_{ik} φ_k(t_{ij}))² + λ ∫ (D²x_i(t))² dt</p>
+<p>The second term is the <strong>roughness penalty</strong> (integrated squared second derivative); λ controls smoothness. Choose λ by generalized cross-validation (GCV).</p>
+
+<p><strong>② FPCA (Functional PCA, Ramsay 2005):</strong> Function-valued PCA. Compute sample covariance function</p>
+<p style="text-align:center;font-family:Georgia,serif;">v(s, t) = (1/n) Σ_i (x_i(s) − x̄(s))(x_i(t) − x̄(t))</p>
+<p>Solve ∫ v(s, t) ξ_k(t) dt = λ_k ξ_k(s) for eigenfunctions ξ_k(t). The k-th FPC score is s_{ik} = ∫(x_i(t) − x̄(t)) ξ_k(t) dt. Typically the first 3–5 FPCs explain > 95% of variance.</p>
+
+<p><strong>③ Sparse FPCA (Yao et al. 2005, JASA):</strong> When each subject has only a few irregular observations (longitudinal studies), per-subject smoothing fails. Instead <strong>borrow strength across subjects</strong>: treat all (i, j) as scattered points; estimate μ(t) and v(s, t); predict each subject's FPC scores via conditional expectation (PACE algorithm). <strong>The core method for single-cell longitudinal data.</strong></p>
+
+<p><strong>④ Functional Linear Regression:</strong></p>
+<ul>
+<li><strong>Scalar-on-function:</strong> y_i (scalar) = α + ∫ β(t) x_i(t) dt + ε_i. Coefficient function β(t) is basis-expanded and λ-penalized.</li>
+<li><strong>Function-on-scalar:</strong> x_i(t) = α(t) + β(t) z_i + ε_i(t) (each subject's curve is a function of a covariate).</li>
+<li><strong>Function-on-function:</strong> y_i(s) = α(s) + ∫ β(s, t) x_i(t) dt + ε_i(s). Most general but data-hungry.</li>
+</ul>
+
+<p><strong>⑤ Multivariate / multi-dimensional FDA:</strong> Each datum is multiple curves (e.g. multi-channel ECG) → product basis or joint covariance. Chen et al. (2017) propose functional manifold learning when functions lie on a manifold.</p>
+
+<p><strong>⑥ Deep FDA:</strong> Recent NN models learn functional representations: a network predicts mean + variance + warping (curve registration) from dense observations. More flexible than splines, more data-hungry.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Curve registration (時間對齊) 的重要性：</strong>不同 subject 的「事件」可能在不同時間發生（如 menstrual cycle 不同 phase；藥物 onset 早晚不一）。Amplitude variation（曲線形狀差異）與 phase variation（時間錯位）若不分開，FPCA 第一主成分常常只是「時間錯位」。Marron et al. (2015) 推薦先做 warping（如 SRSF, Srivastava 2011）再做 FPCA。</div>
+<div data-lang="en"><strong>Curve registration matters:</strong> events may occur at different times across subjects (menstrual phase; drug onset). Without separating amplitude vs phase variation, FPC1 often just captures time misalignment. Marron et al. (2015) recommend warping first (e.g. SRSF, Srivastava 2011) then FPCA.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Raw curves → smoothed → FPCA modes" data-en="Raw curves → smoothed → FPCA modes">Raw curves → smoothed → FPCA modes</h2>
+<div data-lang="zh"><p>下方顯示 20 條合成 24h gene expression 曲線（混合 circadian + 個體差異 + 雜訊）。切換 view 觀察：(1) <strong>原始 noisy</strong> 觀測 → (2) <strong>smoothed</strong> 曲線（用 Fourier 基底擬合）→ (3) <strong>FPC1 modes</strong>（mean ± 2σ × eigenfunction，展示「主要變異模式」）。調整 K（基底數）與 λ（光滑 penalty）。</p></div>
+<div data-lang="en"><p>20 synthetic 24h gene expression curves below (circadian + subject variability + noise). Switch views: (1) <strong>raw noisy</strong> → (2) <strong>smoothed</strong> (Fourier basis) → (3) <strong>FPC1 modes</strong> (mean ± 2σ × eigenfunction, the dominant variation pattern). Adjust K (basis count) and λ (smoothing penalty).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="顯示模式" data-en="View">顯示模式</label>
+  <select id="viewMode" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="raw">(1) Raw noisy curves</option>
+    <option value="smooth" selected>(2) Smoothed (Fourier basis)</option>
+    <option value="fpca">(3) FPC1 modes (mean ± 2σ ξ₁)</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="基底數 K" data-en="Basis count K">基底數 K <span id="vK">7</span></label><input type="range" id="sK" min="3" max="15" value="7" step="2"></div>
+<div class="slider-group"><label data-zh="光滑 penalty λ" data-en="Smoothing penalty λ">光滑 penalty λ <span id="vL">0.5</span></label><input type="range" id="sL" min="0" max="3" value="0.5" step="0.05"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnRes" class="toggle-btn"><span data-zh="重抽樣" data-en="Resample">重抽樣</span></button>
+</div>
+<canvas id="fdaChart" style="width:100%;max-height:380px;background:#fafafa;border-radius:6px;"></canvas>
+<div id="fdaInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 FDA？" data-en="When to use FDA?">什麼時候用 FDA？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>密集連續取樣</strong>——CGM 每 5 min 一筆、24h gene expression、fMRI BOLD：FDA 是首選。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>Longitudinal 稀疏資料</strong>——每 subject 只 5–10 個不規則時間點：Sparse FPCA (Yao 2005) 借用 cross-subject 資訊。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>Spectroscopy / 連續波長資料</strong>——NMR / Raman / mass spec 譜線天然是函式。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>真正 discrete 的 categorical 序列（如 amino acid sequence）；應該用 sequence model 而非 FDA。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Dense continuous sampling</strong> — CGM every 5 min, 24h gene expression, fMRI BOLD: FDA is the default.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Sparse longitudinal</strong> — only 5–10 irregular timepoints per subject: Sparse FPCA (Yao 2005) borrows across subjects.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Spectroscopy / continuous wavelength</strong> — NMR / Raman / mass spec are intrinsically functional.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Truly discrete categorical sequences (amino acids) — use sequence models, not FDA.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="FDA 在生物與醫學的應用" data-en="FDA in Biology and Medicine">FDA 在生物與醫學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="連續血糖監測 (CGM)" data-en="Continuous Glucose Monitoring">連續血糖監測 (CGM)</h4>
+<p data-lang="zh">CGM 每 5 min 一筆血糖，每位糖尿病患者一天 288 點。Wang et al. (2018, Diabetes Care) 用 FPCA 把 24h 曲線壓縮成 3–4 個 FPC scores，預測 HbA1c、低血糖風險、用藥反應，比 mean / time-in-range 更敏感。</p>
+<p data-lang="en">CGM samples every 5 min, 288 points/day per diabetic. Wang et al. (2018, Diabetes Care) compress 24h curves to 3–4 FPCs, predicting HbA1c, hypoglycemia risk, drug response — more sensitive than mean / time-in-range.</p></div>
+
+<div class="card"><h4 data-zh="24h Circadian gene expression" data-en="24h Circadian gene expression">24h Circadian gene expression</h4>
+<p data-lang="zh">JTK_CYCLE、MetaCycle 等檢定週期性的工具用 Fourier basis FDA 處理時序 microarray / RNA-seq——找出 BMAL1, PER, CRY 等核心 clock gene 與下游 oscillating genes。</p>
+<p data-lang="en">JTK_CYCLE, MetaCycle and related rhythm-detection tools use Fourier-basis FDA on time-series microarray / RNA-seq — identifying BMAL1, PER, CRY and downstream oscillating genes.</p></div>
+
+<div class="card"><h4 data-zh="fMRI BOLD 訊號" data-en="fMRI BOLD">fMRI BOLD 訊號</h4>
+<p data-lang="zh">每體素的 BOLD 時序是一條 functional curve。Functional regression 把 task condition (covariate) 對應到 BOLD 響應（function-on-scalar），優於傳統 GLM 點對點分析。Lindquist (2008, Stat Sci) 是綜述。</p>
+<p data-lang="en">Each voxel's BOLD time-course is a functional curve. Function-on-scalar regression maps task condition to BOLD response, beating pointwise GLM. Lindquist (2008, Stat Sci) reviews this.</p></div>
+
+<div class="card"><h4 data-zh="動態心電圖 / Holter" data-en="Holter ECG dynamics">動態心電圖 / Holter</h4>
+<p data-lang="zh">24h Holter 監護生成連續 ECG 曲線。FDA 用於 QT interval dynamics、HRV functional analysis，預測心血管事件比單點測量更早。已嵌入部分 ICU 風險評分。</p>
+<p data-lang="en">24h Holter monitoring yields continuous ECG. FDA analyzes QT-interval dynamics, functional HRV — predicting cardiovascular events earlier than single measurements. Embedded in some ICU risk scores.</p></div>
+
+<div class="card"><h4 data-zh="Wearable activity curves" data-en="Wearable activity curves">Wearable activity curves</h4>
+<p data-lang="zh">Fitbit / Apple Watch 每分鐘 step count / heart rate 構成 24h 活動曲線。Goldsmith et al. (2015, JASA) 用 multilevel FDA 找「日間活動 pattern」對應 BMI、抑鬱症狀的關聯。</p>
+<p data-lang="en">Fitbit / Apple Watch generate 24h step / HR curves. Goldsmith et al. (2015, JASA) use multilevel FDA to associate daytime activity patterns with BMI, depression symptoms.</p></div>
+
+<div class="card"><h4 data-zh="連續單細胞軌跡" data-en="Continuous scRNA trajectory">連續單細胞軌跡</h4>
+<p data-lang="zh">Pseudotime 上的 gene expression 是 t 的函式。Yao 2005 sparse FPCA 是 pseudotime-by-gene matrix 的天然分析框架——每個 gene 是一條曲線，可分群（waves）、做 functional regression 找 driver。Campbell & Yau (2018) 早期工作示範這個方向。</p>
+<p data-lang="en">Gene expression along pseudotime is a function of t. Yao 2005 sparse FPCA is the native framework for pseudotime-by-gene matrices — each gene is a curve, can be clustered (waves), regression finds drivers. Campbell & Yau (2018) demonstrated this direction.</p></div>
+
+<div class="card"><h4 data-zh="連續藥物動力學 PK/PD" data-en="Continuous PK/PD">連續藥物動力學 PK/PD</h4>
+<p data-lang="zh">血藥濃度 vs time 是 functional curve。NONMEM、Phoenix 等 PK 軟體本質都在做 functional model fitting。FDA framework 允許 cross-patient 借用統計力量，比個體 NLME 更穩。</p>
+<p data-lang="en">Plasma concentration vs time is a functional curve. NONMEM, Phoenix essentially perform functional model fitting. FDA enables cross-patient borrowing of statistical power — more stable than per-subject NLME.</p></div>
+
+<div class="card"><h4 data-zh="蛋白動力學模擬" data-en="Protein dynamics simulation">蛋白動力學模擬</h4>
+<p data-lang="zh">MD trajectory 中每殘基 RMSF/距離曲線是 functional data。Krivobokova et al. (2012) 提 functional Procrustes 對齊 MD trajectory，做 trajectory-level clustering 找 conformational families。</p>
+<p data-lang="en">Per-residue RMSF / distance curves in MD trajectories are functional data. Krivobokova et al. (2012) propose functional Procrustes alignment of MD trajectories for trajectory-level clustering into conformational families.</p></div>
+
+<div class="card"><h4 data-zh="FACS / 流式細胞" data-en="FACS / flow cytometry">FACS / 流式細胞</h4>
+<p data-lang="zh">流式細胞每細胞的 marker intensity 經 kinetic stimulation 後是時序——FDA 把 receptor signaling kinetics 視為曲線，FPCA 找響應亞群。Pyne et al. (2009) 是早期應用。</p>
+<p data-lang="en">Flow cytometry marker kinetics post-stimulation are time-series — FDA treats receptor signaling kinetics as curves; FPCA finds responder subpopulations. Pyne et al. (2009) is an early application.</p></div>
+
+<div class="card"><h4 data-zh="細胞代謝率 Seahorse" data-en="Seahorse metabolic rate">細胞代謝率 Seahorse</h4>
+<p data-lang="zh">Seahorse XF 連續測 OCR / ECAR，每 well 一條代謝曲線。FDA 用於比較不同 perturbation 下的 metabolic phenotype curves，比 endpoint analysis 信息更豐富。</p>
+<p data-lang="en">Seahorse XF measures OCR / ECAR continuously — one metabolic curve per well. FDA compares perturbation-induced metabolic phenotype curves, far richer than endpoint analysis.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="FDA 進階主題" data-en="Advanced FDA Topics">FDA 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Mercer 定理與 Karhunen-Loève 展開</h3>
+<p>FDA 的數學基礎：若 covariance function v(s, t) 連續且 positive semi-definite，則 Mercer 定理保證 v(s, t) = Σ_k λ_k ξ_k(s) ξ_k(t)。任意樣本可寫為 x_i(t) = μ(t) + Σ_k s_{ik} ξ_k(t)（Karhunen-Loève expansion）。<strong>這就是 FPCA 的數學基礎</strong>——它跟矩陣 PCA 一模一樣，只是把離散 eigenvalue problem 換成連續 integral equation。</p>
+
+<h3>② Curve registration: SRSF framework</h3>
+<p>Srivastava et al. (2011, JRSSB) 的 Square Root Slope Function (SRSF) 把曲線 x(t) 映成 q(t) = sign(x'(t)) √|x'(t)|，使「amplitude–phase 分離」變成 SRSF 空間中的 Procrustes 對齊問題。比 dynamic time warping 更有理論保證、更穩定。是現代 curve registration 的標準。</p>
+
+<h3>③ Functional manifold learning</h3>
+<p>Chen et al. (2017, JMLR) 的 functional manifold learning：函式不一定分布在 linear function space，可能在 manifold 上（例如蛋白動力學 trajectory 限制在 conformational sub-manifold）。在 SRSF 空間做 Isomap / diffusion map 萃取低維結構。</p>
+
+<h3>④ Functional graphical model</h3>
+<p>把 multivariate functional data 的依賴結構視為「函式版 graph」——Zhu et al. (2016) 的 functional graphical lasso 估計 functional precision operator。對 multi-channel ECG / EEG / multi-region fMRI 都適用。</p>
+
+<h3>⑤ Density-valued FDA</h3>
+<p>當每筆觀測本身是一個機率密度（如每個 subject 的 cell-type composition、microbiome distribution），它在 Bayes-Hilbert space 上是 functional data。Petersen et al. (2022, Stat Sinica) 提供完整 FDA on densities 框架，已用於 microbiome longitudinal 與 connectome density。</p>
+
+<h3>⑥ 高維 FDA 的挑戰</h3>
+<p>「many curves, many time points, few subjects」是現代生物資料的典型問題（如 scRNA pseudotime + 20,000 gene）。標準 FPCA 在 high-dim 失效——需要稀疏化（sparse FPCA）、low-rank + sparse decomposition (e.g. FunRPCA)，或先用 NMF / autoencoder 降維。</p>
+
+<h3>⑦ 與 Gaussian process 的關係</h3>
+<p>GP 是「函式上的機率分布」，本質上就是 FDA 的貝氏版。GP regression 等價於 RBF basis FDA + 特定先驗。實務差異：FDA 偏向 spline / Fourier basis（解釋性好、計算快），GP 偏向 kernel ridge（不需指定 basis、自動 length-scale）。對小資料 GP 更穩；對大資料 FDA 更可擴展。</p>
+
+<h3>⑧ Deep functional models</h3>
+<p>近年 Deep Functional Factor Model (DF2M)、Neural Functional Encoders 用 NN 學 latent function。其中 <strong>Neural Process</strong> 與 <strong>Functional Neural Networks</strong>（Rao 2023）把 NN input 視為函式空間映射，可處理 irregular sampling 與 multi-resolution data。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Mercer's theorem and Karhunen-Loève expansion</h3>
+<p>FDA's math foundation: if covariance v(s, t) is continuous and PSD, Mercer guarantees v(s, t) = Σ_k λ_k ξ_k(s) ξ_k(t). Any sample expands as x_i(t) = μ(t) + Σ_k s_{ik} ξ_k(t) (Karhunen-Loève). <strong>This is the math behind FPCA</strong> — identical to matrix PCA but with integral equations replacing discrete eigenproblems.</p>
+
+<h3>② Curve registration: SRSF framework</h3>
+<p>Srivastava et al. (2011, JRSSB) Square Root Slope Function: q(t) = sign(x'(t)) √|x'(t)| turns amplitude–phase separation into a Procrustes alignment in SRSF space. Theoretically grounded and more stable than DTW; the modern standard for curve registration.</p>
+
+<h3>③ Functional manifold learning</h3>
+<p>Chen et al. (2017, JMLR): functions may live on a manifold rather than a linear function space (e.g. protein dynamics confined to a conformational sub-manifold). Use Isomap / diffusion maps in SRSF space.</p>
+
+<h3>④ Functional graphical model</h3>
+<p>View multivariate functional dependence as a "functional graph" — Zhu et al. (2016) functional graphical lasso estimates a functional precision operator. Applies to multi-channel ECG / EEG / multi-region fMRI.</p>
+
+<h3>⑤ Density-valued FDA</h3>
+<p>When each observation is itself a probability density (subject's cell-type composition, microbiome distribution), it lives in Bayes-Hilbert space — functional data. Petersen et al. (2022, Stat Sinica) give a complete framework, applied to longitudinal microbiome and connectome densities.</p>
+
+<h3>⑥ High-dim FDA challenges</h3>
+<p>"Many curves, many points, few subjects" is typical of modern bio data (scRNA pseudotime × 20,000 genes). Standard FPCA breaks down — use sparse FPCA, low-rank + sparse decomposition (FunRPCA), or pre-reduce with NMF / autoencoder.</p>
+
+<h3>⑦ Relation to Gaussian processes</h3>
+<p>A GP is a probability distribution over functions — essentially Bayesian FDA. GP regression equals RBF-basis FDA with a specific prior. In practice: FDA favors splines / Fourier (interpretable, fast); GP favors kernel ridge (no explicit basis, auto length-scale). GP better for small data; FDA more scalable for large data.</p>
+
+<h3>⑧ Deep functional models</h3>
+<p>Recent Deep Functional Factor Model (DF2M), Neural Functional Encoders use NN to learn latent functions. <strong>Neural Processes</strong> and <strong>Functional Neural Networks</strong> (Rao 2023) treat NN inputs as function-space maps, handling irregular sampling and multi-resolution data.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="FDA 還能改良哪些任務？" data-en="What Else Could FDA Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. scRNA-seq pseudotime gene profile clustering</h3>
+<p>目前對 pseudotime expression matrix 通常用 hierarchical clustering on gene profiles。<strong>提案：</strong>用 functional clustering（k-medoids on SRSF distance）把 gene 分群為「early peak」「late wave」「bimodal」等 functional motif，比 Pearson clustering 更解釋性。</p>
+
+<h3>🎯 2. CGM-Diet-MetaG 三模態 functional 整合</h3>
+<p>連續血糖 + 飲食日誌 + 腸道微生物 → 三條同步 functional series。<strong>提案：</strong>multivariate FDA (joint FPCA + functional CCA) 找「微生物–血糖–飲食」三方耦合 pattern，幫助精準營養。</p>
+
+<h3>🎯 3. Wearable longitudinal mental-health monitoring</h3>
+<p>HR、HRV、sleep、activity 每日曲線 × 數週 × 抑鬱 / 焦慮 scale。<strong>提案：</strong>multilevel functional regression（subject-level + day-level）預測情緒 episode onset，比 daily aggregate 早 2–3 天。</p>
+
+<h3>🎯 4. 連續單細胞時序 perturbation atlas</h3>
+<p>對 perturb-seq + 時序 sampling，每 gene × 每 perturbation 構成 functional curve。<strong>提案：</strong>functional ANOVA 找「peak time / amplitude / phase」對 perturbation 的依賴，自動分類 immediate-early vs late-response genes。</p>
+
+<h3>🎯 5. AlphaFold ensemble functional analysis</h3>
+<p>AlphaFlow 生成 conformational ensemble 沿 sample-index 是「sample 軸 functional data」。<strong>提案：</strong>FPCA 對 ensemble 找主要 conformational mode，做 allostery prediction 與 binding pocket prediction。</p>
+
+<h3>🎯 6. 抗體成熟動力學</h3>
+<p>長期免疫追蹤：每位 donor 在數月內 BCR repertoire 與 antibody titer 形成 functional curve。<strong>提案：</strong>functional regression of titer curve on BCR diversity curve，預測疫苗加強針反應。</p>
+
+<h3>🎯 7. Spatial transcriptomics 跨 slice 連續重建</h3>
+<p>Visium / Slide-seq 連續切片是 spatial functional data。<strong>提案：</strong>functional spatial PCA 把切片視為空間 + 切片號雙參數的函式 x(s, z)，重建連續 3D 表達場。</p>
+
+<h3>🎯 8. EHR longitudinal lab 整合</h3>
+<p>EHR 中每位患者多個 lab values × 不規則時間。<strong>提案：</strong>sparse FPCA + functional graphical model 整合 longitudinal labs，預測急性事件（如 AKI、sepsis）比 endpoint snapshot 更穩。</p>
+
+<h3>🎯 9. 蛋白質 NMR / Raman 光譜分群</h3>
+<p>NMR 化學位移、Raman 譜帶都是函式。<strong>提案：</strong>functional clustering + functional regression to bioactivity，可作為傳統 chemometrics 的升級。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. scRNA pseudotime gene-profile clustering</h3>
+<p>Standard practice clusters pseudotime expression matrices with hierarchical clustering. <strong>Proposal:</strong> functional clustering (k-medoids on SRSF distance) groups genes into "early peak", "late wave", "bimodal" functional motifs — more interpretable than Pearson clustering.</p>
+
+<h3>🎯 2. CGM + diet + microbiome trimodal functional integration</h3>
+<p>Continuous glucose + diet log + gut microbiome → 3 synchronized functional series. <strong>Proposal:</strong> multivariate FDA (joint FPCA + functional CCA) finds tri-coupled "microbiome–glucose–diet" patterns for precision nutrition.</p>
+
+<h3>🎯 3. Wearable longitudinal mental-health monitoring</h3>
+<p>Daily HR, HRV, sleep, activity × weeks × depression / anxiety scales. <strong>Proposal:</strong> multilevel functional regression (subject + day level) predicts mood episodes 2–3 days earlier than daily aggregates.</p>
+
+<h3>🎯 4. Continuous scRNA time-series perturbation atlas</h3>
+<p>For Perturb-seq + time sampling, every (gene, perturbation) is a functional curve. <strong>Proposal:</strong> functional ANOVA tests dependence of "peak time / amplitude / phase" on perturbation, auto-classifying immediate-early vs late-response genes.</p>
+
+<h3>🎯 5. AlphaFold ensemble functional analysis</h3>
+<p>AlphaFlow ensembles along sample-index are functional data. <strong>Proposal:</strong> FPCA finds dominant conformational modes for allostery and binding-pocket prediction.</p>
+
+<h3>🎯 6. Antibody maturation kinetics</h3>
+<p>Long-term immune tracking: BCR repertoire + antibody titer curves over months. <strong>Proposal:</strong> function-on-function regression of titer on BCR diversity predicts booster response.</p>
+
+<h3>🎯 7. Continuous 3D reconstruction from spatial slices</h3>
+<p>Visium / Slide-seq slices are spatial functional data. <strong>Proposal:</strong> functional spatial PCA treats slices as bivariate functions x(s, z), reconstructing continuous 3D expression fields.</p>
+
+<h3>🎯 8. EHR longitudinal lab integration</h3>
+<p>Per-patient many labs at irregular times. <strong>Proposal:</strong> sparse FPCA + functional graphical model integrates longitudinal labs, predicts acute events (AKI, sepsis) more stably than snapshots.</p>
+
+<h3>🎯 9. Protein NMR / Raman spectroscopy clustering</h3>
+<p>Chemical shifts and Raman bands are functions. <strong>Proposal:</strong> functional clustering + functional regression to bioactivity upgrades classic chemometrics.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sfda')">Python / scikit-fda</button>
+<button class="code-tab-btn" onclick="switchTab(this,'fda')">R / fda</button>
+<button class="code-tab-btn" onclick="switchTab(this,'pace')">R / fdapace (sparse)</button>
+</div>
+
+<div class="code-tab-content active" id="sfda"><pre><span class="comment"># pip install scikit-fda</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> skfda <span class="keyword">import</span> FDataGrid
+<span class="keyword">from</span> skfda.representation.basis <span class="keyword">import</span> FourierBasis, BSplineBasis
+<span class="keyword">from</span> skfda.preprocessing.smoothing <span class="keyword">import</span> BasisSmoother
+<span class="keyword">from</span> skfda.preprocessing.smoothing.validation <span class="keyword">import</span> SmoothingParameterSearch
+<span class="keyword">from</span> skfda.preprocessing.dim_reduction <span class="keyword">import</span> FPCA
+
+<span class="comment"># 20 subjects, 24h hourly observations</span>
+t = np.linspace(<span class="num">0</span>, <span class="num">24</span>, <span class="num">100</span>)
+data = np.array([np.sin(<span class="num">2</span>*np.pi*t/<span class="num">24</span> + np.random.randn()*<span class="num">0.3</span>)
+                 + <span class="num">0.2</span>*np.random.randn(len(t))
+                 <span class="keyword">for</span> _ <span class="keyword">in</span> range(<span class="num">20</span>)])
+fd = FDataGrid(data, grid_points=t)
+
+<span class="comment"># Smooth with Fourier basis (good for circadian)</span>
+basis = FourierBasis(n_basis=<span class="num">7</span>, domain_range=(<span class="num">0</span>, <span class="num">24</span>))
+smoother = BasisSmoother(basis, smoothing_parameter=<span class="num">0.5</span>)
+fd_smooth = smoother.fit_transform(fd)
+
+<span class="comment"># FPCA</span>
+fpca = FPCA(n_components=<span class="num">3</span>)
+scores = fpca.fit_transform(fd_smooth)
+<span class="keyword">print</span>(<span class="str">"Explained variance ratio:"</span>, fpca.explained_variance_ratio_)
+fpca.components_.plot()           <span class="comment"># plot eigenfunctions</span></pre></div>
+
+<div class="code-tab-content" id="fda"><pre><span class="comment"># install.packages("fda")</span>
+<span class="keyword">library</span>(fda)
+
+<span class="comment"># 20 subjects × 100 timepoints, circadian-like</span>
+t  &lt;- seq(<span class="num">0</span>, <span class="num">24</span>, length.out = <span class="num">100</span>)
+Y  &lt;- sapply(<span class="num">1</span>:<span class="num">20</span>, function(i) sin(<span class="num">2</span>*pi*t/<span class="num">24</span> + rnorm(<span class="num">1</span>, sd=.<span class="num">3</span>))
+                                + rnorm(<span class="num">100</span>, sd=.<span class="num">2</span>))
+
+<span class="comment"># Fourier basis</span>
+fb &lt;- create.fourier.basis(rangeval = c(<span class="num">0</span>, <span class="num">24</span>), nbasis = <span class="num">7</span>)
+fdParobj &lt;- fdPar(fb, Lfdobj=<span class="num">2</span>, lambda=<span class="num">.5</span>)
+sm &lt;- smooth.basis(t, Y, fdParobj)
+
+<span class="comment"># FPCA</span>
+pca &lt;- pca.fd(sm$fd, nharm = <span class="num">3</span>)
+plot(pca$harmonics)                     <span class="comment"># eigenfunctions</span>
+plot(pca$scores[,<span class="num">1</span>], pca$scores[,<span class="num">2</span>])  <span class="comment"># subjects in FPC space</span>
+
+<span class="comment"># Functional regression (scalar-on-function)</span>
+HbA1c &lt;- rnorm(<span class="num">20</span>, mean=<span class="num">6</span>, sd=<span class="num">1</span>)         <span class="comment"># scalar response</span>
+flm &lt;- fRegress(HbA1c ~ sm$fd)
+plot(flm$betaestlist[[<span class="num">2</span>]]$fd)         <span class="comment"># beta(t) coefficient function</span></pre></div>
+
+<div class="code-tab-content" id="pace"><pre><span class="comment"># install.packages("fdapace") — sparse / PACE</span>
+<span class="keyword">library</span>(fdapace)
+
+<span class="comment"># Sparse irregular longitudinal: 50 subjects, each 3-8 random points</span>
+set.seed(<span class="num">42</span>)
+tList &lt;- lapply(<span class="num">1</span>:<span class="num">50</span>, function(i) sort(runif(sample(<span class="num">3</span>:<span class="num">8</span>,<span class="num">1</span>), <span class="num">0</span>, <span class="num">24</span>)))
+yList &lt;- lapply(tList, function(ti)
+    sin(<span class="num">2</span>*pi*ti/<span class="num">24</span> + rnorm(<span class="num">1</span>,sd=.<span class="num">3</span>)) + rnorm(length(ti), sd=.<span class="num">2</span>))
+
+<span class="comment"># PACE: Principal Analysis through Conditional Expectation</span>
+res &lt;- FPCA(yList, tList,
+            list(dataType=<span class="str">"Sparse"</span>, methodSelectK=<span class="str">"FVE"</span>,
+                 FVEthreshold=<span class="num">0.95</span>, plot=TRUE))
+
+<span class="comment"># Predict each subject's full trajectory</span>
+fit &lt;- predict(res, newLy=yList, newLt=tList, K=<span class="num">3</span>)
+str(fit)
+<span class="comment"># res$mu (mean), res$phi (eigenfunctions), res$xiEst (FPC scores)</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">FDA 與標準 multivariate PCA 處理 24h gene expression 資料最大的差別是什麼？</p><p data-lang="en">What is the key difference between FDA and standard multivariate PCA on 24h gene expression?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. FDA 只能用於 microarray</span><span data-lang="en">A. FDA only works for microarray</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. FDA 透過 basis expansion 把曲線 smoothness 內建到 representation；multivariate PCA 把每個時間點視為獨立維度</span><span data-lang="en">B. FDA's basis expansion bakes curve smoothness into representation; multivariate PCA treats each time as an independent dim</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. FDA 不需要 eigenvalue 分解</span><span data-lang="en">C. FDA needs no eigendecomposition</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. multivariate PCA 比 FDA 解釋性更好</span><span data-lang="en">D. Multivariate PCA is more interpretable than FDA</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Sparse FPCA (Yao et al. 2005) 解決了什麼經典 FDA 處理不了的情況？</p><p data-lang="en">What problem does Sparse FPCA (Yao et al. 2005) solve that classical FDA cannot?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 處理 categorical 資料</span><span data-lang="en">A. Handling categorical data</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 把 PCA 加速到 GPU</span><span data-lang="en">B. Speeding up PCA to GPU</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 每位 subject 只有極少且不規則 sampling 點時，借用 cross-subject 資訊估計 mean + covariance + FPC scores</span><span data-lang="en">C. When each subject has only a few irregular samples, borrow cross-subject information to estimate mean + covariance + FPC scores</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 消除所有 noise</span><span data-lang="en">D. Removes all noise</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼在 FPCA 前通常要做 curve registration（如 SRSF）？</p><p data-lang="en">Why is curve registration (e.g. SRSF) usually applied before FPCA?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 不分開 amplitude 與 phase 變異，FPC1 可能只是「時間錯位」而非有意義的形狀差異</span><span data-lang="en">A. Without separating amplitude vs phase, FPC1 may merely capture time misalignment instead of meaningful shape variation</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. SRSF 比 FPCA 更快</span><span data-lang="en">B. SRSF is faster than FPCA</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 為了刪除 outlier</span><span data-lang="en">C. To delete outliers</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不需要做，因為 FPCA 自動處理</span><span data-lang="en">D. Not needed; FPCA handles it automatically</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="changepoint.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 45：Change-point Detection" data-en="Ch 45: Change-point Detection">Ch 45：Change-point Detection</span></a>
+<a href="mixture-of-experts.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 47：Mixture of Experts" data-en="Ch 47: Mixture of Experts">Ch 47：Mixture of Experts</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: FDA — raw / smoothed / FPCA modes =====
+const N_SUBJ=20, N_T=80, T_MIN=0, T_MAX=24;
+function randn(){const u=Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u+1e-9))*Math.cos(2*Math.PI*v);}
+function fourier(t,K){
+  // returns vector [1, cos(2πt/24), sin(2πt/24), cos(2·2πt/24), sin(2·2πt/24), ...]
+  // K odd (1 + 2*(K-1)/2)
+  const v=[1];
+  for(let k=1;k<=(K-1)/2;k++){
+    v.push(Math.cos(2*Math.PI*k*t/24));
+    v.push(Math.sin(2*Math.PI*k*t/24));
+  }
+  return v.slice(0,K);
+}
+function basisMatrix(ts,K){
+  return ts.map(t=>fourier(t,K));
+}
+
+let TS=[],RAW=[];
+function genData(){
+  TS=[]; for(let i=0;i<N_T;i++)TS.push(T_MIN + i*(T_MAX-T_MIN)/(N_T-1));
+  RAW=[];
+  for(let s=0;s<N_SUBJ;s++){
+    const phase=randn()*0.5;
+    const amp=1+randn()*0.18;
+    const lvl=randn()*0.25;
+    const second=0.4 + randn()*0.15;
+    const curve=TS.map(t=>{
+      return lvl + amp*Math.sin(2*Math.PI*t/24 + phase) + second*Math.cos(2*Math.PI*2*t/24 + phase*0.5) + 0.18*randn();
+    });
+    RAW.push(curve);
+  }
+}
+
+// Ridge regression: solve (XᵀX + λI) c = Xᵀy
+function ridgeSolve(X,y,lam){
+  // X: N×K, y: N
+  const K=X[0].length;
+  // XtX (K×K)
+  const A=[];for(let i=0;i<K;i++){A.push(new Array(K).fill(0));}
+  const b=new Array(K).fill(0);
+  for(let i=0;i<X.length;i++){
+    for(let p=0;p<K;p++){
+      b[p]+=X[i][p]*y[i];
+      for(let q=0;q<K;q++)A[p][q]+=X[i][p]*X[i][q];
+    }
+  }
+  // Add penalty (skip intercept p=0)
+  for(let p=1;p<K;p++)A[p][p]+=lam*Math.pow(Math.ceil(p/2),4);
+  // Solve via simple Gauss elimination
+  return gauss(A,b);
+}
+function gauss(A,b){
+  const n=A.length;
+  const M=A.map((r,i)=>[...r,b[i]]);
+  for(let i=0;i<n;i++){
+    let p=i;
+    for(let k=i+1;k<n;k++)if(Math.abs(M[k][i])>Math.abs(M[p][i]))p=k;
+    [M[i],M[p]]=[M[p],M[i]];
+    if(Math.abs(M[i][i])<1e-12)M[i][i]=1e-12;
+    for(let k=i+1;k<n;k++){
+      const f=M[k][i]/M[i][i];
+      for(let j=i;j<=n;j++)M[k][j]-=f*M[i][j];
+    }
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){
+    let s=M[i][n];
+    for(let j=i+1;j<n;j++)s-=M[i][j]*x[j];
+    x[i]=s/M[i][i];
+  }
+  return x;
+}
+
+function smoothAll(K,lam){
+  const Phi=basisMatrix(TS,K);
+  return RAW.map(y=>{
+    const c=ridgeSolve(Phi,y,lam);
+    return Phi.map(row=>row.reduce((s,v,i)=>s+v*c[i],0));
+  });
+}
+
+function meanCov(Y){
+  const N=Y.length, T=Y[0].length;
+  const mean=new Array(T).fill(0);
+  Y.forEach(y=>y.forEach((v,i)=>mean[i]+=v/N));
+  // Centered
+  const Yc=Y.map(y=>y.map((v,i)=>v-mean[i]));
+  // Compute cov matrix T×T
+  const C=[];for(let i=0;i<T;i++){C.push(new Array(T).fill(0));}
+  for(let i=0;i<T;i++){
+    for(let j=0;j<T;j++){
+      let s=0; for(let k=0;k<N;k++)s+=Yc[k][i]*Yc[k][j];
+      C[i][j]=s/(N-1);
+    }
+  }
+  return {mean,Yc,C};
+}
+
+// Power iteration for top eigenvector
+function topEig(C,iters=80){
+  const n=C.length;
+  let v=new Array(n).fill(0).map(()=>Math.random()-0.5);
+  let nv=Math.sqrt(v.reduce((s,x)=>s+x*x,0));
+  v=v.map(x=>x/nv);
+  let lam=0;
+  for(let it=0;it<iters;it++){
+    const w=new Array(n).fill(0);
+    for(let i=0;i<n;i++){for(let j=0;j<n;j++)w[i]+=C[i][j]*v[j];}
+    nv=Math.sqrt(w.reduce((s,x)=>s+x*x,0));
+    lam=nv;
+    v=w.map(x=>x/(nv+1e-12));
+  }
+  return {lam,v};
+}
+
+let chart=null;
+function render(){
+  const K=+document.getElementById('sK').value;
+  const lam=+document.getElementById('sL').value;
+  const mode=document.getElementById('viewMode').value;
+  document.getElementById('vK').textContent=K;
+  document.getElementById('vL').textContent=lam.toFixed(2);
+  const SMOOTH = smoothAll(K,lam);
+  const labels = TS.map(t=>t.toFixed(1));
+  let datasets=[];
+  let infoText='';
+  const L=I18n.get();
+  if(mode==='raw'){
+    datasets=RAW.map((y,i)=>({label:'#'+i,data:y,borderColor:`rgba(${100+i*5},${100+i*7},${180-i*4},0.6)`,borderWidth:1,fill:false,pointRadius:0,tension:0.05}));
+    infoText=L==='zh'?
+      `<strong>Raw noisy curves</strong>：每條代表一個 subject 的觀測（24h gene expression with circadian pattern + noise）。每點直接觀察數據——可以看出 circadian shape 但雜訊明顯。`:
+      `<strong>Raw noisy curves</strong>: each line is one subject's noisy 24h observation (circadian + noise). Pointwise data — pattern visible but noisy.`;
+  }else if(mode==='smooth'){
+    datasets=SMOOTH.map((y,i)=>({label:'#'+i,data:y,borderColor:`rgba(${30+i*5},${100+i*7},${180-i*4},0.85)`,borderWidth:1.4,fill:false,pointRadius:0,tension:0.2}));
+    infoText=L==='zh'?
+      `<strong>Smoothed curves (Fourier basis, K=${K}, λ=${lam.toFixed(2)})</strong>：用 ${K} 個 Fourier 基底擬合每條曲線。增大 K → 更靈活、可能 overfit；增大 λ → 更光滑、可能 underfit。每條曲線現在是「K 維 coefficient vector」。`:
+      `<strong>Smoothed curves (Fourier basis, K=${K}, λ=${lam.toFixed(2)})</strong>: each curve fit with ${K} Fourier basis functions. Larger K → more flexible / overfit risk; larger λ → smoother / underfit risk. Each curve is now a K-D coefficient vector.`;
+  }else{
+    const {mean,Yc,C}=meanCov(SMOOTH);
+    const {lam:eig,v:xi}=topEig(C);
+    const sd=Math.sqrt(eig);
+    const plus=mean.map((m,i)=>m+2*sd*xi[i]);
+    const minus=mean.map((m,i)=>m-2*sd*xi[i]);
+    // FVE estimate: eigval / total variance
+    let totalVar=0; for(let i=0;i<C.length;i++)totalVar+=C[i][i];
+    const fve=(eig*C.length)/(totalVar*C.length); // crude diagonal approx
+    const fveSimple=eig/(totalVar/C.length); // approximate
+    datasets=[
+      {label:'mean μ(t)',data:mean,borderColor:'rgba(40,40,40,0.95)',borderWidth:2.4,fill:false,pointRadius:0,tension:0.2},
+      {label:'μ + 2σ ξ₁(t)',data:plus,borderColor:'rgba(192,57,43,0.9)',borderWidth:1.8,borderDash:[6,3],fill:false,pointRadius:0,tension:0.2},
+      {label:'μ − 2σ ξ₁(t)',data:minus,borderColor:'rgba(37,99,168,0.9)',borderWidth:1.8,borderDash:[6,3],fill:false,pointRadius:0,tension:0.2}
+    ];
+    infoText=L==='zh'?
+      `<strong>FPC1 主模態</strong>：黑線為 mean function μ(t)；紅 / 藍虛線為 μ ± 2σ × ξ₁(t)（最主要的變異模式）。ξ₁ 是 covariance operator 的最大 eigenfunction，可詮釋為「subjects 之間最主要的 functional 差異」（例如：早晨高峰提前 vs 延後）。粗略 PC1 explained variance ratio ≈ <strong>${(fveSimple*100).toFixed(1)}%</strong>。`:
+      `<strong>FPC1 mode</strong>: black = mean μ(t); red / blue dashed = μ ± 2σ × ξ₁(t) (the dominant variation). ξ₁ is the leading eigenfunction of the covariance operator — interpreted as "main functional difference between subjects" (e.g. morning-peak advance vs delay). Approximate PC1 variance explained ≈ <strong>${(fveSimple*100).toFixed(1)}%</strong>.`;
+  }
+
+  if(chart)chart.destroy();
+  const ctx=document.getElementById('fdaChart');
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{labels,datasets},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      animation:false,
+      plugins:{legend:{display:mode==='fpca',position:'top'}},
+      scales:{
+        x:{title:{display:true,text:'t (hours)'}},
+        y:{title:{display:true,text:'expression'}}
+      },
+      elements:{point:{radius:0}}
+    }
+  });
+  document.getElementById('fdaInfo').innerHTML=infoText;
+}
+
+document.getElementById('sK').addEventListener('input',render);
+document.getElementById('sL').addEventListener('input',render);
+document.getElementById('viewMode').addEventListener('change',render);
+document.getElementById('btnRes').addEventListener('click',()=>{genData();render();});
+document.addEventListener('langchange',render);
+// Force aspect-ratio reasonable
+document.getElementById('fdaChart').style.height='340px';
+genData();render();
+
+window._QF={zh:{
+  q1_y:'答對！FDA basis expansion 把光滑性編進 representation，這是它與 multivariate PCA 的本質差異。',
+  q1_n:'答案是 B。FDA 用 basis (B-spline, Fourier) 展開使曲線天然光滑；multivariate PCA 把時間點當作獨立座標，忽略時序相關性。',
+  q2_y:'答對！Yao 2005 PACE 是 longitudinal sparse functional 資料的標準。',
+  q2_n:'答案是 C。Sparse FPCA (PACE) 在每位 subject 只有少數不規則 sampling 點時，借用 cross-subject 資訊估計 mean / covariance / FPC scores。',
+  q3_y:'答對！沒做 registration 的 FPC1 常常被 phase variation 主宰，無法揭示真正形狀差異。',
+  q3_n:'答案是 A。amplitude 與 phase 變異混在一起時 FPC1 通常只是 phase shift，需要先 SRSF 對齊。'
+},en:{
+  q1_y:'Correct! FDA bakes smoothness into the representation via basis expansion — the essential difference from multivariate PCA.',
+  q1_n:'Answer is B. FDA uses basis expansion (B-spline, Fourier) making curves naturally smooth; multivariate PCA treats time points as independent coords, ignoring temporal correlation.',
+  q2_y:'Correct! Yao 2005 PACE is the standard for longitudinal sparse functional data.',
+  q2_n:'Answer is C. Sparse FPCA (PACE) borrows cross-subject info to estimate mean / covariance / FPC scores when each subject has only a few irregular timepoints.',
+  q3_y:'Correct! Without registration, FPC1 is often dominated by phase variation, hiding real shape differences.',
+  q3_n:'Answer is A. Mixing amplitude and phase variation typically makes FPC1 a phase shift — SRSF alignment first.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

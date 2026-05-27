@@ -1,0 +1,517 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Federated Learning — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html" class="active">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 37 / 38</div><h1 data-zh="聯邦學習" data-en="Federated Learning">聯邦學習</h1>
+<p class="subtitle" data-lang="zh">McMahan et al. (2017, AISTATS) 提出 FedAvg：多個 client（醫院、實驗室）各自在本地訓練，僅上傳 model update 給 server 聚合；資料永不離開機構。對基因體、EHR、影像等敏感醫療資料是法規層級必備。</p>
+<p class="subtitle" data-lang="en">McMahan et al. (2017, AISTATS) introduced FedAvg: multiple clients (hospitals, labs) train locally and upload only model updates to a server for aggregation. Raw data never leaves the institution — a regulatory must-have for genomics, EHR, and imaging.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 centralised 到 federated" data-en="From centralised to federated">從 centralised 到 federated</h2>
+<div data-lang="zh">
+<p><strong>問題：</strong>10 家醫院各有 10 萬病人 EHR。集中所有資料訓練 → 違反 HIPAA / GDPR / 台灣個資法。每家獨立訓練 → 樣本少、模型差且各自不同。</p>
+<p><strong>Federated 思路（McMahan 2017）：</strong>共享「模型參數更新」而非「資料」。</p>
+<ol>
+<li><strong>Server</strong> 把當前 global model θ_t 廣播給 K 個 client。</li>
+<li>每個 client k 在本地資料 D_k 上跑 E 個 epoch 的 SGD，得到 θ_t^k。</li>
+<li>Client 把 Δ_k = θ_t^k − θ_t（或 θ_t^k 本身）上傳。</li>
+<li>Server 聚合（FedAvg）：θ_{t+1} = Σ (n_k/n) θ_t^k，其中 n_k 是 client-k 樣本數。</li>
+</ol>
+<p><strong>關鍵保證：</strong>聚合僅看 model updates、不看 raw data。配合 Differential Privacy + Secure Aggregation → 即使單個 client 與 server 合謀，也難反推個別樣本。</p>
+<p><strong>三大挑戰：</strong></p>
+<ul>
+<li><strong>Non-IID 資料</strong>：不同醫院 patient mix 差異大 → 各 client 梯度方向不一致、收斂慢。</li>
+<li><strong>System heterogeneity</strong>：client 算力、網路頻寬差距大 → 平均要等慢者。</li>
+<li><strong>Privacy 攻擊</strong>：gradient inversion attack 可從梯度反推 batch 樣本（Zhu &amp; Han 2019, NeurIPS）。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p><strong>Problem:</strong> 10 hospitals each hold 100k EHR records. Pooling all data → violates HIPAA / GDPR / Taiwan PIPA. Training each in isolation → too few samples, divergent models.</p>
+<p><strong>Federated idea (McMahan 2017):</strong> share <em>model updates</em>, not <em>data</em>.</p>
+<ol>
+<li>The <strong>server</strong> broadcasts the current global model θ_t to K clients.</li>
+<li>Each client k runs E SGD epochs on local data D_k to produce θ_t^k.</li>
+<li>The client uploads Δ_k = θ_t^k − θ_t (or θ_t^k itself).</li>
+<li>The server aggregates (FedAvg): θ_{t+1} = Σ (n_k/n) θ_t^k where n_k is client-k's sample count.</li>
+</ol>
+<p><strong>Key guarantee:</strong> aggregation sees only updates, never raw data. Combined with differential privacy + secure aggregation → even a colluding client and server cannot easily invert individual samples.</p>
+<p><strong>Three challenges:</strong></p>
+<ul>
+<li><strong>Non-IID data:</strong> hospitals have different patient mixes → client gradients disagree, slow convergence.</li>
+<li><strong>System heterogeneity:</strong> compute / bandwidth varies → straggler problem.</li>
+<li><strong>Privacy attacks:</strong> gradient-inversion attacks can recover batches (Zhu &amp; Han 2019, NeurIPS).</li>
+</ul>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🔐</div><h4 data-zh="資料留在本地" data-en="Data stays local">資料留在本地</h4><p data-lang="zh">原始病人/基因資料絕不出機構；僅交換 gradients 或 weights。</p><p data-lang="en">Raw patient / genomic data never leaves the institution; only gradients or weights move.</p></div>
+  <div class="card"><div class="card-icon">🏥</div><h4 data-zh="跨機構聯合" data-en="Cross-institution">跨機構聯合</h4><p data-lang="zh">10+ 醫院/實驗室合練 → 樣本量等同於 large central dataset 但無 IRB 阻力。</p><p data-lang="en">10+ hospitals/labs train jointly → effective sample size of a central dataset with far less IRB friction.</p></div>
+  <div class="card"><div class="card-icon">🛡️</div><h4 data-zh="DP + 加密聚合" data-en="DP + secure aggregation">DP + 加密聚合</h4><p data-lang="zh">DP-SGD 給 ε-DP 保證；secure aggregation 用加密讓 server 只能看到「加總」、不看個別 update。</p><p data-lang="en">DP-SGD provides ε-DP; secure aggregation lets the server see only the sum, never individual updates.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="FedAvg, FedProx, SCAFFOLD &amp; DP-SGD" data-en="FedAvg, FedProx, SCAFFOLD &amp; DP-SGD">FedAvg, FedProx, SCAFFOLD &amp; DP-SGD</h2>
+<div data-lang="zh">
+<p><strong>① FedAvg (McMahan 2017)：</strong>基準演算法。每 round：</p>
+<ul>
+<li>Server broadcast θ_t。</li>
+<li>每個 client 跑 E 次 local SGD，batch B：θ_t^k ← θ_t^k − η ∇F_k(θ_t^k; ξ)。</li>
+<li>Server 聚合：θ_{t+1} = Σ (n_k/n) θ_t^k。</li>
+</ul>
+<p><strong>② FedProx (Li 2020, MLSys)：</strong>對 non-IID 加 proximal term：local loss = F_k(θ) + (μ/2)‖θ − θ_t‖²，避免 client 跑太遠偏離 global。</p>
+<p><strong>③ SCAFFOLD (Karimireddy 2020, ICML)：</strong>用 control variate 修正 client drift——server 與 client 各維持一個 c, c_k；local update 變成 θ ← θ − η (∇F_k − c_k + c)。對 non-IID 加速 3–5x。</p>
+<p><strong>④ DP-SGD（Abadi 2016, CCS）：</strong>在 local SGD 前 (i) 對 per-sample gradient 做 norm clipping 到 C；(ii) 加 N(0, σ²C²I) noise。給出 (ε, δ)-DP 保證 by moments accountant。</p>
+<p><strong>⑤ Secure aggregation (Bonawitz 2017, CCS)：</strong>用 pairwise additive masks，每 client 上傳 Δ_k + r_k - r_{kk'}，所有 mask 兩兩抵銷只剩 Σ Δ_k。server 看不到個別 Δ_k。</p>
+<p><strong>⑥ Personalized FL：</strong>共享 backbone、各 client 留自己的 head（pFedMe, Ditto, FedRep）。或 multi-task / meta-learning (Per-FedAvg)。對極 non-IID 場景明顯優於 FedAvg。</p>
+</div>
+<div data-lang="en">
+<p><strong>① FedAvg (McMahan 2017):</strong> the baseline. Each round:</p>
+<ul>
+<li>Server broadcasts θ_t.</li>
+<li>Each client runs E local SGD epochs with batch B: θ_t^k ← θ_t^k − η ∇F_k(θ_t^k; ξ).</li>
+<li>Server aggregates: θ_{t+1} = Σ (n_k/n) θ_t^k.</li>
+</ul>
+<p><strong>② FedProx (Li 2020, MLSys):</strong> adds a proximal term for non-IID: local loss = F_k(θ) + (μ/2)‖θ − θ_t‖², preventing clients from drifting too far.</p>
+<p><strong>③ SCAFFOLD (Karimireddy 2020, ICML):</strong> uses control variates to correct client drift — server and clients each carry c, c_k; update becomes θ ← θ − η(∇F_k − c_k + c). 3–5× speed-up on non-IID.</p>
+<p><strong>④ DP-SGD (Abadi 2016, CCS):</strong> before local SGD (i) clip per-sample gradient to norm C; (ii) add N(0, σ²C²I) noise. Provides (ε, δ)-DP via moments accountant.</p>
+<p><strong>⑤ Secure aggregation (Bonawitz 2017, CCS):</strong> pairwise additive masks make Δ_k + r_k − r_{kk'} cancel pairwise — server sees only Σ Δ_k, not individuals.</p>
+<p><strong>⑥ Personalised FL:</strong> shared backbone with per-client heads (pFedMe, Ditto, FedRep), or multi-task / meta-learning (Per-FedAvg). Clearly beats FedAvg on extreme non-IID.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼 local epoch 數 E 是關鍵旋鈕？</strong> E=1 等同於分散式 SGD（同步開銷大）；E 太大則 client 過度擬合本地分布，平均後 global model 振盪甚至發散（"client drift"）。實務 E ∈ [1, 5] 配 SCAFFOLD 或 FedProx 通常最穩。</div>
+<div data-lang="en"><strong>Why is the number of local epochs E the key knob?</strong> E=1 is essentially distributed SGD (high sync cost). Large E overfits local distributions → averaged global model oscillates or diverges ("client drift"). Practitioners typically use E ∈ [1, 5] with SCAFFOLD or FedProx.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="3-client FedAvg：non-IID 收斂動態" data-en="3-client FedAvg: non-IID convergence">3-client FedAvg：non-IID 收斂動態</h2>
+<div data-lang="zh"><p>三個 client 各自一份「偏」資料（例如 hospital A 多老人、B 多孩童、C 平衡）。<strong>拖動 non-IID 強度</strong> 看 global model 與 local loss 變化；<strong>調 local epoch E</strong> 看 client drift；切換 <strong>FedAvg / FedProx</strong> 看 proximal term 效果。</p></div>
+<div data-lang="en"><p>Three clients each hold biased data (e.g. hospital A elderly-heavy, B paediatric-heavy, C balanced). <strong>Drag non-IID strength</strong> to watch the global model and per-client losses; <strong>tune local epochs E</strong> to see client drift; toggle <strong>FedAvg / FedProx</strong> for the proximal effect.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="non-IID 強度" data-en="non-IID strength">non-IID α <span id="vAlpha">0.6</span></label><input type="range" id="sAlpha" min="0" max="1" value="0.6" step="0.05"></div>
+<div class="slider-group"><label data-zh="local epochs E" data-en="Local epochs E">E <span id="vE">3</span></label><input type="range" id="sE" min="1" max="10" value="3" step="1"></div>
+<div class="slider-group">
+  <label data-zh="演算法" data-en="Algorithm">演算法</label>
+  <select id="algo" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="fedavg" selected>FedAvg</option>
+    <option value="fedprox">FedProx (μ=0.05)</option>
+  </select>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnRun" class="toggle-btn">▶ <span data-zh="跑 30 輪" data-en="Run 30 rounds">跑 30 輪</span></button>
+</div>
+<canvas id="flChart" height="300"></canvas>
+<div id="flInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Federated Learning 在生物資訊與醫學" data-en="FL in Bioinformatics &amp; Medicine">Federated Learning 在生物資訊與醫學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="COVID-19 多醫院診斷 (Dayan 2021)" data-en="COVID-19 multi-hospital (Dayan 2021)">COVID-19 多醫院診斷</h4>
+<p data-lang="zh">Dayan et al. (2021, <em>Nat Med</em>) EXAM 系統——20 家醫院、5 大洲、3.6 萬病人 chest X-ray 預測氧氣需求、ICU 轉送。FedAvg 訓 model AUC 0.92，與 centralised 等價；無資料離院。當年最大規模醫學 FL 部署。</p>
+<p data-lang="en">Dayan et al. (2021, <em>Nat Med</em>) EXAM system — 20 hospitals, 5 continents, 36k patients, chest X-ray prediction of oxygen / ICU need. FedAvg model AUC 0.92, on par with centralised; no data left any hospital. The largest medical FL deployment to date at the time.</p></div>
+
+<div class="card"><h4 data-zh="Federated GWAS / sPLINK" data-en="Federated GWAS / sPLINK">Federated GWAS</h4>
+<p data-lang="zh">Nasirigerdeh et al. (2022, <em>Bioinformatics</em>) sPLINK 把 PLINK 的 logistic / linear regression 改造成 federated，協作 GWAS 不必匯出個別 genotype。對歐盟 GDPR、Taiwan 個資法尤其關鍵。</p>
+<p data-lang="en">Nasirigerdeh et al. (2022, <em>Bioinformatics</em>) sPLINK federates PLINK's logistic/linear regression: collaborative GWAS without exporting individual genotypes. Critical under GDPR and Taiwan's PIPA.</p></div>
+
+<div class="card"><h4 data-zh="Federated single-cell (scFed)" data-en="Federated single-cell (scFed)">Federated single-cell</h4>
+<p data-lang="zh">Lotfollahi et al. (2022, <em>Nat Biotech</em>) scArches transfer-learning 框架原生支援 federated 更新——各 lab 不分享 raw count，只共享 latent code 與 small adapter。對打造跨機構 cell atlas（HCA scope）關鍵。</p>
+<p data-lang="en">Lotfollahi et al. (2022, <em>Nat Biotech</em>) scArches natively supports federated updates — labs share latent codes and small adapters, never raw counts. Essential for cross-institution cell atlases (HCA scale).</p></div>
+
+<div class="card"><h4 data-zh="Multi-hospital cancer prediction" data-en="Multi-hospital cancer prediction">Multi-hospital cancer prediction</h4>
+<p data-lang="zh">Pati et al. (2022, <em>Nat Commun</em>) Federated Tumour Segmentation (FeTS)，71 institutions 共訓 brain glioma segmentation 模型，比單機構平均 +33% Dice。MICCAI FeTS challenge 已成腦腫瘤 FL 標竿。</p>
+<p data-lang="en">Pati et al. (2022, <em>Nat Commun</em>) Federated Tumour Segmentation (FeTS) — 71 institutions co-train brain glioma segmentation, +33% Dice over institution-mean. MICCAI FeTS challenge is now the standard FL benchmark for brain tumours.</p></div>
+
+<div class="card"><h4 data-zh="Privacy-preserving rare disease" data-en="Privacy-preserving rare disease">罕病研究</h4>
+<p data-lang="zh">罕病患者數量極少，必須跨國合作。Beaulieu-Jones et al. (2019, <em>Circulation</em>) demonstrate Federated SVM/NN on EHR cardiovascular risk；新生兒罕病 FL Network 已部署在歐洲 ERN 計畫。</p>
+<p data-lang="en">Rare diseases need cross-border collaboration. Beaulieu-Jones et al. (2019, <em>Circulation</em>) demonstrated federated SVM/NN for cardiovascular EHR risk; neonatal rare-disease FL networks are deployed across European ERN consortia.</p></div>
+
+<div class="card"><h4 data-zh="Federated CRISPR screen analysis" data-en="Federated CRISPR screen analysis">Federated CRISPR</h4>
+<p data-lang="zh">大型 CRISPR-Cas9 screen（Achilles, Score）跨多 academic centre。FL 框架允許 raw screen reads 留在原機構、共訓 fitness/dependency model；2023–2024 已有 prototype 系統（FedDepMap proposal）。</p>
+<p data-lang="en">Large CRISPR-Cas9 screens (Achilles, Score) span academic centres. FL frameworks let raw screen reads stay local while co-training fitness/dependency models; FedDepMap-style prototypes appeared in 2023–2024.</p></div>
+
+<div class="card"><h4 data-zh="Wearable + health (FedHealth)" data-en="Wearable + health (FedHealth)">Wearable + health</h4>
+<p data-lang="zh">Chen et al. (2020, <em>IEEE IS</em>) FedHealth 框架——智慧手錶/手環的 activity, HR, sleep 在 device 本地處理，跨用戶聯邦學共通模型 + 個人化頭。Apple Health / Google Health 內部生產系統實踐。</p>
+<p data-lang="en">Chen et al. (2020, <em>IEEE IS</em>) FedHealth — on-device processing of activity, HR, sleep across smart watches; federated learning of shared backbone + personal heads. Used in Apple Health / Google Health production pipelines.</p></div>
+
+<div class="card"><h4 data-zh="Federated drug repositioning" data-en="Federated drug repositioning">Federated drug repositioning</h4>
+<p data-lang="zh">MELLODDY consortium (2020+，10 大藥廠) 訓 federated chemical-property + bioactivity model——各家私有 compound library 不出公司、共訓 SAR/QSAR 模型。比各自獨訓 +10% AUC，是當前最大工業 FL。</p>
+<p data-lang="en">The MELLODDY consortium (2020+, 10 pharma companies) trains federated chemical-property + bioactivity models — proprietary compound libraries stay in-house, shared SAR/QSAR models. +10% AUC over solo; the largest industrial FL effort.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Federated Learning 進階主題" data-en="Advanced FL Topics">Federated Learning 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Non-IID 量化：Dirichlet partition</h3>
+<p>學術 benchmark 用 Dirichlet(α) 把資料分給 K client。α → 0 極端 non-IID（每 client 幾乎只有一個 class）；α → ∞ IID。實證：α &lt; 0.1 時 FedAvg 直接發散，需 SCAFFOLD 或 personalised FL。生物資料（醫院間 patient mix）對應 α ≈ 0.3–0.5。</p>
+
+<h3>② Convergence analysis</h3>
+<p>Li et al. (2020, ICLR) 證明 FedAvg 在 convex setting O(1/T) 但係數隨 non-IID Γ 增加。Karimireddy 2020 證明 SCAFFOLD 對 Γ 不敏感。對 non-convex DNN 沒有 tight theory，但 FedProx 的 proximal term 已被多 study 證實穩定。</p>
+
+<h3>③ Communication efficiency</h3>
+<p>每 round 上傳整個 model（千萬參數）vs 數萬樣本——bandwidth 是 bottleneck。技術：(a) gradient sparsification (top-k)、(b) quantisation (1-bit, signSGD)、(c) low-rank update (FedLin)、(d) one-shot FL（只一次通訊，knowledge distillation）。</p>
+
+<h3>④ Privacy attacks &amp; defences</h3>
+<p>主要攻擊：(i) gradient inversion (Zhu &amp; Han 2019, Geiping 2020) 從梯度反推樣本；(ii) membership inference (Shokri 2017)；(iii) model inversion。防禦：DP-SGD（噪聲）+ secure aggregation（加密）+ small batch。實證 ε ≈ 1–4 在多數醫療任務影響 acc &lt; 3%。</p>
+
+<h3>⑤ Cross-silo vs cross-device</h3>
+<p>Cross-silo（醫院、藥廠）：K 小、機器穩定、資料量大。Cross-device（手機）：K 巨大、device 隨機 dropout、資料小、heterogeneous compute。生物資料幾乎全是 cross-silo，演算法更接近 distributed optimisation。</p>
+
+<h3>⑥ Federated foundation model</h3>
+<p>2024 開始討論「federated pretraining」of 醫療 LLM、scLLM。挑戰：模型大（10B+）、通訊上限。技術方向：LoRA-only federation（FedLoRA），只共享 low-rank adapter，可降 1000x 通訊。</p>
+
+<h3>⑦ Vertical vs horizontal FL</h3>
+<p>Horizontal：不同機構有相同 feature、不同 sample（醫院聯合）。Vertical：相同 sample、不同 feature（醫院 + 保險公司 + 基因檢測）；需 entity resolution + SMC，技術更難。生物應用主要 horizontal；vertical 在多 omics + clinical 整合時關鍵。</p>
+
+<h3>⑧ Federated evaluation &amp; benchmark</h3>
+<p>FLAIR (Yu 2023)、FederatedScope、FATE 是主要 benchmark/framework。Bio 專用：MELLODDY benchmark（藥）、FeTS（影像）、NVFlare medical examples。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Quantifying non-IID: Dirichlet partition</h3>
+<p>Academic benchmarks split data via Dirichlet(α). α → 0 is extreme non-IID; α → ∞ is IID. Empirically, FedAvg diverges at α &lt; 0.1 and needs SCAFFOLD or personalised FL. Real biomedical data (hospital patient mix) sit at α ≈ 0.3–0.5.</p>
+
+<h3>② Convergence analysis</h3>
+<p>Li et al. (2020, ICLR) proved O(1/T) for FedAvg in convex settings with constants growing in non-IID Γ. Karimireddy 2020 proved SCAFFOLD is Γ-insensitive. For non-convex DNNs no tight theory, but FedProx's proximal term is widely shown to stabilise training.</p>
+
+<h3>③ Communication efficiency</h3>
+<p>Uploading a multi-million-parameter model each round vs a few-thousand samples — bandwidth is the bottleneck. Techniques: (a) gradient sparsification (top-k), (b) quantisation (1-bit, signSGD), (c) low-rank update (FedLin), (d) one-shot FL (single round of distillation).</p>
+
+<h3>④ Privacy attacks &amp; defences</h3>
+<p>Main attacks: (i) gradient inversion (Zhu &amp; Han 2019, Geiping 2020); (ii) membership inference (Shokri 2017); (iii) model inversion. Defences: DP-SGD + secure aggregation + small batch. ε ≈ 1–4 reduces accuracy by &lt; 3% on most medical tasks.</p>
+
+<h3>⑤ Cross-silo vs cross-device</h3>
+<p>Cross-silo (hospitals, pharma): small K, stable machines, large per-client data. Cross-device (phones): huge K, random dropout, small data, heterogeneous compute. Biomedical FL is almost always cross-silo — closer to distributed optimisation.</p>
+
+<h3>⑥ Federated foundation models</h3>
+<p>2024 brought "federated pretraining" for medical LLMs / scLLMs. Challenge: huge models (10B+), bandwidth limits. Direction: LoRA-only federation (FedLoRA) shares small adapters, reducing comms ~1000×.</p>
+
+<h3>⑦ Vertical vs horizontal FL</h3>
+<p>Horizontal: same features, different samples (hospitals). Vertical: same samples, different features (hospital + insurer + genome testing); needs entity resolution + SMC, technically harder. Biology is mostly horizontal; vertical matters for multi-omics + clinical integration.</p>
+
+<h3>⑧ Federated evaluation &amp; benchmark</h3>
+<p>FLAIR (Yu 2023), FederatedScope, FATE are main frameworks. Bio-specific: MELLODDY (pharma), FeTS (imaging), NVFlare medical examples.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="FL 還能改良哪些任務？" data-en="What else could FL improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 跨醫院 EHR foundation model</h3>
+<p>GatorTron / Med-PaLM 都用 single-institution 資料。<strong>提案：</strong>FedLoRA 在 10+ 醫院聯邦預訓 100M+ token 病歷語料 → 通用度顯著高。</p>
+
+<h3>🎯 2. Federated multi-omics integration</h3>
+<p>各 institution 有不同 omics layer（醫院 A 有 RNA-seq、B 有 methylation、C 有 proteomics）。<strong>提案：</strong>vertical FL 對 same patient cohort 跨機構整合 omics——CCA / MOFA 的 federated 版。</p>
+
+<h3>🎯 3. Federated cell atlas (HCA-Fed)</h3>
+<p>Human Cell Atlas 集中所有資料困難（IRB、儲存）。<strong>提案：</strong>scArches-FL 各 lab 本地保存、共享 latent embedding 與 adapter → 真正 cross-institution atlas。</p>
+
+<h3>🎯 4. Federated spatial omics</h3>
+<p>Visium / Xenium 樣本多在 hospital pathology lab。<strong>提案：</strong>FL on hist+ST joint model（CytAssist embedding），各醫院本地訓 cell typing model。</p>
+
+<h3>🎯 5. Federated AlphaFold fine-tuning</h3>
+<p>各 lab 有 protein design 私有訓練集（patent reasons）。<strong>提案：</strong>FedLoRA 對 AlphaFold / ESMFold 共訓 specialist 模型——antibody, kinase, GPCR 等。</p>
+
+<h3>🎯 6. Federated drug-target interaction</h3>
+<p>MELLODDY 已展示；下一步可加入 vertical FL（同一藥但不同 assay 在不同公司）。<strong>提案：</strong>vFedDTI，cross-pharma 整合 phenotypic + biochemical assay。</p>
+
+<h3>🎯 7. Federated medical imaging foundation model</h3>
+<p>大型 imaging foundation model (BiomedCLIP, MedSAM)。<strong>提案：</strong>FedSAM 在 100+ 醫院聯邦微調，特定 organ/modality 表現可媲美 institution-specific 模型。</p>
+
+<h3>🎯 8. Federated CRISPR-perturbation atlas</h3>
+<p>Perturb-seq 跨 institution。<strong>提案：</strong>FL 對 PerturbNet / GEARS 共訓，各 lab 私有 CRISPR library 不出院；對 rare-target 擾動效應預測尤其有用。</p>
+
+<h3>🎯 9. Federated foundation model for clinical trial</h3>
+<p>各藥廠 phase II/III 試驗病人 EHR 嚴格保密。<strong>提案：</strong>FL on trial-eligibility prediction、adverse-event prediction——MELLODDY-style consortium 適用於 clinical 領域。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Cross-hospital EHR foundation model</h3>
+<p>GatorTron / Med-PaLM use single-institution data. <strong>Proposal:</strong> FedLoRA pretrains on 100M+ tokens across 10+ hospitals → much broader generalisation.</p>
+
+<h3>🎯 2. Federated multi-omics integration</h3>
+<p>Different institutions hold different omics (A has RNA-seq, B methylation, C proteomics). <strong>Proposal:</strong> vertical FL on a shared cohort — federated CCA / MOFA.</p>
+
+<h3>🎯 3. Federated cell atlas (HCA-Fed)</h3>
+<p>The Human Cell Atlas cannot easily pool all data (IRB, storage). <strong>Proposal:</strong> scArches-FL keeps data local while sharing latent codes + adapters → a true cross-institution atlas.</p>
+
+<h3>🎯 4. Federated spatial omics</h3>
+<p>Visium / Xenium samples live in hospital pathology labs. <strong>Proposal:</strong> FL on hist+ST joint models (CytAssist embedding) trains cell-typing per-hospital while sharing the backbone.</p>
+
+<h3>🎯 5. Federated AlphaFold fine-tuning</h3>
+<p>Labs have proprietary protein-design datasets (patent reasons). <strong>Proposal:</strong> FedLoRA jointly fine-tunes AlphaFold / ESMFold for specialised models (antibodies, kinases, GPCRs).</p>
+
+<h3>🎯 6. Federated drug-target interaction</h3>
+<p>MELLODDY demonstrated this; next step is vertical FL across companies sharing assays. <strong>Proposal:</strong> vFedDTI — cross-pharma integration of phenotypic + biochemical assays.</p>
+
+<h3>🎯 7. Federated medical-imaging foundation model</h3>
+<p>BiomedCLIP, MedSAM exist; <strong>Proposal:</strong> FedSAM fine-tuned across 100+ hospitals matches institution-specific models for specific organs/modalities.</p>
+
+<h3>🎯 8. Federated CRISPR-perturbation atlas</h3>
+<p>Cross-institution Perturb-seq. <strong>Proposal:</strong> FL on PerturbNet / GEARS — private CRISPR libraries stay local; especially powerful for rare-target perturbations.</p>
+
+<h3>🎯 9. Federated foundation models for clinical trials</h3>
+<p>Pharma phase II/III EHRs are strictly confidential. <strong>Proposal:</strong> FL on trial-eligibility / adverse-event prediction — a MELLODDY-style consortium for clinical research.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'flower')">Flower</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scr')">FedAvg from scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'dp')">DP-SGD</button>
+</div>
+
+<div class="code-tab-content active" id="flower"><pre><span class="comment"># pip install flwr torch</span>
+<span class="keyword">import</span> flwr <span class="keyword">as</span> fl, torch
+<span class="keyword">from</span> torch <span class="keyword">import</span> nn
+
+<span class="keyword">class</span> Net(nn.Module):
+    <span class="keyword">def</span> __init__(self):
+        super().__init__(); self.fc = nn.Linear(<span class="num">20</span>, <span class="num">2</span>)
+    <span class="keyword">def</span> forward(self, x): <span class="keyword">return</span> self.fc(x)
+
+<span class="keyword">class</span> ClientApp(fl.client.NumPyClient):
+    <span class="keyword">def</span> __init__(self, model, train_loader, val_loader):
+        self.model = model; self.tl=train_loader; self.vl=val_loader
+    <span class="keyword">def</span> get_parameters(self, config):
+        <span class="keyword">return</span> [v.cpu().numpy() <span class="keyword">for</span> v <span class="keyword">in</span> self.model.state_dict().values()]
+    <span class="keyword">def</span> set_parameters(self, params):
+        sd = {k: torch.tensor(v) <span class="keyword">for</span> k, v <span class="keyword">in</span> zip(self.model.state_dict().keys(), params)}
+        self.model.load_state_dict(sd, strict=<span class="keyword">True</span>)
+    <span class="keyword">def</span> fit(self, params, config):
+        self.set_parameters(params)
+        <span class="comment"># Local SGD for E epochs</span>
+        opt = torch.optim.SGD(self.model.parameters(), lr=<span class="num">1e-2</span>)
+        <span class="keyword">for</span> _ <span class="keyword">in</span> range(<span class="num">3</span>):                       <span class="comment"># E=3</span>
+            <span class="keyword">for</span> x, y <span class="keyword">in</span> self.tl:
+                opt.zero_grad()
+                loss = nn.functional.cross_entropy(self.model(x), y)
+                loss.backward(); opt.step()
+        <span class="keyword">return</span> self.get_parameters({}), len(self.tl.dataset), {}
+    <span class="keyword">def</span> evaluate(self, params, config):
+        self.set_parameters(params)
+        <span class="comment"># ... return loss, n, metrics</span>
+        <span class="keyword">return</span> <span class="num">0.0</span>, len(self.vl.dataset), {}
+
+<span class="comment"># Server: FedAvg with 5 rounds</span>
+fl.simulation.start_simulation(
+    client_fn      = make_client_fn,
+    num_clients    = <span class="num">10</span>,
+    config         = fl.server.ServerConfig(num_rounds=<span class="num">5</span>),
+    strategy       = fl.server.strategy.FedAvg(fraction_fit=<span class="num">0.6</span>))</pre></div>
+
+<div class="code-tab-content" id="scr"><pre><span class="comment"># FedAvg from scratch — pure PyTorch</span>
+<span class="keyword">import</span> torch, copy
+<span class="keyword">from</span> torch <span class="keyword">import</span> nn
+
+<span class="keyword">def</span> fedavg(global_model, clients, rounds=<span class="num">20</span>, E=<span class="num">3</span>, lr=<span class="num">1e-2</span>):
+    <span class="keyword">for</span> r <span class="keyword">in</span> range(rounds):
+        local_states, ns = [], []
+        <span class="keyword">for</span> ds <span class="keyword">in</span> clients:                          <span class="comment"># ds = (loader, n_samples)</span>
+            m = copy.deepcopy(global_model)
+            opt = torch.optim.SGD(m.parameters(), lr=lr)
+            <span class="keyword">for</span> _ <span class="keyword">in</span> range(E):
+                <span class="keyword">for</span> x, y <span class="keyword">in</span> ds[<span class="num">0</span>]:
+                    opt.zero_grad()
+                    loss = nn.functional.cross_entropy(m(x), y)
+                    loss.backward(); opt.step()
+            local_states.append(m.state_dict()); ns.append(ds[<span class="num">1</span>])
+        <span class="comment"># Weighted average</span>
+        n_total = sum(ns)
+        new_sd = {}
+        <span class="keyword">for</span> k <span class="keyword">in</span> local_states[<span class="num">0</span>]:
+            new_sd[k] = sum((n/n_total) * s[k] <span class="keyword">for</span> s, n <span class="keyword">in</span> zip(local_states, ns))
+        global_model.load_state_dict(new_sd)
+    <span class="keyword">return</span> global_model</pre></div>
+
+<div class="code-tab-content" id="dp"><pre><span class="comment"># DP-SGD inside a client (opacus)</span>
+<span class="keyword">from</span> opacus <span class="keyword">import</span> PrivacyEngine
+
+privacy_engine = PrivacyEngine()
+model, optimizer, train_loader = privacy_engine.make_private_with_epsilon(
+    module       = model,
+    optimizer    = optimizer,
+    data_loader  = train_loader,
+    target_epsilon   = <span class="num">3.0</span>,
+    target_delta     = <span class="num">1e-5</span>,
+    epochs           = <span class="num">5</span>,
+    max_grad_norm    = <span class="num">1.0</span>)
+
+<span class="keyword">for</span> epoch <span class="keyword">in</span> range(<span class="num">5</span>):
+    <span class="keyword">for</span> x, y <span class="keyword">in</span> train_loader:
+        optimizer.zero_grad()
+        loss = loss_fn(model(x), y)
+        loss.backward()                              <span class="comment"># per-sample grad + clip</span>
+        optimizer.step()                             <span class="comment"># inject Gaussian noise</span>
+
+eps = privacy_engine.get_epsilon(delta=<span class="num">1e-5</span>)
+<span class="keyword">print</span>(<span class="str">f"Spent ε = </span>{eps:.2f}<span class="str">"</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">FedAvg 與 distributed SGD 最關鍵的差異是什麼？</p><p data-lang="en">What is the key difference between FedAvg and distributed SGD?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. FedAvg 不需要 server</span><span data-lang="en">A. FedAvg needs no server</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. FedAvg 不能用 SGD</span><span data-lang="en">B. FedAvg cannot use SGD</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. FedAvg 每個 client 在本地跑「多個」epoch 後才上傳，減少通訊；distributed SGD 通常每步同步</span><span data-lang="en">C. FedAvg runs multiple local epochs before uploading (saving comms); distributed SGD usually syncs every step</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. FedAvg 不適合 non-IID</span><span data-lang="en">D. FedAvg cannot handle non-IID</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 non-IID 是 FedAvg 的主要挑戰？</p><p data-lang="en">Why is non-IID the main challenge for FedAvg?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 每 client 局部最佳方向不同，平均後 global model 漂移甚至發散（client drift）</span><span data-lang="en">A. Each client's local optimum differs; averaging causes the global model to drift or diverge ("client drift")</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. non-IID 讓 server 無法上傳</span><span data-lang="en">B. Non-IID stops the server from uploading</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. non-IID 違反 GDPR</span><span data-lang="en">C. Non-IID violates GDPR</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. non-IID 使加密不可能</span><span data-lang="en">D. Non-IID makes encryption impossible</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">DP-SGD 提供什麼形式的隱私保證？</p><p data-lang="en">What kind of privacy guarantee does DP-SGD provide?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 絕對的「不可反推任何資訊」</span><span data-lang="en">A. Absolute "no information can be inverted"</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. (ε, δ)-differential privacy：對 per-sample 梯度 norm clipping 後加 Gaussian noise，限制任何單一樣本對輸出的影響</span><span data-lang="en">B. (ε, δ)-differential privacy: per-sample gradient clipping + Gaussian noise, bounding any single sample's effect on the output</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 完全加密的同態運算</span><span data-lang="en">C. Fully homomorphic encryption</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只有「資料不出院」即可保證</span><span data-lang="en">D. "Data stays on-site" is sufficient</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="dpp.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 36：DPP" data-en="Ch 36: DPP">Ch 36：DPP</span></a>
+<a href="hypergraph-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 38：Hypergraph Learning" data-en="Ch 38: Hypergraph Learning">Ch 38：Hypergraph Learning</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: 3-client FedAvg / FedProx convergence =====
+// Toy task: each client has a noisy linear regression with a per-client bias drift.
+// Global parameter we want is theta* in R^2.
+function simulate(alpha, E, algo){
+  const rounds = 30;
+  // True global theta
+  const thetaStar = [1.2, -0.5];
+  // Each client's local theta optimum drifts away from global by ~ alpha * delta
+  const clientDelta = [
+    [ 0.8*alpha,  0.6*alpha],
+    [-0.7*alpha,  0.5*alpha],
+    [ 0.1*alpha, -0.9*alpha],
+  ];
+  const n_k = [400, 350, 250];
+  // Global parameter
+  let theta = [0,0];
+  const lr = 0.06;
+  const mu = (algo==='fedprox') ? 0.05 : 0.0;
+  const hist = {global:[], c1:[], c2:[], c3:[]};
+  function loss(th, k){
+    const dx=(th[0]-thetaStar[0]-clientDelta[k][0]);
+    const dy=(th[1]-thetaStar[1]-clientDelta[k][1]);
+    return dx*dx+dy*dy;
+  }
+  function globalLoss(th){
+    // Weighted true loss to thetaStar
+    const dx=th[0]-thetaStar[0], dy=th[1]-thetaStar[1];
+    return dx*dx+dy*dy;
+  }
+  for(let r=0;r<rounds;r++){
+    const updates=[];
+    for(let k=0;k<3;k++){
+      let local=[theta[0],theta[1]];
+      for(let e=0;e<E;e++){
+        // Local gradient toward client-k optimum
+        const tgt=[thetaStar[0]+clientDelta[k][0], thetaStar[1]+clientDelta[k][1]];
+        let gx=2*(local[0]-tgt[0]) + mu*(local[0]-theta[0]);
+        let gy=2*(local[1]-tgt[1]) + mu*(local[1]-theta[1]);
+        // Add small noise
+        gx += (Math.random()-0.5)*0.05;
+        gy += (Math.random()-0.5)*0.05;
+        local[0]-=lr*gx; local[1]-=lr*gy;
+      }
+      updates.push(local);
+    }
+    const n_total=n_k.reduce((a,b)=>a+b,0);
+    theta=[0,0];
+    for(let k=0;k<3;k++){
+      theta[0]+=(n_k[k]/n_total)*updates[k][0];
+      theta[1]+=(n_k[k]/n_total)*updates[k][1];
+    }
+    hist.global.push(globalLoss(theta));
+    hist.c1.push(loss(theta,0));
+    hist.c2.push(loss(theta,1));
+    hist.c3.push(loss(theta,2));
+  }
+  return hist;
+}
+let chart=null;
+function plot(){
+  const alpha=+document.getElementById('sAlpha').value;
+  const E=+document.getElementById('sE').value;
+  const algo=document.getElementById('algo').value;
+  document.getElementById('vAlpha').textContent=alpha.toFixed(2);
+  document.getElementById('vE').textContent=E;
+  const h=simulate(alpha,E,algo);
+  const labels=h.global.map((_,i)=>i+1);
+  const ds=[
+    {label:'global loss', data:h.global, borderColor:'#2c5d4f', backgroundColor:'rgba(44,93,79,0.10)', tension:0.25, borderWidth:2.5, fill:true},
+    {label:'client A (elderly-skew)', data:h.c1, borderColor:'#c0392b', backgroundColor:'transparent', borderDash:[5,3], borderWidth:1.6, tension:0.25, pointRadius:0},
+    {label:'client B (paediatric-skew)', data:h.c2, borderColor:'#2563a8', backgroundColor:'transparent', borderDash:[5,3], borderWidth:1.6, tension:0.25, pointRadius:0},
+    {label:'client C (balanced)', data:h.c3, borderColor:'#d4a017', backgroundColor:'transparent', borderDash:[5,3], borderWidth:1.6, tension:0.25, pointRadius:0},
+  ];
+  const ctx=document.getElementById('flChart').getContext('2d');
+  if(chart) chart.destroy();
+  chart=new Chart(ctx,{type:'line', data:{labels,datasets:ds},
+    options:{responsive:true, animation:{duration:300},
+      plugins:{legend:{position:'bottom',labels:{font:{size:11}}}, title:{display:false}},
+      scales:{x:{title:{display:true,text:'communication round'}},
+              y:{title:{display:true,text:'squared loss'}, type:'logarithmic'}}}});
+  const lang=I18n.get();
+  const finalG = h.global[h.global.length-1].toFixed(3);
+  const driftSpread = Math.max(h.c1.slice(-1)[0], h.c2.slice(-1)[0], h.c3.slice(-1)[0]) - Math.min(h.c1.slice(-1)[0], h.c2.slice(-1)[0], h.c3.slice(-1)[0]);
+  document.getElementById('flInfo').innerHTML = lang==='zh' ?
+    `30 round 後：global loss ≈ <strong>${finalG}</strong>；client loss 散布 ≈ <strong>${driftSpread.toFixed(3)}</strong>。<br>α 越大 → client 之間 patient mix 越不同 → drift 更明顯；E 越大 → 通訊省、但 drift 更嚴重；FedProx 的 proximal term 把 client local update 「拉」向 global，明顯穩定。`
+    :
+    `After 30 rounds: global loss ≈ <strong>${finalG}</strong>; per-client loss spread ≈ <strong>${driftSpread.toFixed(3)}</strong>.<br>Larger α → more different patient mixes → more drift; larger E → less comms but more drift; FedProx's proximal term pulls each client's local update toward the global model, clearly stabilising.`;
+}
+document.getElementById('btnRun').addEventListener('click',plot);
+document.getElementById('sAlpha').addEventListener('input',plot);
+document.getElementById('sE').addEventListener('input',plot);
+document.getElementById('algo').addEventListener('change',plot);
+document.addEventListener('langchange',plot);
+plot();
+
+window._QF={zh:{
+  q1_y:'答對！FedAvg 用多 local epoch 換取低通訊頻率。',
+  q1_n:'答案是 C。FedAvg 設計上讓每 client 跑多個 epoch 才上傳，是 cross-silo 帶寬效率的核心。',
+  q2_y:'答對！這就是 client drift 問題。',
+  q2_n:'答案是 A。非 IID 下每 client 局部最佳不同，平均後 global model 不再對齊任何一個 client → 振盪甚至發散。',
+  q3_y:'答對！(ε, δ)-DP 是 DP-SGD 的標準保證。',
+  q3_n:'答案是 B。DP-SGD = per-sample clipping + Gaussian noise，給 (ε, δ)-DP；ε 越小越嚴格、acc 通常略降。'
+},en:{
+  q1_y:'Correct! FedAvg trades local epochs for fewer communication rounds.',
+  q1_n:'Answer is C. FedAvg runs many local epochs per round, the key bandwidth efficiency for cross-silo settings.',
+  q2_y:'Correct! That is the client-drift problem.',
+  q2_n:'Answer is A. Under non-IID, each client\'s local optimum differs; the averaged global model aligns with none of them.',
+  q3_y:'Correct! (ε, δ)-DP is the standard DP-SGD guarantee.',
+  q3_n:'Answer is B. DP-SGD = per-sample clipping + Gaussian noise, giving (ε, δ)-DP; smaller ε is stricter and usually drops accuracy slightly.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

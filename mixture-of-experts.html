@@ -1,0 +1,620 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Mixture of Experts — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html" class="active">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 47 / 50</div><h1 data-zh="專家混合 (Mixture of Experts, MoE)" data-en="Mixture of Experts (MoE)">專家混合 (Mixture of Experts, MoE)</h1>
+<p class="subtitle" data-lang="zh">為什麼 GPT-4、Mixtral、Gemini 都用 MoE？因為「N 個 expert 網路 + gating」可以把參數量加到天文數字，<strong>但每個 token 只啟用 top-K 個 expert</strong>——計算量幾乎不變。Jacobs 1991 提出、Shazeer 2017 真正 scale，現已是大模型主流架構。</p>
+<p class="subtitle" data-lang="en">Why do GPT-4, Mixtral, and Gemini use MoE? Because "N experts + gating" lets you scale parameters astronomically while <strong>only top-K experts activate per token</strong> — compute stays nearly flat. Jacobs 1991 introduced it; Shazeer 2017 scaled it; today it's the mainstream architecture for large models.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="MoE 的基本想法" data-en="The Basic MoE Idea">MoE 的基本想法</h2>
+<div data-lang="zh">
+<p><strong>標準 dense MLP 的問題：</strong>所有 input 都通過<strong>同一組</strong> weight matrix。但實際上不同 input（不同 token、不同 cell type、不同 tissue）需要不同的處理 — 把所有 specialty 塞進一組 weights 是浪費。</p>
+
+<p><strong>MoE 的設計 (Jacobs et al. 1991, Neural Comp; Jordan & Jacobs 1994)：</strong>用 N 個小型「expert」網路 E₁, …, E_N + 一個「gating」網路 g。輸入 x 的輸出是 gating 加權的 expert 組合：</p>
+<p style="text-align:center;font-family:Georgia,serif;">y = Σ_{i=1}^N g_i(x) · E_i(x)，&nbsp;&nbsp; g(x) ∈ Δ^{N-1}（單純形）</p>
+
+<p><strong>Dense MoE 的問題：</strong>每個 expert 都要計算，等於把 dense network 變大 N 倍——沒有真正節省 compute。</p>
+
+<p><strong>Sparse MoE 的關鍵洞見 (Shazeer et al. 2017, ICLR)：</strong>讓 gating 是 <strong>top-K sparse</strong>——每個 input 只啟用 K（通常 1 或 2）個 expert：</p>
+<p style="text-align:center;font-family:Georgia,serif;">g(x) = TopK(softmax(W_g x))</p>
+<p>於是<strong>參數量 ∝ N（很大），但 FLOPs ∝ K（很小）</strong>。Mixtral 8×7B 總共 47B params，但 inference 時只用 13B（top-2 of 8 experts）。</p>
+
+<p><strong>Sparsity 帶來的核心優勢：</strong></p>
+<ul>
+<li><strong>更大模型容量：</strong>同等 inference cost 下放入更多 knowledge。</li>
+<li><strong>專業分工：</strong>不同 expert 自然學到不同 specialty（語言、領域、modality）。</li>
+<li><strong>條件式計算 (Conditional Computation)：</strong>困難 token 用更多 expert（部分變體），簡單 token 走 fast path。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<p><strong>The dense MLP problem:</strong> every input passes through the <strong>same</strong> weight matrix. But different inputs (different tokens, cell types, tissues) need different processing — packing all specialties into one weight set is wasteful.</p>
+
+<p><strong>MoE design (Jacobs et al. 1991, Neural Comp; Jordan & Jacobs 1994):</strong> N small "expert" networks E₁, …, E_N + a "gating" network g. Output is a gating-weighted expert mixture:</p>
+<p style="text-align:center;font-family:Georgia,serif;">y = Σ_{i=1}^N g_i(x) · E_i(x),&nbsp;&nbsp; g(x) ∈ Δ^{N-1}</p>
+
+<p><strong>Dense MoE problem:</strong> every expert is computed — equivalent to making a dense network N× larger, no compute saving.</p>
+
+<p><strong>Sparse MoE key insight (Shazeer et al. 2017, ICLR):</strong> make gating <strong>top-K sparse</strong> — each input activates only K (often 1 or 2) experts:</p>
+<p style="text-align:center;font-family:Georgia,serif;">g(x) = TopK(softmax(W_g x))</p>
+<p>So <strong>parameters ∝ N (huge) but FLOPs ∝ K (small)</strong>. Mixtral 8×7B has 47B total params, but inference uses only 13B (top-2 of 8).</p>
+
+<p><strong>What sparsity buys you:</strong></p>
+<ul>
+<li><strong>Larger capacity</strong> at the same inference cost.</li>
+<li><strong>Specialization:</strong> experts naturally learn different specialties (language, domain, modality).</li>
+<li><strong>Conditional computation:</strong> harder inputs use more experts (in some variants), easy ones take the fast path.</li>
+</ul>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🧩</div><h4 data-zh="N experts 大池" data-en="N expert pool">N experts 大池</h4><p data-lang="zh">8 個或更多 expert 網路，總 params 巨大。</p><p data-lang="en">8 or more expert networks, massive total params.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="Top-K routing" data-en="Top-K routing">Top-K routing</h4><p data-lang="zh">Gating 選 1–2 個 expert per token；inference FLOPs 不變。</p><p data-lang="en">Gating picks 1–2 experts per token; inference FLOPs unchanged.</p></div>
+  <div class="card"><div class="card-icon">⚖️</div><h4 data-zh="Load balancing" data-en="Load balancing">Load balancing</h4><p data-lang="zh">輔助 loss 防止「expert collapse」（少數 expert 包辦所有 token）。</p><p data-lang="en">Auxiliary loss prevents "expert collapse" (few experts dominating).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 Jacobs 1991 到 Mixtral / Switch / Soft MoE" data-en="From Jacobs 1991 to Mixtral / Switch / Soft MoE">從 Jacobs 1991 到 Mixtral / Switch / Soft MoE</h2>
+<div data-lang="zh">
+<p><strong>① Original MoE (Jacobs 1991, Jordan & Jacobs 1994)：</strong>Dense，全部 expert 計算後 gating 加權。用 EM-style training：E-step 計算 responsibilities g_i(x_t)，M-step 更新 expert。理論優美但 N 增大時 compute 線性增加。</p>
+
+<p><strong>② Sparsely-gated MoE (Shazeer 2017, ICLR)：</strong>真正的突破。Top-K gating + 加 Gaussian noise 防止 collapse + <strong>load balancing loss</strong>：</p>
+<p style="text-align:center;font-family:Georgia,serif;">L_aux = α · CV(load_i)² + α · CV(importance_i)²</p>
+<p>load_i = expert i 處理的 token 數；importance_i = expert i 收到的 gating mass。CV = coefficient of variation。最小化 → 強迫各 expert 均勻使用。Google 用此架構訓 137B params 翻譯模型。</p>
+
+<p><strong>③ Switch Transformer (Fedus 2021, JMLR)：</strong>Shazeer 後續，把 K = 1（單 expert per token）。優勢：通訊量減半、實作極簡。配 <strong>capacity factor</strong> C 限制每 expert max tokens，避免 imbalance。Fedus 訓 1.6T params Switch-XL，當時最大公開 LM。</p>
+
+<p><strong>④ GLaM / ST-MoE / Mixtral：</strong>更大規模工程化：</p>
+<ul>
+<li><strong>GLaM (Du 2022, Google)：</strong>1.2T params, top-2 routing, 64 experts。energy 比 GPT-3 少 1/3、品質更好。</li>
+<li><strong>ST-MoE (Zoph 2022)：</strong>解決 training instability — router z-loss、轉換 dense layer 部分為 MoE。</li>
+<li><strong>Mixtral 8×7B / 8×22B (Jiang 2024)：</strong>第一個開源 SOTA MoE LLM——8 expert per layer, top-2 routing。47B params total, 13B active。</li>
+</ul>
+
+<p><strong>⑤ Expert Choice routing (Zhou 2022)：</strong>反過來——讓「每個 expert 選擇 top-K tokens」而非「每個 token 選 top-K experts」。優勢：load balance 自動達成，無需 aux loss。</p>
+
+<p><strong>⑥ Soft MoE (Puigcerver 2024, ICLR)：</strong>完全可微 — 用 "slot" 機制，每個 expert 處理「所有 token 的 weighted average」slot。無 discrete top-K、無 load balance 問題，但喪失稀疏 FLOPs 優勢。對視覺等任務表現超好。</p>
+
+<p><strong>⑦ Hash routing / Random routing (Roller 2021)：</strong>用 hash 函數固定 token → expert 映射，跳過 gating learning。簡單、可預測，但效果略遜於 learned gating。</p>
+</div>
+
+<div data-lang="en">
+<p><strong>① Original MoE (Jacobs 1991, Jordan & Jacobs 1994):</strong> Dense — all experts computed, gating-weighted. EM-style training: E-step computes responsibilities g_i(x_t), M-step updates experts. Elegant but compute scales linearly with N.</p>
+
+<p><strong>② Sparsely-gated MoE (Shazeer 2017, ICLR):</strong> The real breakthrough. Top-K gating + Gaussian noise on gating + <strong>load balancing loss</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">L_aux = α · CV(load_i)² + α · CV(importance_i)²</p>
+<p>load_i = tokens routed to expert i; importance_i = gating mass received. CV = coefficient of variation. Minimizing forces uniform expert use. Google trained 137B-parameter translation models with this.</p>
+
+<p><strong>③ Switch Transformer (Fedus 2021, JMLR):</strong> Shazeer-followup with K = 1 (single expert per token). Halves communication, simplifies code. Uses a <strong>capacity factor</strong> C capping max tokens per expert to avoid imbalance. Fedus trained 1.6T-param Switch-XL — largest public LM at the time.</p>
+
+<p><strong>④ GLaM / ST-MoE / Mixtral:</strong> Engineering at scale:</p>
+<ul>
+<li><strong>GLaM (Du 2022, Google):</strong> 1.2T params, top-2 routing, 64 experts. 1/3 less energy than GPT-3, higher quality.</li>
+<li><strong>ST-MoE (Zoph 2022):</strong> Addresses training instability — router z-loss, converting some dense layers to MoE.</li>
+<li><strong>Mixtral 8×7B / 8×22B (Jiang 2024):</strong> First open SOTA MoE LLM — 8 experts per layer, top-2 routing. 47B total params, 13B active.</li>
+</ul>
+
+<p><strong>⑤ Expert Choice routing (Zhou 2022):</strong> Reversed — each expert picks its top-K tokens (not the other way). Load balance is automatic, no aux loss needed.</p>
+
+<p><strong>⑥ Soft MoE (Puigcerver 2024, ICLR):</strong> Fully differentiable — "slot" mechanism where each expert processes a weighted average of all tokens. No discrete top-K, no load-balance problems, but loses sparse-FLOP advantage. Excellent for vision.</p>
+
+<p><strong>⑦ Hash / Random routing (Roller 2021):</strong> Fix token → expert via a hash, skipping gating learning. Simple, deterministic, slightly worse than learned gating.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Load balancing 是 MoE 訓練的核心痛點：</strong>若不做 balancing，gating 會 collapse 到「只用 1–2 個 expert」，浪費其他 expert 的容量並造成 GPU 利用率不均。Shazeer 2017 的 CV-based loss 是經典；Expert Choice 從架構面解決；Soft MoE 完全避免這問題（但失去稀疏優勢）。實務上 Mixtral / Switch 仍使用 aux loss + capacity factor 雙重保險。</div>
+<div data-lang="en"><strong>Load balancing is MoE training's central pain:</strong> without it, gating collapses to "use only 1–2 experts", wasting other experts' capacity and creating uneven GPU load. Shazeer 2017's CV loss is classic; Expert Choice solves it architecturally; Soft MoE bypasses it (but loses sparsity). Mixtral / Switch use both aux loss + capacity factor in practice.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="觀察 input → gating → top-K experts → output" data-en="Watch input → gating → top-K experts → output">觀察 input → gating → top-K experts → output</h2>
+<div data-lang="zh"><p>下圖示意：將 2D input 通過 gating（學到的 4 個 cluster centers），輸出 softmax 機率，再 top-K 選 expert，最後 expert 處理產生輸出。<strong>拖動橘色 input 點</strong> 或調整 routing temperature、K 值，觀察 gating 分布與 active experts 如何變化。</p></div>
+<div data-lang="en"><p>Diagram shows: 2D input passes through gating (4 learned cluster centers), produces softmax probabilities, top-K experts are selected, and they process to give the output. <strong>Drag the orange input dot</strong> or adjust routing temperature / K to see how the gating distribution and active experts change.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="Top-K" data-en="Top-K">Top-K <span id="vK">2</span></label><input type="range" id="sK" min="1" max="4" value="2" step="1"></div>
+<div class="slider-group"><label data-zh="Routing temperature τ" data-en="Routing temperature τ">Routing temperature τ <span id="vT">1.0</span></label><input type="range" id="sT" min="0.1" max="3" value="1.0" step="0.05"></div>
+<div class="slider-group"><label data-zh="噪音強度（防 collapse）" data-en="Noise (collapse prevention)">噪音強度 <span id="vN">0.10</span></label><input type="range" id="sN" min="0" max="0.5" value="0.10" step="0.01"></div>
+<svg id="moeSvg" viewBox="0 0 760 380" style="width:100%;height:380px;background:#fafafa;border-radius:6px;cursor:pointer;"></svg>
+<div id="moeInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 MoE？" data-en="When to use MoE?">什麼時候用 MoE？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>巨型語言 / 多模態模型</strong>——同等 inference cost 下要最大 capacity：Mixtral, GLaM, GPT-4-MoE。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>跨領域 / 跨模態異質資料</strong>——不同 tissue × cell type × disease：每 expert 處理一類。scGPT-MoE, ESM-MoE。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>計算受限但記憶體相對充裕</strong>——can store 大模型但 FLOPs 預算固定。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>(a) 小 dataset（expert 太多易 underfit）；(b) inference 要極低延遲（routing overhead）；(c) memory 受限環境。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Giant LLM / multimodal models</strong> — maximize capacity at same inference cost: Mixtral, GLaM, GPT-4-MoE.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Heterogeneous cross-domain data</strong> — tissues × cell types × diseases: one expert per class. scGPT-MoE, ESM-MoE.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Memory-rich, compute-bound</strong> — can store huge models but fixed FLOPs budget.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>(a) Small datasets (too many experts → underfit); (b) ultra-low latency inference (routing overhead); (c) memory-tight envs.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="MoE 在生物與醫學" data-en="MoE in Biology and Medicine">MoE 在生物與醫學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="scGPT-MoE / 細胞型別專家" data-en="scGPT-MoE / cell-type experts">scGPT-MoE / 細胞型別專家</h4>
+<p data-lang="zh">scGPT 基礎模型在巨型 cell atlas (>33M cells) 上訓練。<strong>scGPT-MoE</strong> 變體（2024 工作）讓不同 expert 各自專注於不同 cell type / tissue——免疫細胞 expert、腦 expert、肝 expert 等，整體 capacity 大幅提升但 inference cost 不變。</p>
+<p data-lang="en">scGPT pretrained on >33M cells. The <strong>scGPT-MoE</strong> variant (2024 work) routes different experts to different cell types / tissues — immune expert, brain expert, liver expert — boosting capacity without raising inference cost.</p></div>
+
+<div class="card"><h4 data-zh="DRP-MoE 藥物響應預測" data-en="DRP-MoE drug response">DRP-MoE 藥物響應預測</h4>
+<p data-lang="zh">藥物響應預測 (DRP) 因 cell line × drug × tissue 異質性大而困難。<strong>DRP-MoE</strong> 用 cell-type-specific experts，每個 expert 學一個 lineage 的響應模式，比 single dense model 在罕見 lineage 上準確度高 15–20%。</p>
+<p data-lang="en">Drug response prediction is hard due to cell-line × drug × tissue heterogeneity. <strong>DRP-MoE</strong> uses cell-type-specific experts — one per lineage — gaining 15–20% accuracy on rare lineages.</p></div>
+
+<div class="card"><h4 data-zh="ESM2-MoE / 蛋白語言模型" data-en="ESM2-MoE / protein language">ESM2-MoE / 蛋白語言模型</h4>
+<p data-lang="zh">ESM2 (Lin 2023, Science) 是 protein 標準。MoE 變體（2024）讓不同 expert 處理不同 protein family / domain class（α-helical / β-sheet / IDR / membrane）——尤其改進稀有 family 表現。</p>
+<p data-lang="en">ESM2 (Lin 2023, Science) is the protein-LM standard. MoE variants (2024) route experts to different families / domain classes (α / β / IDR / membrane) — especially boosting rare families.</p></div>
+
+<div class="card"><h4 data-zh="多組織 GTEx 表現預測" data-en="Multi-tissue GTEx prediction">多組織 GTEx 表現預測</h4>
+<p data-lang="zh">GTEx 53 個組織的 gene expression prediction 需要 tissue-aware model。MoE 讓 53 個 expert（或 cluster 後較少組）各專一組織，比 multi-task dense model 在 cross-tissue 任務上更穩。</p>
+<p data-lang="en">Predicting gene expression across GTEx's 53 tissues requires tissue-aware modeling. MoE assigns experts to tissues (or tissue clusters), beating dense multi-task models on cross-tissue tasks.</p></div>
+
+<div class="card"><h4 data-zh="多疾病 phenotype 預測" data-en="Multi-disease phenotyping">多疾病 phenotype 預測</h4>
+<p data-lang="zh">EHR-based phenotyping 同時面對心血管、神經、代謝、癌症等領域。<strong>Med-MoE</strong>（Singhal 2024 風格）用 medical-domain expert，提升 rare disease classification 效能。</p>
+<p data-lang="en">EHR phenotyping spans cardiovascular, neurology, metabolic, oncology domains. <strong>Med-MoE</strong> (Singhal 2024-style) uses medical-domain experts, boosting rare-disease classification.</p></div>
+
+<div class="card"><h4 data-zh="Pan-cancer 分子分型" data-en="Pan-cancer subtyping">Pan-cancer 分子分型</h4>
+<p data-lang="zh">TCGA 33 種癌型差異極大。<strong>Pan-cancer MoE</strong> 設計專一 expert 處理 each cancer type 或 TME 亞型，整合 mutation + expression + methylation 預測 prognosis，比 generic model 提升 c-index 0.05–0.08。</p>
+<p data-lang="en">TCGA's 33 cancer types are diverse. <strong>Pan-cancer MoE</strong> dedicates experts to each cancer type / TME subtype, integrating mutation + expression + methylation for prognosis — c-index gain 0.05–0.08 over generic models.</p></div>
+
+<div class="card"><h4 data-zh="多模態 omics 整合" data-en="Multimodal omics integration">多模態 omics 整合</h4>
+<p data-lang="zh">CITE-seq (RNA + protein), Multiome (RNA + ATAC), spatial 等多模態整合，每個 modality 有獨特特徵。<strong>Modality-specific experts</strong> 比 shared encoder 更靈活，配合 cross-modal gating 達成 modality fusion。</p>
+<p data-lang="en">CITE-seq (RNA + protein), Multiome (RNA + ATAC), spatial integration — each modality has unique features. <strong>Modality-specific experts</strong> with cross-modal gating handle fusion more flexibly than shared encoders.</p></div>
+
+<div class="card"><h4 data-zh="Federated MoE 跨醫院模型" data-en="Federated MoE cross-hospital">Federated MoE 跨醫院模型</h4>
+<p data-lang="zh">不同醫院資料 distribution shift 大。<strong>Federated MoE</strong>（2024）每醫院訓自家 expert + 共享 gating，protecting privacy 同時聚合知識。比 FedAvg + dense 在 site-heterogeneous data 上提升 2–5% AUC。</p>
+<p data-lang="en">Distribution shifts across hospitals are severe. <strong>Federated MoE</strong> (2024) trains site-specific experts + shared gating — preserving privacy while aggregating knowledge. Beats FedAvg + dense by 2–5% AUC on site-heterogeneous data.</p></div>
+
+<div class="card"><h4 data-zh="Genomic foundation model MoE" data-en="Genomic foundation model MoE">Genomic foundation model MoE</h4>
+<p data-lang="zh">DNABERT, Enformer 等 genome 模型用 MoE 變體，讓不同 expert 處理不同 genomic region (promoter / enhancer / intergenic) 或不同 species。長序列 + 多區域類型剛好適合 MoE 架構。</p>
+<p data-lang="en">Genome models like DNABERT, Enformer adopt MoE variants — experts for different region types (promoter / enhancer / intergenic) or species. Long sequences + many region types are MoE's sweet spot.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="MoE 進階主題" data-en="Advanced MoE Topics">MoE 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Top-K = 1 vs Top-K = 2 的權衡</h3>
+<p>Switch (K=1) 通訊量最低、實作最簡；但 routing decision irreversible — 若選錯 expert 完全沒救。Top-2 (Shazeer, Mixtral) 留 backup expert，loss landscape 更平滑、收斂更穩，但通訊雙倍。實證上 K=2 普遍品質更好；K=1 在極限規模上有 throughput 優勢。</p>
+
+<h3>② Auxiliary load-balancing loss 的數學</h3>
+<p>Shazeer 2017 的兩個 CV：</p>
+<p style="text-align:center;font-family:Georgia,serif;">L_aux = α · ⟨f, P⟩ × N，&nbsp; f_i = fraction routed to i,&nbsp; P_i = avg gate prob to i</p>
+<p>當 f, P 都均勻時 ⟨f, P⟩ = 1/N，loss = α；某個 expert 被偏好時兩者都偏大，loss 上升。α 通常 0.01–0.1。<strong>ST-MoE 的 router z-loss：</strong>對 router logit 大小做 L2 約束，預防數值爆炸與 training divergence。</p>
+
+<h3>③ Capacity factor C</h3>
+<p>Switch / GShard 引入：每 expert 的容量 = (tokens / num_experts) × C。超過上限的 token 被 drop（zero-padded）。C = 1.0 完全均勻分配；C = 1.25 給一些 slack；C = 2.0 大幅 slack 但浪費 memory。實務 C = 1.0–1.5。</p>
+
+<h3>④ Expert collapse 與 fix</h3>
+<p>沒 load balancing 時，gate 會學到「永遠選 expert A」——其他 expert 永遠收不到梯度、永遠不學東西。除了 aux loss，亦可：(a) <strong>Random initialization variance</strong>（experts 初始差異要夠大）；(b) <strong>Noise on gating logits</strong>（Shazeer 訓練時加 Gaussian）；(c) <strong>Expert Choice</strong>（從架構解決）；(d) <strong>Soft MoE</strong>（沒 discrete routing → 無 collapse）。</p>
+
+<h3>⑤ Routing stability 與 fine-tuning</h3>
+<p>Pretrained MoE 在 fine-tuning 時 routing 可能 drift——突然全部 token 走同一 expert。<strong>解法：</strong>(a) freeze routing during fine-tuning；(b) BTX (Branch-Train-MiX, Sukhbaatar 2024)：dense 模型 fine-tune 多個專家後再 mix；(c) lower learning rate for router。</p>
+
+<h3>⑥ Scaling laws of MoE</h3>
+<p>Clark et al. (2022, ICML) 與 ST-MoE 發現：MoE scaling law 與 dense 不同。Dense: loss ~ N^(-α)（N=params）；MoE: loss ~ N_active^(-α') × (N_total/N_active)^(-β)，其中 N_active 是 active params。實證 α' < α 但有額外項——MoE 在「同等 train compute」下 always win，但 inference memory 更貴。</p>
+
+<h3>⑦ MoE 與 modular / lifelong learning 的關係</h3>
+<p>MoE 天然是「模組化神經網路」。Veniat & Denoyer (2018) 等 lifelong learning 工作把 expert 視為「可加可拔」模組——新 task 來訓新 expert 不忘舊知識。生物上的應用：每加入新 cohort / new disease，增 expert 而不重訓 base。</p>
+
+<h3>⑧ Soft MoE 與 Slot attention 的關係</h3>
+<p>Puigcerver et al. (2024, ICLR) 的 Soft MoE 與 Slot Attention (Locatello 2020) 結構相似：用 learnable "slots" 對 input set 做 attention pooling，每 slot 給一個 expert。差別：Soft MoE 對 inputs 做 weighted average；Slot Attention 競爭性地 assign inputs to slots。Soft MoE 完全可微，特別適合 ViT 等視覺任務。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Top-K = 1 vs 2 trade-off</h3>
+<p>Switch (K=1) is lowest-comm and simplest; but routing is irreversible — wrong pick is fatal. Top-2 (Shazeer, Mixtral) keeps a backup, smoother loss, more stable convergence, but doubles communication. Empirically K=2 wins in quality; K=1 wins in throughput at extreme scale.</p>
+
+<h3>② Auxiliary load-balancing loss math</h3>
+<p>Shazeer 2017's two CVs:</p>
+<p style="text-align:center;font-family:Georgia,serif;">L_aux = α · ⟨f, P⟩ × N,&nbsp; f_i = fraction routed to i,&nbsp; P_i = avg gate prob to i</p>
+<p>Uniform f, P → ⟨f, P⟩ = 1/N → loss = α; skewed → loss rises. α typically 0.01–0.1. <strong>ST-MoE router z-loss:</strong> L2 on router logits prevents numerical blowup and training divergence.</p>
+
+<h3>③ Capacity factor C</h3>
+<p>Switch / GShard introduce: expert capacity = (tokens / num_experts) × C. Excess tokens are dropped (zero-padded). C = 1.0 strict; C = 1.25 slack; C = 2.0 huge slack but memory waste. Typical C = 1.0–1.5.</p>
+
+<h3>④ Expert collapse and fixes</h3>
+<p>Without load balancing, gating learns "always pick A" — others never receive gradients. Beyond aux loss: (a) <strong>variance in init</strong> (experts start differently); (b) <strong>noise on gating logits</strong> (Shazeer's Gaussian); (c) <strong>Expert Choice</strong> (architectural); (d) <strong>Soft MoE</strong> (no discrete routing → no collapse).</p>
+
+<h3>⑤ Routing stability and fine-tuning</h3>
+<p>Pretrained MoE may drift during fine-tuning — all tokens collapse to one expert. <strong>Fixes:</strong> (a) freeze routing; (b) BTX (Branch-Train-MiX, Sukhbaatar 2024): fine-tune dense experts then mix; (c) lower LR on the router.</p>
+
+<h3>⑥ MoE scaling laws</h3>
+<p>Clark et al. (2022, ICML) and ST-MoE: MoE laws differ from dense. Dense: loss ~ N^(-α); MoE: loss ~ N_active^(-α') × (N_total/N_active)^(-β). Empirically α' < α with an extra term — MoE always wins at iso-train-compute, but inference memory is costlier.</p>
+
+<h3>⑦ MoE and modular / lifelong learning</h3>
+<p>MoE is naturally a "modular network". Veniat & Denoyer (2018) and others treat experts as plug-and-play modules — add new experts for new tasks without forgetting. Biological angle: add expert per cohort / new disease without retraining base.</p>
+
+<h3>⑧ Soft MoE and Slot Attention</h3>
+<p>Puigcerver et al. (2024, ICLR) Soft MoE resembles Slot Attention (Locatello 2020): learnable "slots" attention-pool inputs, one expert per slot. Difference: Soft MoE weighted-averages inputs; Slot Attention competitively assigns. Soft MoE is fully differentiable — great for ViT-style vision tasks.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="MoE 還能改良哪些任務？" data-en="What Else Could MoE Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Cell-type-aware foundation model</h3>
+<p>scGPT / Geneformer 等 cell foundation model 用 dense Transformer。<strong>提案：</strong>替換 FFN 為 MoE，每 expert 自然 specialize 一個 cell-type lineage——比 dense 更高效於罕見 cell type，且每 expert 可解釋為「lineage program」。</p>
+
+<h3>🎯 2. Tissue-specific drug response MoE</h3>
+<p>藥物在不同組織響應差異大。<strong>提案：</strong>tissue × cancer × cell-line 三層 expert hierarchy，gating 根據 multi-omics features 自動 route，提升 rare lineage 與 first-in-class drug 預測。</p>
+
+<h3>🎯 3. 跨物種 ortholog-aware MoE</h3>
+<p>不同物種共享 conserved core + species-specific 差異。<strong>提案：</strong>shared expert（core biology）+ species-specific experts（divergent regulation），gating 根據 species + ortholog group。利於 cross-species translation 與 evolutionary biology。</p>
+
+<h3>🎯 4. 多模態 omics MoE 整合</h3>
+<p>RNA + ATAC + methylation + spatial + protein 各模態結構差異大。<strong>提案：</strong>modality-specific experts + cross-modal gating；gating 根據 missing-modality pattern 自動調整 routing。比現行 concat / cross-attention 更靈活。</p>
+
+<h3>🎯 5. Continual learning of cell atlases</h3>
+<p>新 cell atlas（如 HCA 持續擴增）持續加入。<strong>提案：</strong>add-expert 機制——每加入新 cohort 訓新 expert，old experts freeze。配合 routing fine-tune 達到零遺忘 continual learning。</p>
+
+<h3>🎯 6. Federated multi-hospital diagnostic MoE</h3>
+<p>每家醫院資料 distribution 不同，傳統 FL 模型 underperform。<strong>提案：</strong>每家醫院 local expert + 共享 lightweight gating（只送 features）。配合 differential privacy 進一步 protect。</p>
+
+<h3>🎯 7. Genomic regulatory region experts</h3>
+<p>Enformer 等用 dense Transformer 處理全 genome。<strong>提案：</strong>每 chromatin context (promoter / enhancer / silencer / intergenic) 訓 expert；gating 根據 epigenetic features (H3K27ac, ATAC) 自動 route。提升 distal regulation 預測。</p>
+
+<h3>🎯 8. Protein design with structural experts</h3>
+<p>RFdiffusion / FrameFlow 等 protein design model 用 dense network。<strong>提案：</strong>fold-class experts（α-helical bundle / Rossmann fold / β-barrel / IDR）；gating 根據 target topology 自動 route。對 multi-fold 設計尤其有用。</p>
+
+<h3>🎯 9. Microbiome MoE for ecological context</h3>
+<p>不同棲位（gut / skin / soil / marine）微生物群落結構差異大。<strong>提案：</strong>biome-specific experts + 共享 taxonomic embedding，提升 cross-biome 預測（如「這個物種在 gut 與 soil 的 function 差異」）。</p>
+
+<h3>🎯 10. MoE for clinical trial subgroup analysis</h3>
+<p>同一藥物在不同 patient subgroup 效果差異大。<strong>提案：</strong>subgroup-aware MoE（age / genotype / comorbidity-conditioned routing），自動識別 responder vs non-responder subgroup，輔助 precision oncology / immunology 試驗設計。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Cell-type-aware foundation model</h3>
+<p>scGPT / Geneformer use dense Transformers. <strong>Proposal:</strong> replace FFN with MoE — experts naturally specialize per cell-type lineage, more efficient for rare types, each expert interpretable as a "lineage program".</p>
+
+<h3>🎯 2. Tissue-specific drug response MoE</h3>
+<p>Drug response varies by tissue. <strong>Proposal:</strong> three-level expert hierarchy (tissue × cancer × cell-line); gating routes by multi-omics features, improving rare-lineage and first-in-class predictions.</p>
+
+<h3>🎯 3. Cross-species ortholog-aware MoE</h3>
+<p>Species share conserved core but diverge in regulation. <strong>Proposal:</strong> shared expert (core biology) + species-specific experts (divergence); gating uses species + ortholog group. Benefits cross-species translation and evolutionary biology.</p>
+
+<h3>🎯 4. Multimodal omics MoE integration</h3>
+<p>RNA + ATAC + methylation + spatial + protein vary structurally. <strong>Proposal:</strong> modality-specific experts + cross-modal gating; gating adapts to missing-modality patterns. More flexible than concat / cross-attention.</p>
+
+<h3>🎯 5. Continual learning of cell atlases</h3>
+<p>Atlases (e.g. HCA) keep growing. <strong>Proposal:</strong> add-expert mechanism — train new expert per new cohort, freeze old; tune routing for zero-forgetting continual learning.</p>
+
+<h3>🎯 6. Federated multi-hospital MoE</h3>
+<p>Cross-hospital distributions differ; FL underperforms. <strong>Proposal:</strong> local expert per hospital + shared lightweight gating (features only); add DP for further privacy.</p>
+
+<h3>🎯 7. Genomic regulatory-region experts</h3>
+<p>Enformer uses dense Transformer for the whole genome. <strong>Proposal:</strong> experts per chromatin context (promoter / enhancer / silencer / intergenic); gating routes by epigenetic features (H3K27ac, ATAC). Boosts distal regulation prediction.</p>
+
+<h3>🎯 8. Protein design with structural experts</h3>
+<p>RFdiffusion / FrameFlow use dense networks. <strong>Proposal:</strong> fold-class experts (α-helical / Rossmann / β-barrel / IDR); gating routes by target topology. Especially useful for multi-fold design.</p>
+
+<h3>🎯 9. Microbiome MoE for ecological context</h3>
+<p>Niches (gut / skin / soil / marine) have distinct community structure. <strong>Proposal:</strong> biome-specific experts + shared taxonomic embedding for cross-biome inference (e.g. "function of this species in gut vs soil").</p>
+
+<h3>🎯 10. MoE for clinical trial subgroup analysis</h3>
+<p>The same drug differs across subgroups. <strong>Proposal:</strong> subgroup-aware MoE (age / genotype / comorbidity-conditioned routing) auto-identifies responder vs non-responder, aiding precision oncology / immunology trials.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'scr')">From scratch (PyTorch)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'tutel')">tutel (Microsoft)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'mixtral')">Mixtral inference</button>
+</div>
+
+<div class="code-tab-content active" id="scr"><pre><span class="comment"># Minimal top-K sparse MoE layer in PyTorch</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn, torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">class</span> Expert(nn.Module):
+    <span class="keyword">def</span> __init__(self, d, h):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(d, h), nn.GELU(), nn.Linear(h, d))
+    <span class="keyword">def</span> forward(self, x): <span class="keyword">return</span> self.net(x)
+
+<span class="keyword">class</span> SparseMoE(nn.Module):
+    <span class="keyword">def</span> __init__(self, d=<span class="num">256</span>, h=<span class="num">1024</span>, n_experts=<span class="num">8</span>, k=<span class="num">2</span>):
+        super().__init__()
+        self.k = k
+        self.gate = nn.Linear(d, n_experts)
+        self.experts = nn.ModuleList([Expert(d, h) <span class="keyword">for</span> _ <span class="keyword">in</span> range(n_experts)])
+
+    <span class="keyword">def</span> forward(self, x):                       <span class="comment"># x: (B, T, d)</span>
+        B, T, d = x.shape
+        x_flat = x.view(-<span class="num">1</span>, d)                  <span class="comment"># (B*T, d)</span>
+        logits = self.gate(x_flat)              <span class="comment"># (B*T, n_experts)</span>
+        topk_val, topk_idx = logits.topk(self.k, dim=-<span class="num">1</span>)
+        topk_w = F.softmax(topk_val, dim=-<span class="num">1</span>)    <span class="comment"># renormalize</span>
+        out = torch.zeros_like(x_flat)
+        <span class="keyword">for</span> i, expert <span class="keyword">in</span> enumerate(self.experts):
+            mask = (topk_idx == i).any(dim=-<span class="num">1</span>)   <span class="comment"># tokens routed here</span>
+            <span class="keyword">if</span> mask.sum() == <span class="num">0</span>: <span class="keyword">continue</span>
+            tok = x_flat[mask]
+            w   = topk_w[mask] * (topk_idx[mask] == i).float()
+            w   = w.sum(dim=-<span class="num">1</span>, keepdim=<span class="keyword">True</span>)
+            out[mask] += w * expert(tok)
+        <span class="comment"># Auxiliary load-balance loss (Shazeer 2017)</span>
+        probs = F.softmax(logits, dim=-<span class="num">1</span>)
+        f = (topk_idx.flatten()[:, <span class="keyword">None</span>] == torch.arange(<span class="num">8</span>, device=x.device))\
+            .float().mean(<span class="num">0</span>)              <span class="comment"># fraction routed</span>
+        P = probs.mean(<span class="num">0</span>)                     <span class="comment"># avg gate prob</span>
+        L_aux = (f * P).sum() * <span class="num">8</span>             <span class="comment"># N=8 experts</span>
+        <span class="keyword">return</span> out.view(B, T, d), L_aux</pre></div>
+
+<div class="code-tab-content" id="tutel"><pre><span class="comment"># pip install tutel</span>
+<span class="comment"># Microsoft's optimized MoE — supports top-K, capacity factor, etc.</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> tutel <span class="keyword">import</span> moe <span class="keyword">as</span> tutel_moe
+
+moe_layer = tutel_moe.moe_layer(
+    gate_type = {<span class="str">'type'</span>: <span class="str">'top'</span>, <span class="str">'k'</span>: <span class="num">2</span>, <span class="str">'fp32_gate'</span>: <span class="keyword">True</span>},
+    model_dim = <span class="num">512</span>,
+    experts   = {<span class="str">'type'</span>:<span class="str">'ffn'</span>, <span class="str">'count_per_node'</span>:<span class="num">8</span>,
+                 <span class="str">'hidden_size_per_expert'</span>: <span class="num">2048</span>,
+                 <span class="str">'activation_fn'</span>: <span class="keyword">lambda</span> x: torch.nn.functional.gelu(x)},
+    scan_expert_func   = <span class="keyword">None</span>,
+    seeds=(<span class="num">1</span>, <span class="num">1</span>, <span class="num">1</span>),
+    a2a_ffn_overlap_degree = <span class="num">1</span>,
+    use_2dh   = <span class="keyword">False</span>,
+).cuda()
+
+x = torch.randn(<span class="num">8</span>, <span class="num">128</span>, <span class="num">512</span>, device=<span class="str">'cuda'</span>)
+y = moe_layer(x)                              <span class="comment"># shape preserved</span>
+aux = moe_layer.l_aux                         <span class="comment"># load-balance loss</span></pre></div>
+
+<div class="code-tab-content" id="mixtral"><pre><span class="comment"># pip install transformers accelerate</span>
+<span class="keyword">from</span> transformers <span class="keyword">import</span> AutoTokenizer, AutoModelForCausalLM
+<span class="keyword">import</span> torch
+
+tok   = AutoTokenizer.from_pretrained(<span class="str">"mistralai/Mixtral-8x7B-v0.1"</span>)
+model = AutoModelForCausalLM.from_pretrained(
+    <span class="str">"mistralai/Mixtral-8x7B-v0.1"</span>,
+    torch_dtype = torch.bfloat16,
+    device_map  = <span class="str">"auto"</span>,
+    output_router_logits = <span class="keyword">True</span>)        <span class="comment"># inspect routing!</span>
+
+prompt = <span class="str">"Explain the role of T-cell receptor diversity:"</span>
+inputs = tok(prompt, return_tensors=<span class="str">"pt"</span>).to(model.device)
+out = model.generate(**inputs, max_new_tokens=<span class="num">120</span>,
+                     return_dict_in_generate=<span class="keyword">True</span>,
+                     output_scores=<span class="keyword">True</span>)
+<span class="keyword">print</span>(tok.decode(out.sequences[<span class="num">0</span>], skip_special_tokens=<span class="keyword">True</span>))
+
+<span class="comment"># Inspect which experts activated</span>
+<span class="comment"># model.config.num_experts_per_tok = 2 by default; 8 experts per layer</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Sparse MoE 相對於 dense MLP 的最大優勢是什麼？</p><p data-lang="en">What is the biggest advantage of sparse MoE over a dense MLP?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 訓練時間較短</span><span data-lang="en">A. Shorter training time</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需要 GPU</span><span data-lang="en">B. No GPU needed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 參數量大幅提升但 inference FLOPs 幾乎不變（top-K 啟用，其他 expert 完全不算）</span><span data-lang="en">C. Massive parameter count growth while inference FLOPs stay nearly flat (only top-K experts compute)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 自動消除所有 noise</span><span data-lang="en">D. Auto noise removal</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼 MoE 訓練需要 load-balancing auxiliary loss？</p><p data-lang="en">Why does MoE training need a load-balancing auxiliary loss?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 為了讓 model 更小</span><span data-lang="en">A. To shrink the model</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 避免 "expert collapse" — 沒這個 loss 時 gating 會傾向只選少數 expert，其他 expert 永遠不被訓練</span><span data-lang="en">B. To prevent "expert collapse" — without it, gating tends to pick only a few experts; the rest never receive gradient</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 加速 inference</span><span data-lang="en">C. To speed up inference</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 取代 cross-entropy</span><span data-lang="en">D. To replace cross-entropy</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Switch Transformer (Fedus 2021) 與 Shazeer 2017 sparse MoE 的關鍵差異是什麼？</p><p data-lang="en">What is the key difference between Switch Transformer (Fedus 2021) and Shazeer 2017 sparse MoE?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Switch 用 K=1（每 token 只 1 個 expert），simplify 路由與通訊；Shazeer 用 K=2</span><span data-lang="en">A. Switch uses K=1 (one expert per token), simplifying routing and comms; Shazeer used K=2</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Switch 不需要 gating</span><span data-lang="en">B. Switch needs no gating</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Switch 只能處理視覺資料</span><span data-lang="en">C. Switch only handles vision</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Switch 沒有 expert</span><span data-lang="en">D. Switch has no experts</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="functional-data.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 46：Functional Data Analysis" data-en="Ch 46: Functional Data Analysis">Ch 46：Functional Data Analysis</span></a>
+<a href="nmf-ica-sparse.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 48：NMF / ICA / Sparse" data-en="Ch 48: NMF / ICA / Sparse">Ch 48：NMF / ICA / Sparse</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive MoE: input → gating → top-K experts → output =====
+const SVG=document.getElementById('moeSvg');
+const Wm=760,Hm=380;
+// 4 experts; each has a "center" in 2D — gating logit = -||x - c_i||² / τ
+const EXPERTS=[
+  {name:'E1',cx:-1.0, cy:-1.0, color:'#c0392b', desc:{zh:'免疫 expert',en:'Immune expert'}},
+  {name:'E2',cx: 1.0, cy:-1.0, color:'#2563a8', desc:{zh:'肝 expert',en:'Liver expert'}},
+  {name:'E3',cx:-1.0, cy: 1.0, color:'#1a6b5a', desc:{zh:'神經 expert',en:'Neural expert'}},
+  {name:'E4',cx: 1.0, cy: 1.0, color:'#8e44ad', desc:{zh:'肌肉 expert',en:'Muscle expert'}},
+];
+let INPUT={x:0.1, y:0.1};
+let dragging=false;
+// Layout: input on left at x=80, experts grid in middle, output on right at x=680
+const INPUT_PX=80, EXP_PX=400, OUT_PX=680;
+const EXP_POS=[
+  {sx:EXP_PX-90, sy:80},  {sx:EXP_PX+90, sy:80},
+  {sx:EXP_PX-90, sy:240}, {sx:EXP_PX+90, sy:240},
+];
+
+function softmax(arr){const m=Math.max(...arr);const ex=arr.map(v=>Math.exp(v-m));const s=ex.reduce((a,b)=>a+b,0);return ex.map(v=>v/s);}
+function randn(){const u=Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u+1e-9))*Math.cos(2*Math.PI*v);}
+
+let _noiseCache=[0,0,0,0];
+function resampleNoise(){const sN=+document.getElementById('sN').value;_noiseCache=[0,1,2,3].map(()=>randn()*sN);}
+
+function computeGating(){
+  const tau=+document.getElementById('sT').value;
+  const logits=EXPERTS.map((e,i)=>{
+    const d2=(INPUT.x-e.cx)**2+(INPUT.y-e.cy)**2;
+    return -d2/tau + _noiseCache[i];
+  });
+  return softmax(logits);
+}
+
+function render(){
+  const K=+document.getElementById('sK').value;
+  const tau=+document.getElementById('sT').value;
+  const sN=+document.getElementById('sN').value;
+  document.getElementById('vK').textContent=K;
+  document.getElementById('vT').textContent=tau.toFixed(2);
+  document.getElementById('vN').textContent=sN.toFixed(2);
+  const probs=computeGating();
+  // top-K mask
+  const order=[0,1,2,3].sort((a,b)=>probs[b]-probs[a]);
+  const topK=new Set(order.slice(0,K));
+  // Renormalize topK
+  let zs=0; topK.forEach(i=>{zs+=probs[i];});
+  const normP={};topK.forEach(i=>{normP[i]=probs[i]/zs;});
+
+  // Input panel SVG mini-2D
+  let svg='';
+  // Stage labels
+  svg+=`<text x="${INPUT_PX}" y="22" text-anchor="middle" font-size="12" fill="#444" font-weight="600">Input x</text>`;
+  svg+=`<text x="${EXP_PX}" y="22" text-anchor="middle" font-size="12" fill="#444" font-weight="600">Gating → Top-${K} Experts</text>`;
+  svg+=`<text x="${OUT_PX}" y="22" text-anchor="middle" font-size="12" fill="#444" font-weight="600">Output y</text>`;
+
+  // ---- Input 2D mini panel
+  const IPX=INPUT_PX, IPY=180, IPR=70;
+  svg+=`<rect x="${IPX-IPR}" y="${IPY-IPR}" width="${2*IPR}" height="${2*IPR}" fill="#fff" stroke="#bbb" stroke-width="1"/>`;
+  // Axes
+  svg+=`<line x1="${IPX-IPR}" y1="${IPY}" x2="${IPX+IPR}" y2="${IPY}" stroke="#ddd"/>`;
+  svg+=`<line x1="${IPX}" y1="${IPY-IPR}" x2="${IPX}" y2="${IPY+IPR}" stroke="#ddd"/>`;
+  // Expert centers
+  EXPERTS.forEach(e=>{
+    const ex=IPX + e.cx*IPR*0.6, ey=IPY - e.cy*IPR*0.6;
+    svg+=`<circle cx="${ex}" cy="${ey}" r="4" fill="${e.color}" opacity="0.6"/>`;
+    svg+=`<text x="${ex+6}" y="${ey-3}" font-size="9" fill="${e.color}">${e.name}</text>`;
+  });
+  // Current input
+  const inX=IPX + INPUT.x*IPR*0.6, inY=IPY - INPUT.y*IPR*0.6;
+  svg+=`<circle id="inputDot" cx="${inX}" cy="${inY}" r="8" fill="#e67e22" stroke="#fff" stroke-width="2.5" style="cursor:grab;"/>`;
+  svg+=`<text x="${IPX}" y="${IPY+IPR+18}" text-anchor="middle" font-size="10" fill="#666">drag me</text>`;
+
+  // ---- Gating bars (above experts)
+  const BARS_Y=50, BARS_W=140;
+  svg+=`<text x="${EXP_PX-BARS_W/2}" y="${BARS_Y-4}" font-size="10" fill="#666">gating softmax(${tau.toFixed(2)}):</text>`;
+  EXPERTS.forEach((e,i)=>{
+    const x=EXP_PX-BARS_W/2 + i*BARS_W/EXPERTS.length;
+    const w=BARS_W/EXPERTS.length - 4;
+    const fullH=22;
+    svg+=`<rect x="${x}" y="${BARS_Y}" width="${w}" height="${fullH}" fill="#eee" stroke="#ccc"/>`;
+    const bh=probs[i]*fullH;
+    svg+=`<rect x="${x}" y="${BARS_Y+fullH-bh}" width="${w}" height="${bh}" fill="${topK.has(i)?e.color:'#bbb'}" opacity="${topK.has(i)?0.95:0.5}"/>`;
+    svg+=`<text x="${x+w/2}" y="${BARS_Y+fullH+12}" font-size="9" text-anchor="middle" fill="#666">${(probs[i]*100).toFixed(0)}%</text>`;
+  });
+
+  // ---- Expert boxes
+  EXPERTS.forEach((e,i)=>{
+    const p=EXP_POS[i];
+    const active=topK.has(i);
+    const ringR= active?34:28;
+    svg+=`<circle cx="${p.sx}" cy="${p.sy}" r="${ringR}" fill="${active?e.color:'#dcdcdc'}" stroke="${active?'#222':'#999'}" stroke-width="${active?2:1}" opacity="${active?0.92:0.5}"/>`;
+    svg+=`<text x="${p.sx}" y="${p.sy+4}" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">${e.name}</text>`;
+    // expert label
+    svg+=`<text x="${p.sx}" y="${p.sy+ringR+12}" text-anchor="middle" font-size="9" fill="${active?'#222':'#888'}">${active?'active':'idle'}</text>`;
+
+    // edges from input center
+    const inX=INPUT_PX+IPR-10, inY=IPY;
+    const op=active?Math.max(0.25,normP[i]||0.05):0.05;
+    const sw=active?Math.max(1,4*(normP[i]||0)):0.7;
+    svg+=`<line x1="${inX}" y1="${inY}" x2="${p.sx-ringR}" y2="${p.sy}" stroke="${active?e.color:'#bbb'}" stroke-width="${sw}" opacity="${op}"/>`;
+
+    // edges to output
+    const oX=OUT_PX-30, oY=180;
+    svg+=`<line x1="${p.sx+ringR}" y1="${p.sy}" x2="${oX}" y2="${oY}" stroke="${active?e.color:'#bbb'}" stroke-width="${sw}" opacity="${op}"/>`;
+  });
+
+  // ---- Output panel
+  const OX=OUT_PX, OY=180, OR=58;
+  svg+=`<rect x="${OX-OR}" y="${OY-OR}" width="${2*OR}" height="${2*OR}" fill="#fff" stroke="#bbb" stroke-width="1"/>`;
+  // Output is the weighted color blend of active experts
+  let r=0,g=0,b=0;
+  topK.forEach(i=>{
+    const c=EXPERTS[i].color;
+    const rr=parseInt(c.substr(1,2),16),gg=parseInt(c.substr(3,2),16),bb=parseInt(c.substr(5,2),16);
+    r+=normP[i]*rr; g+=normP[i]*gg; b+=normP[i]*bb;
+  });
+  svg+=`<circle cx="${OX}" cy="${OY}" r="34" fill="rgb(${r.toFixed(0)},${g.toFixed(0)},${b.toFixed(0)})" stroke="#222" stroke-width="2"/>`;
+  svg+=`<text x="${OX}" y="${OY+5}" text-anchor="middle" font-size="13" fill="#fff" font-weight="700">y</text>`;
+  svg+=`<text x="${OX}" y="${OY+OR+14}" text-anchor="middle" font-size="10" fill="#666">y = Σ gᵢ Eᵢ(x)</text>`;
+
+  // FLOPs note
+  svg+=`<text x="${EXP_PX}" y="${Hm-12}" text-anchor="middle" font-size="10" fill="#444">Active: ${K}/${EXPERTS.length} experts → ${(K/EXPERTS.length*100).toFixed(0)}% FLOPs (vs dense ${EXPERTS.length}× cost)</text>`;
+
+  SVG.innerHTML=svg;
+
+  // info panel
+  const L=I18n.get();
+  const topList=order.slice(0,K).map(i=>`<span style="color:${EXPERTS[i].color};font-weight:600;">${EXPERTS[i].name}</span> (${(probs[i]*100).toFixed(1)}%)`).join(', ');
+  const expertLabels=order.slice(0,K).map(i=>EXPERTS[i].desc[L]).join(' + ');
+  document.getElementById('moeInfo').innerHTML=L==='zh'?
+    `Input 位置：(${INPUT.x.toFixed(2)}, ${INPUT.y.toFixed(2)})。Top-${K} 啟用：${topList}（生物詮釋：${expertLabels}）。<br>每個 expert 是獨立 MLP；只有被選中的 expert 跑計算 → FLOPs ∝ K，與 expert 總數 N 無關。改變 routing temperature τ 觀察 gating 從 hard（低 τ）到 soft（高 τ）；增加噪音模擬 Shazeer 2017 防 collapse 策略。`
+    :
+    `Input position: (${INPUT.x.toFixed(2)}, ${INPUT.y.toFixed(2)}). Top-${K} active: ${topList} (interpreted as ${expertLabels}).<br>Each expert is an independent MLP; only selected ones compute → FLOPs ∝ K, independent of total N. Lower τ → harder routing; higher τ → softer. Adding noise mimics Shazeer 2017's anti-collapse trick.`;
+}
+
+// Drag interaction
+SVG.addEventListener('mousedown',e=>{
+  if(e.target.id==='inputDot'){dragging=true;}
+});
+window.addEventListener('mouseup',()=>{dragging=false;});
+SVG.addEventListener('mousemove',e=>{
+  if(!dragging)return;
+  const rect=SVG.getBoundingClientRect();
+  const sx=Wm/rect.width, sy=Hm/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  const IPX=INPUT_PX, IPY=180, IPR=70;
+  let nx=(mx-IPX)/(IPR*0.6), ny=-(my-IPY)/(IPR*0.6);
+  nx=Math.max(-1.6,Math.min(1.6,nx));
+  ny=Math.max(-1.6,Math.min(1.6,ny));
+  INPUT.x=nx; INPUT.y=ny;
+  render();
+});
+
+document.getElementById('sK').addEventListener('input',render);
+document.getElementById('sT').addEventListener('input',render);
+document.getElementById('sN').addEventListener('input',()=>{resampleNoise();render();});
+document.addEventListener('langchange',render);
+resampleNoise(); render();
+
+window._QF={zh:{
+  q1_y:'答對！Sparse MoE 讓 inference FLOPs ∝ K（很小）但 params ∝ N（很大）。',
+  q1_n:'答案是 C。Sparse MoE 的核心優勢：總參數量隨 N 線性增長，但每個 token 只啟用 K 個 expert，inference FLOPs 不變。',
+  q2_y:'答對！沒 balancing loss 時 gating 容易 collapse 到只用少數 expert。',
+  q2_n:'答案是 B。Expert collapse 是 MoE 的核心訓練挑戰——若 gating 永遠選同樣 expert，其他 expert 永遠沒梯度、永遠不學。',
+  q3_y:'答對！Switch 用 K=1 把 routing 與通訊都簡化到極限。',
+  q3_n:'答案是 A。Switch Transformer 的 K=1（每 token 單一 expert）相對於 Shazeer 的 K=2，通訊量減半、實作更簡單。'
+},en:{
+  q1_y:'Correct! Sparse MoE keeps FLOPs ∝ K (small) while params ∝ N (large).',
+  q1_n:'Answer is C. The core advantage: total params scale linearly with N, but each token activates only K experts, keeping inference FLOPs unchanged.',
+  q2_y:'Correct! Without balancing, gating collapses to a few experts.',
+  q2_n:'Answer is B. Expert collapse is MoE\'s key training challenge — if gating always picks the same expert, others never receive gradient and never learn.',
+  q3_y:'Correct! Switch uses K=1 to maximally simplify routing and communication.',
+  q3_n:'Answer is A. Switch Transformer\'s K=1 (one expert per token) halves communication and simplifies the implementation versus Shazeer\'s K=2.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

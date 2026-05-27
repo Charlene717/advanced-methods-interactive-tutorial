@@ -1,0 +1,409 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Graph Signal &amp; GNN — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html" class="active">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 9 / 14</div><h1 data-zh="圖訊號處理與 GNN" data-en="Graph Signal Processing &amp; GNN">圖訊號處理與 GNN</h1>
+<p class="subtitle" data-lang="zh">把單細胞與空間資料看成「圖上的訊號」——Laplacian 譜分析、GCN、GAT 提供了一個統一框架，串起 kNN graph、空間鄰近圖、PPI 網路。</p>
+<p class="subtitle" data-lang="en">Treat single-cell and spatial data as "signals on graphs" — Laplacian spectral analysis, GCN, GAT unify kNN graphs, spatial neighborhood graphs, and PPI networks.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="圖的 Laplacian 與譜" data-en="Graph Laplacian and Spectrum">圖的 Laplacian 與譜</h2>
+<div data-lang="zh">
+<p>給定圖 G = (V, E)，鄰接矩陣 A、度矩陣 D，圖 Laplacian 定義為 L = D − A（或對稱歸一化 L<sub>sym</sub> = I − D⁻¹ᐟ² A D⁻¹ᐟ²）。L 的特徵分解 L = U Λ Uᵀ 是「圖傅立葉變換」——特徵向量 = 頻率，特徵值 λ = 頻率高低。</p>
+<ul>
+<li>λ ≈ 0 的特徵向量 = 低頻 = 連通分支、平滑訊號</li>
+<li>λ 大的特徵向量 = 高頻 = 鄰居間劇烈變化</li>
+</ul>
+<p><strong>降維</strong>（Laplacian eigenmaps）、<strong>聚類</strong>（spectral clustering）、<strong>降噪</strong>（low-pass filtering）統統都是 L 譜分析的應用。</p>
+</div>
+<div data-lang="en">
+<p>Given graph G = (V, E), adjacency A, degree D; graph Laplacian L = D − A (or symmetric L<sub>sym</sub> = I − D⁻¹ᐟ² A D⁻¹ᐟ²). The eigendecomposition L = U Λ Uᵀ is the "graph Fourier transform" — eigenvectors = frequencies, eigenvalues λ = pitch.</p>
+<ul>
+<li>λ ≈ 0 eigenvectors = low frequency = connected components, smooth signals</li>
+<li>Large λ eigenvectors = high frequency = wild variation between neighbors</li>
+</ul>
+<p><strong>Dim reduction</strong> (Laplacian eigenmaps), <strong>clustering</strong> (spectral clustering), <strong>denoising</strong> (low-pass filtering) — all spectral applications.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="從 GSP 到 GNN" data-en="From GSP to GNN">從 GSP 到 GNN</div>
+<h2 data-zh="GCN / GAT：把圖卷積學起來" data-en="GCN / GAT: Learnable Graph Convolution">GCN / GAT：把圖卷積學起來</h2>
+<div data-lang="zh">
+<p><strong>GCN (Kipf & Welling 2017)：</strong>每一層 H<sup>(l+1)</sup> = σ(Ã H<sup>(l)</sup> W<sup>(l)</sup>)，其中 Ã 是加自環、對稱歸一化的鄰接矩陣。直覺：每個節點把鄰居特徵取平均，再經過線性變換+非線性。</p>
+<p><strong>GAT (Veličković 2018)：</strong>用注意力加權鄰居——α<sub>ij</sub> = softmax(a([Wh<sub>i</sub> ‖ Wh<sub>j</sub>]))。每個鄰居的重要性可學習，對異質鄰居（不同細胞型別）特別有用。</p>
+<p>單細胞與空間轉錄體的關鍵：<strong>圖怎麼建</strong> 決定一切。</p>
+</div>
+<div data-lang="en">
+<p><strong>GCN (Kipf & Welling 2017):</strong> Each layer H<sup>(l+1)</sup> = σ(Ã H<sup>(l)</sup> W<sup>(l)</sup>), where Ã is adjacency with self-loops and symmetric normalization. Intuition: average neighbor features, then linear + non-linearity.</p>
+<p><strong>GAT (Veličković 2018):</strong> Weight neighbors with attention: α<sub>ij</sub> = softmax(a([Wh<sub>i</sub> ‖ Wh<sub>j</sub>])). Learnable importance — useful for heterogeneous neighbors (different cell types).</p>
+<p>For single-cell and spatial: <strong>how the graph is built</strong> decides everything.</p>
+</div>
+
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="kNN 圖（細胞之間）" data-en="kNN graph (between cells)">kNN 圖（細胞之間）</h4><p data-lang="zh">在 PCA 空間找每個細胞的 k 個最近鄰——這是 Seurat/Scanpy 聚類的底層結構。</p><p data-lang="en">k nearest neighbors in PCA space — the backbone of Seurat/Scanpy clustering.</p></div>
+<div class="card"><h4 data-zh="空間圖（空間鄰近）" data-en="Spatial graph">空間圖（空間鄰近）</h4><p data-lang="zh">在 spatial transcriptomics 中用 Delaunay 三角剖分或半徑鄰近建圖——空間鄰居的訊息整合到特徵裡。</p><p data-lang="en">Delaunay triangulation or radius-based neighbors in spatial transcriptomics — neighbors' info integrated into features.</p></div>
+<div class="card"><h4 data-zh="混合圖" data-en="Hybrid graph">混合圖</h4><p data-lang="zh">SpaGCN、STAGATE 等把「表現相似」與「空間相鄰」混合成一張圖——同時考慮基因表現與位置。</p><p data-lang="en">SpaGCN, STAGATE blend "expression similarity" + "spatial proximity" into one graph — both modalities at once.</p></div>
+<div class="card"><h4 data-zh="基因–基因圖" data-en="Gene–gene graph">基因–基因圖</h4><p data-lang="zh">用 PPI、共表達或 KEGG pathway 當作圖結構——Geneformer 等模型其實是「在基因圖上做 attention」。</p><p data-lang="en">PPI, co-expression, or KEGG pathways as the graph — Geneformer-like models effectively do "attention on gene graphs."</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="GCN 鄰居平均（1 層）" data-en="One Layer of GCN Averaging">GCN 鄰居平均（1 層）</h2>
+<div data-lang="zh"><p>幾何上 GCN 一層 = 把每個節點的訊號替換成「自身 + 鄰居」的平均。多次平均會把訊號越來越「平滑」——這就是 over-smoothing 問題。拖動「迭代次數」觀察。</p></div>
+<div data-lang="en"><p>One GCN layer = replace each node's signal with average of itself + neighbors. Many iterations over-smooth — the well-known over-smoothing problem. Drag iterations to observe.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="迭代次數" data-en="Iterations">迭代次數 <span id="gIt">2</span></label><input type="range" id="sGit" min="0" max="20" value="2" step="1"></div>
+<svg id="gSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div id="gMsg" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="代表性方法" data-en="Representative Methods">代表性方法</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>SpaGCN (Hu 2021)</h4><p data-lang="zh">在空間鄰近圖上跑 GCN，識別「空間域」(spatial domains)——比單純表現分群更貼近組織學切片。</p><p data-lang="en">GCN on spatial neighbor graph to identify spatial domains — closer to histological structure than expression-only clustering.</p></div>
+<div class="card"><h4>STAGATE (Dong 2022)</h4><p data-lang="zh">圖注意力自編碼器，在空間轉錄體上學「降噪 + 嵌入」——保留空間結構的同時補回 dropout。</p><p data-lang="en">Graph-attention autoencoder; learns denoising + embedding on spatial data — fills dropouts while preserving structure.</p></div>
+<div class="card"><h4>Cellcharter / CellNeighborEx</h4><p data-lang="zh">把細胞層次的鄰居組成轉換成新特徵——「同類聚集」vs「異類交界」可區分腫瘤內部生態。</p><p data-lang="en">Convert cell-level neighbor composition into features — homotypic vs heterotypic neighborhoods reveal tumor ecosystems.</p></div>
+<div class="card"><h4>Decipher / GraphST</h4><p data-lang="zh">最新一代：用對比學習 (contrastive) + 圖神經網路，對齊多切片或多模態 spatial 資料。</p><p data-lang="en">Latest gen: contrastive + GNN to align multiple slices or modalities in spatial data.</p></div>
+<div class="card"><h4 data-zh="細胞–細胞通訊" data-en="Cell–cell communication">細胞–細胞通訊</h4><p data-lang="zh">把 ligand–receptor 對作為「邊」、細胞作為「節點」——GNN 學習通訊強度。比 CellChat 等統計方法更可擴展。</p><p data-lang="en">Ligand–receptor pairs as edges, cells as nodes — GNN learns communication strength. More scalable than CellChat-style statistics.</p></div>
+<div class="card"><h4 data-zh="基因網路推論" data-en="Gene network inference">基因網路推論</h4><p data-lang="zh">DeepSEM、GENELink 等用 GNN 直接從 scRNA-seq 推 GRN，可整合先驗知識（PPI、motif）。</p><p data-lang="en">DeepSEM, GENELink use GNN to infer GRNs from scRNA-seq, integrating prior knowledge (PPI, motifs).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析：頻譜、過平滑、表達力與最新進展" data-en="Deep Dive: Spectra, Over-smoothing, Expressivity, and Frontiers">深入解析：頻譜、過平滑、表達力與最新進展</h2>
+
+<div data-lang="zh">
+<h3>① Graph Fourier Transform 的數學內涵</h3>
+<p>對無向圖，Laplacian L = D − A 是對稱半正定矩陣，可分解為 L = U Λ Uᵀ，其中 Λ = diag(λ₀, ..., λ_{n−1})、0 = λ₀ ≤ λ₁ ≤ ... ≤ λ_{n−1}。U 的每一行 u_k 就是「圖頻率 k」的基底，類比於傳統 Fourier 的 sin/cos。給定圖訊號 x ∈ ℝⁿ（每節點一個值，如基因表現），其 Graph Fourier Transform 為 x̂ = Uᵀ x。低 λ 對應「平滑」訊號（連通分支內幾乎常數）；高 λ 對應「劇變」訊號（鄰居間正負交錯）。圖卷積本質是 g(L) x = U g(Λ) Uᵀ x——在頻譜域對每個頻率做 element-wise filter。</p>
+
+<h3>② 對稱歸一化 vs Random Walk 歸一化</h3>
+<p>原始 L = D − A 的特徵值依節點度數而異。在實作中常用兩種歸一化：</p>
+<ul>
+<li><strong>對稱歸一化：</strong>L_sym = I − D<sup>−1/2</sup> A D<sup>−1/2</sup>，特徵值 ∈ [0, 2]，被 Kipf &amp; Welling (2017) 用於 GCN，數學性質乾淨且保留對稱性，但對「異質度數圖」（hub 與 leaf 共存）資訊有偏移。</li>
+<li><strong>Random Walk 歸一化：</strong>L_rw = I − D<sup>−1</sup> A，對應隨機漫步機率，可詮釋為「從鄰居取平均」，但矩陣非對稱、無法直接特徵分解（需用左/右特徵向量）。在 PageRank 系列、APPNP (Klicpera 2019) 中常用。</li>
+</ul>
+<p>實作經驗：對 spatial transcriptomics 的 spot graph 通常 L_sym 較穩定；對 cell-cell heterogeneity 強的圖（如腫瘤微環境），L_rw 配合 personalized PageRank propagation 更佳。</p>
+
+<h3>③ GCN 的頻譜解讀</h3>
+<p>Defferrard et al. (2016) 提出 ChebNet：用 Chebyshev 多項式 T_k(L̃) 近似任意 graph filter g(L)，避免 O(n³) 的特徵分解。Kipf-Welling 的 GCN 進一步將 k 限定為 1 並做近似，得到 H<sup>(l+1)</sup> = σ(D̂<sup>−1/2</sup> Â D̂<sup>−1/2</sup> H<sup>(l)</sup> W<sup>(l)</sup>)（其中 Â = A + I）。從頻譜角度看，每一層 GCN 等價於一個 low-pass filter g(λ) ≈ 1 − λ/2——只保留低頻、抑制高頻。多層堆疊 = 反覆 low-pass = 「平滑」。</p>
+
+<h3>④ Over-smoothing 的數學原因與緩解</h3>
+<p>Li et al. (2018, AAAI) 證明：當 GCN 層數 → ∞，所有節點特徵會收斂到 Laplacian 的 zero eigenspace（連通分支的指示向量），失去判別力。這就是 over-smoothing。緩解方法：</p>
+<ul>
+<li><strong>Residual GCN (Li 2019):</strong> H<sup>(l+1)</sup> = α H<sup>(0)</sup> + (1−α) GCN(H<sup>(l)</sup>)，保留初始特徵。</li>
+<li><strong>JK-Net (Xu 2018, ICML):</strong> Jumping Knowledge，每層輸出 concat / max-pool，由模型自選最佳深度。</li>
+<li><strong>GCNII (Chen 2020, ICML):</strong> 結合 identity mapping 與 initial residual，理論證明可避免 over-smoothing 至任意深度，64 層仍能訓練。</li>
+<li><strong>DropEdge (Rong 2020):</strong> 隨機丟邊增加感受野多樣性。</li>
+<li><strong>PairNorm (Zhao 2020):</strong> 正規化讓節點對之間的 total pairwise distance 保持常數。</li>
+<li><strong>Attention-based:</strong> GAT 用 attention 動態決定鄰居權重，部分緩解（但深層仍會 collapse）。</li>
+</ul>
+
+<h3>⑤ Graph Attention：GAT 數學</h3>
+<p>Veličković et al. (2018, ICLR) 提出 GAT：每條邊 (i, j) 的權重不再固定，而由 attention 學出：α_{ij} = softmax_j( LeakyReLU( aᵀ [W h_i ‖ W h_j] ) )，其中 a 是可學參數向量、‖ 表示 concat。Multi-head attention K 個並行平均/concat。在 spatial transcriptomics 場景，GAT 能自動學會「哪些鄰居 spot 同屬一個 niche」，比固定 weight 的 GCN 更靈活。STAGATE (Dong 2022) 就是 spatial domain 用 GAT 的代表。</p>
+
+<h3>⑥ Subgraph-based / Inductive GNN</h3>
+<p>傳統 GCN 是 transductive——訓練時需要完整圖。GraphSAGE (Hamilton 2017, NeurIPS) 提出 inductive 學習：每節點隨機抽樣固定數量鄰居（如 K=10），用 mean/LSTM/pool aggregator 聚合。優點：(1) 可處理 1M+ 節點；(2) 新節點不需重新訓練；(3) 適合 streaming 資料。在 single-cell atlas 整合（樣本數百萬細胞）必用 GraphSAGE-like 架構，否則記憶體爆。</p>
+
+<h3>⑦ GNN 的表達力：Weisfeiler-Lehman 等價性</h3>
+<p>Xu et al. (2019, ICLR) 在 GIN (Graph Isomorphism Network) 論文證明：標準 message-passing GNN 的判別力上限等價於 1-WL test（無法區分某些非同構圖，如不同的 regular graph）。GIN 用 sum aggregator + MLP 達到 1-WL 上限。更強的表達力需要：(1) higher-order GNN (k-WL, Morris 2019)；(2) subgraph-based GNN (ESAN, GNN-AK)；(3) 加 positional / structural encoding (RWPE, Laplacian PE)。實作上 spatial transcriptomics 多用 1-WL 等價架構就夠，但藥物分子設計需要更強模型。</p>
+
+<h3>⑧ Heterogeneous GNN：節點與邊有多種型別</h3>
+<p>真實生物網路常有多型別：基因、蛋白、藥物、疾病；邊有 PPI、調控、共表達等。處理方法：</p>
+<ul>
+<li><strong>metapath2vec (Dong 2017, KDD):</strong> 沿著預定 metapath 做 random walk + Skip-gram。</li>
+<li><strong>R-GCN (Schlichtkrull 2018, ESWC):</strong> 對每種邊型別獨立 weight matrix W_r，aggregate 時依 relation 分組。</li>
+<li><strong>HGT (Hu 2020, WWW):</strong> Heterogeneous Graph Transformer，type-aware attention，可處理百萬節點異質網路（如 OpenAlex 學術圖）。</li>
+</ul>
+
+<h3>⑨ Graph Contrastive Learning</h3>
+<p>無標註資料時的自監督學習：</p>
+<ul>
+<li><strong>DGI (Veličković 2019, ICLR):</strong> Deep Graph Infomax，最大化 node embedding 與全圖 summary 的 mutual information。</li>
+<li><strong>GRACE (Zhu 2020):</strong> 用兩種圖擾動（edge drop + feature mask）生成正樣本對，contrastive loss。</li>
+<li><strong>BGRL (Thakoor 2022, ICLR):</strong> Bootstrapped Graph Latents，無需負樣本（仿 BYOL），對大圖更省記憶體。</li>
+</ul>
+<p>GraphST (Long 2023, Nat Commun) 就是用 contrastive learning 整合多 ST 切片的代表。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Mathematics of the Graph Fourier Transform</h3>
+<p>For an undirected graph, the Laplacian L = D − A is symmetric PSD and decomposes as L = U Λ Uᵀ with Λ = diag(λ₀, ..., λ_{n−1}), 0 = λ₀ ≤ λ₁ ≤ ... ≤ λ_{n−1}. Each column u_k of U is the basis for "graph frequency k", analogous to classical Fourier sin/cos. For a graph signal x ∈ ℝⁿ (one value per node, e.g. gene expression), the Graph Fourier Transform is x̂ = Uᵀ x. Low λ ⇒ smooth signal (nearly constant within connected components); high λ ⇒ rapidly oscillating signal (alternating signs across neighbors). Graph convolution is g(L) x = U g(Λ) Uᵀ x — element-wise filtering in the spectral domain.</p>
+
+<h3>② Symmetric vs Random-Walk Normalization</h3>
+<p>The raw L = D − A has eigenvalues that scale with node degree. Two common normalizations:</p>
+<ul>
+<li><strong>Symmetric:</strong> L_sym = I − D<sup>−1/2</sup> A D<sup>−1/2</sup>, eigenvalues ∈ [0, 2], used in Kipf &amp; Welling's GCN (2017). Clean math, preserves symmetry, but biased on degree-heterogeneous graphs.</li>
+<li><strong>Random walk:</strong> L_rw = I − D<sup>−1</sup> A. Corresponds to a random walk; interpretable as "average over neighbors", but non-symmetric (needs left/right eigenvectors). Used in PageRank-family methods like APPNP (Klicpera 2019).</li>
+</ul>
+<p>Empirically, L_sym is more stable on ST spot graphs; L_rw with personalized PageRank works better on heterogeneous tumor-microenvironment graphs.</p>
+
+<h3>③ Spectral Interpretation of GCN</h3>
+<p>Defferrard et al. (2016) proposed ChebNet, using Chebyshev polynomials T_k(L̃) to approximate any graph filter g(L), avoiding O(n³) eigendecomposition. Kipf-Welling's GCN restricts k=1 and approximates further: H<sup>(l+1)</sup> = σ(D̂<sup>−1/2</sup> Â D̂<sup>−1/2</sup> H<sup>(l)</sup> W<sup>(l)</sup>) with Â = A + I. Spectrally, each GCN layer is a low-pass filter g(λ) ≈ 1 − λ/2. Stacking many layers = repeated low-pass = smoothing.</p>
+
+<h3>④ Why Over-smoothing Happens, and How to Fix It</h3>
+<p>Li et al. (2018, AAAI) proved that as GCN depth → ∞, all node features converge to the Laplacian's zero eigenspace (indicator vectors of connected components) — losing discriminative power. Fixes:</p>
+<ul>
+<li><strong>Residual GCN (Li 2019):</strong> H<sup>(l+1)</sup> = α H<sup>(0)</sup> + (1−α) GCN(H<sup>(l)</sup>) preserves the initial signal.</li>
+<li><strong>JK-Net (Xu 2018, ICML):</strong> Jumping Knowledge — each layer feeds into a final concat/max-pool, model picks best depth.</li>
+<li><strong>GCNII (Chen 2020, ICML):</strong> identity mapping + initial residual; provably avoids over-smoothing at arbitrary depth, 64 layers trainable.</li>
+<li><strong>DropEdge (Rong 2020):</strong> randomly drop edges to diversify receptive fields.</li>
+<li><strong>PairNorm (Zhao 2020):</strong> normalize so total pairwise distance is preserved.</li>
+<li><strong>Attention:</strong> GAT learns neighbor weights — partially helps but still collapses very deep.</li>
+</ul>
+
+<h3>⑤ Graph Attention (GAT) Math</h3>
+<p>Veličković et al. (2018, ICLR) introduced GAT: each edge weight is learned by attention α_{ij} = softmax_j( LeakyReLU( aᵀ [W h_i ‖ W h_j] ) ) where a is a learnable vector, ‖ denotes concat. Multi-head attention runs K heads in parallel and averages/concats. In spatial transcriptomics, GAT automatically learns "which neighbor spots belong to the same niche" — more flexible than fixed-weight GCN. STAGATE (Dong 2022) is the canonical spatial-domain example.</p>
+
+<h3>⑥ Subgraph-based / Inductive GNN</h3>
+<p>Plain GCN is transductive — needs the full graph at training. GraphSAGE (Hamilton 2017, NeurIPS) introduced inductive learning: per node sample a fixed number of neighbors (e.g. K=10), then mean/LSTM/pool aggregate. Benefits: (1) scales to 1M+ nodes; (2) new nodes need no retraining; (3) supports streaming data. Single-cell atlas integration (millions of cells) needs GraphSAGE-style sampling — otherwise OOM.</p>
+
+<h3>⑦ GNN Expressivity: WL Equivalence</h3>
+<p>Xu et al. (2019, ICLR) in the GIN paper proved that standard message-passing GNNs are at most as expressive as the 1-WL test (cannot distinguish certain non-isomorphic graphs, e.g. some regular graphs). GIN uses sum + MLP to reach the 1-WL bound. Beyond 1-WL: (1) higher-order GNN (k-WL, Morris 2019); (2) subgraph GNN (ESAN, GNN-AK); (3) positional/structural encodings (RWPE, Laplacian PE). For ST, 1-WL-equivalent architectures usually suffice, but molecular design needs stronger models.</p>
+
+<h3>⑧ Heterogeneous GNNs</h3>
+<p>Biological networks contain multiple node and edge types — genes, proteins, drugs, diseases; PPI, regulation, co-expression. Methods:</p>
+<ul>
+<li><strong>metapath2vec (Dong 2017, KDD):</strong> random walks along predefined metapaths + Skip-gram.</li>
+<li><strong>R-GCN (Schlichtkrull 2018, ESWC):</strong> per-relation weight matrices, aggregate grouped by relation type.</li>
+<li><strong>HGT (Hu 2020, WWW):</strong> Heterogeneous Graph Transformer with type-aware attention; scales to million-node heterogeneous networks (e.g. OpenAlex).</li>
+</ul>
+
+<h3>⑨ Graph Contrastive Learning</h3>
+<p>Self-supervised learning without labels:</p>
+<ul>
+<li><strong>DGI (Veličković 2019, ICLR):</strong> Deep Graph Infomax, max MI between node embedding and global graph summary.</li>
+<li><strong>GRACE (Zhu 2020):</strong> two augmentations (edge drop + feature mask) form positives, contrastive loss.</li>
+<li><strong>BGRL (Thakoor 2022, ICLR):</strong> Bootstrapped Graph Latents, no negatives needed (BYOL-style), more memory-efficient on large graphs.</li>
+</ul>
+<p>GraphST (Long 2023, Nat Commun) exemplifies contrastive learning for multi-slice ST integration.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="GNN / GSP 在單細胞與空間體學的具體案例" data-en="Concrete Cases of GNN / GSP in Single-cell & Spatial Omics">GNN / GSP 在單細胞與空間體學的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Hu et al. 2021, Nature Methods — SpaGCN</h3>
+<p>第一個把 GCN 系統性應用於 Visium spatial transcriptomics 的工作。核心：把 spot 視為節點，邊由「空間距離 + 組織影像 (H&amp;E) 顏色相似度」加權，再以 GCN 學每個 spot 的低維表徵；最後用 mclust 做 spatial domain 聚類。在 DLPFC、breast cancer、mouse brain 上的 spatial domain 都比純 expression 聚類好。延伸還能找 spatial domain 特異基因。</p>
+
+<h3>🧬 案例 2：Dong &amp; Zhang 2022, Nature Communications — STAGATE</h3>
+<p>用 graph attention auto-encoder：encoder 把 spot expression 編碼到 latent，decoder 重建；attention 讓模型自動降低「跨 domain 邊界邊」的權重。結果：在多種 ST 資料（Visium, Slide-seq, Stereo-seq）的 domain identification 上勝過 SpaGCN、BayesSpace。還能用 attention map 量化「哪些 spot pair 屬同一 domain」，做 cross-modal 驗證。</p>
+
+<h3>🧬 案例 3：Long et al. 2023, Nature Communications — GraphST</h3>
+<p>把 graph contrastive learning（augmentation = edge drop + feature mask）應用於 ST，特別擅長「多切片整合」——一次處理多個病人/多個時間點的切片，避免 batch effect 主導 latent。在 10x Visium、Slide-seqV2、Stereo-seq 上都有 SOTA 表現，且整合後可直接做跨切片的 spatial domain 對齊。</p>
+
+<h3>🧬 案例 4：Li &amp; Zhou 2022, Nature Communications — CCST</h3>
+<p>Cell Clustering using Spatial Transcriptomics graph (CCST)：用 DGI (Deep Graph Infomax) 做無監督學習，並設計專門針對 cell-cell communication 的圖結構（節點是 cell，邊是 ligand-receptor 共表達 + 空間鄰近）。可推斷哪對細胞型別之間有顯著 paracrine 訊號，已用於分析腫瘤微環境免疫互動。</p>
+
+<h3>🧬 案例 5：Ren et al. 2022, Genome Biology — CellNeighborEx</h3>
+<p>關注 spatial neighborhood 對基因表現的因果影響。用 GNN 預測「某 cell 周圍的 cell type composition 是否影響其 gene expression」，並做 counterfactual：「如果改變鄰居組成，目標基因會怎樣變？」。在乳癌 ST 資料找到多個「鄰居依賴」基因，多為免疫–腫瘤交互作用 marker。</p>
+
+<h3>🧬 案例 6：Shao et al. 2022, Nature Communications — DeepST</h3>
+<p>整合 H&amp;E image (用 CNN encode) + gene expression + spatial location 的 GNN 框架。優於僅用單一模態的方法，且對「組織學差異大但分子差異小」的 domain（如腫瘤邊界）特別有效。</p>
+
+<h3>🧬 案例 7：Wang et al. 2022, Briefings in Bioinformatics — DeepSEM / GENELink</h3>
+<p>用 GNN 推 gene regulatory network：把基因當節點，先用 prior PPI 或 ChIP-seq 建初始圖，再用 GNN refine。GENELink 進一步把 link prediction 框架化為 supervised 學習，比 GENIE3 等傳統方法 AUPR 高 15–30%。</p>
+
+<h3>🧬 案例 8：Jumper et al. 2021, Nature — AlphaFold2 Evoformer</h3>
+<p>AlphaFold2 的 Evoformer 模組本質是一種特殊的 graph attention（在 MSA 與 pair representation 上交替做 attention）。雖然名稱不叫 GNN，但操作完全是 graph-based message passing。這是 GNN 在結構生物學最重要的成功。</p>
+
+<h3>🧬 案例 9：Roohani et al. 2024, Nature Biotechnology — GEARS</h3>
+<p>用 GNN 預測 Perturb-seq 中「同時擾動多個基因」的效應。GEARS 用 GNN 把基因 prior knowledge graph (GO + PPI) 整合進模型，能 zero-shot 預測未見過的 perturbation combination。</p>
+
+<h3>🧬 案例 10：StellarGraph &amp; PyG 在 biological networks</h3>
+<p>PyTorch Geometric 與 StellarGraph 已成為 GNN 標準工具，在藥物–靶點預測（DTI）、PPI 預測、單細胞分群、藥物副作用預測（Decagon, Zitnik 2018）等多個任務上廣泛應用。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Hu et al. 2021, Nature Methods — SpaGCN</h3>
+<p>The first systematic application of GCN to Visium ST. Spots are nodes; edges weighted by spatial distance + H&amp;E color similarity. GCN learns spot embeddings, then mclust clusters to identify spatial domains. Beats expression-only clustering on DLPFC, breast cancer, mouse brain. Extension also identifies domain-specific genes.</p>
+
+<h3>🧬 Case 2: Dong &amp; Zhang 2022, Nature Communications — STAGATE</h3>
+<p>Graph attention auto-encoder: encoder maps spot expression to latent, decoder reconstructs; attention downweights cross-domain boundary edges. Outperforms SpaGCN / BayesSpace on Visium, Slide-seq, Stereo-seq. Attention maps quantify "which spot pairs belong to same domain" — useful for cross-modal validation.</p>
+
+<h3>🧬 Case 3: Long et al. 2023, Nature Communications — GraphST</h3>
+<p>Graph contrastive learning (augmentation = edge drop + feature mask) for ST, particularly strong at multi-slice integration — handles many patients/timepoints at once, avoids batch effects dominating the latent. SOTA on 10x Visium, Slide-seqV2, Stereo-seq.</p>
+
+<h3>🧬 Case 4: Li &amp; Zhou 2022, Nature Communications — CCST</h3>
+<p>Cell Clustering using Spatial Transcriptomics graph: unsupervised DGI on a custom graph (nodes = cells, edges = L-R co-expression + spatial proximity). Infers which cell-type pairs show significant paracrine signaling; applied to tumor microenvironment immune crosstalk.</p>
+
+<h3>🧬 Case 5: Ren et al. 2022, Genome Biology — CellNeighborEx</h3>
+<p>Focuses on the causal effect of spatial neighborhood on expression. GNN predicts whether neighbor cell-type composition influences a cell's expression, with counterfactual: "if neighbors changed, how would the target gene change?" Identified neighborhood-dependent genes in breast cancer ST, many being immune-tumor interaction markers.</p>
+
+<h3>🧬 Case 6: Shao et al. 2022, Nature Communications — DeepST</h3>
+<p>Integrates H&amp;E imaging (CNN-encoded) + gene expression + spatial coords in a GNN. Outperforms single-modality methods, especially on histologically distinct but molecularly subtle domains (e.g. tumor margins).</p>
+
+<h3>🧬 Case 7: Wang et al. 2022, Briefings in Bioinformatics — DeepSEM / GENELink</h3>
+<p>GNN for GRN inference. Genes are nodes; initialize graph with PPI / ChIP-seq priors, then GNN refines. GENELink frames link prediction as supervised learning, gains 15–30% AUPR over GENIE3.</p>
+
+<h3>🧬 Case 8: Jumper et al. 2021, Nature — AlphaFold2 Evoformer</h3>
+<p>AlphaFold2's Evoformer is essentially graph attention (alternating attention over MSA and pair representations). Though not named GNN, the operations are graph-based message passing — the most important GNN success in structural biology.</p>
+
+<h3>🧬 Case 9: Roohani et al. 2024, Nature Biotechnology — GEARS</h3>
+<p>GNN predicts effects of multi-gene perturbations in Perturb-seq. GEARS encodes GO + PPI knowledge graphs into the model, enabling zero-shot prediction of unseen perturbation combinations.</p>
+
+<h3>🧬 Case 10: StellarGraph &amp; PyG in biological networks</h3>
+<p>PyTorch Geometric and StellarGraph are now standard tools — used in drug-target interaction prediction, PPI prediction, single-cell clustering, drug side-effect prediction (Decagon, Zitnik 2018), and more.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="GNN / GSP 還能改良 / 新解決哪些任務？" data-en="What Else Could GNN / GSP Improve?">GNN / GSP 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 整合 Spatial GNN + RNA Velocity 的時空動態建模</h3>
+<p><strong>現有限制：</strong>STAGATE、SpaGCN 只用 static expression 學 spatial domain，看不到「動態」資訊；scVelo 只看 unspliced/spliced 不用空間。<strong>新提案：</strong>把 RNA velocity (ds/dt) 當作節點屬性，spatial graph 當作圖結構，用 graph neural ODE (PDE on graph) 學習「在空間圖上的轉錄速率場」。<strong>預期改進：</strong>能預測「未來 6 小時這個 spot 的細胞型別組成會如何變」，對發育、傷口癒合、腫瘤侵襲的時間外推有重大意義。</p>
+
+<h3>🎯 2. 跨切片 Graph Contrastive Learning（Patient-aware ST 整合）</h3>
+<p><strong>現有限制：</strong>GraphST 整合多切片但假設「相同 spatial domain 在不同切片應該對齊」。但 patient-specific 疾病異質性會破壞這假設。<strong>新提案：</strong>用 hierarchical contrastive learning：第一層 within-slice、第二層 patient-aware（同病人 vs 不同病人）、第三層 disease-state-aware。<strong>預期改進：</strong>在 100+ 病人的 ST cohort 上能找到「patient-shared 疾病模式 vs patient-unique 模式」，對 precision medicine 有用。</p>
+
+<h3>🎯 3. Patient-specific Disease Network</h3>
+<p><strong>現有限制：</strong>傳統 GRN 是 population-level，無法反映個體差異。<strong>新提案：</strong>用 meta-GNN（learn to learn）：先在 cohort 上 pretrain，再對每個病人 fine-tune 出個體化網路。利用 GNN inductive 特性（GraphSAGE）讓新病人不用重訓。<strong>預期改進：</strong>可找出「對病人 A 重要但對病人 B 不重要」的調控邊，指導 personalized drug target 選擇。</p>
+
+<h3>🎯 4. Multi-relational Graph：基因 × 蛋白 × 路徑 × 細胞型別</h3>
+<p><strong>現有限制：</strong>大多 single-cell GNN 只用單一關係（共表達或 PPI）。<strong>新提案：</strong>建構多型別異質圖：節點 = {gene, protein, pathway, cell type, drug}；邊 = {co-expression, PPI, GO membership, expressed-in, target-of}。用 HGT 或 R-GCN 在這多型別圖上學 unified embedding。<strong>預期改進：</strong>能做跨型別 link prediction，例如預測「藥物 X 對細胞型別 Y 的擾動」，整合 drug repurposing 與 single-cell pharmacology。</p>
+
+<h3>🎯 5. GNNExplainer for Ligand–Receptor 邊重要性</h3>
+<p><strong>現有限制：</strong>CellChat 用 expression product 排序 L-R pair，無法量化「特定空間區域中哪個 L-R 對特定下游基因最關鍵」。<strong>新提案：</strong>對訓練好的 spatial GNN 用 GNNExplainer (Ying 2019, NeurIPS) 找出「對特定 cell type 預測最關鍵的 edge subset」，這些邊就是 niche-specific L-R interactions。<strong>預期改進：</strong>提供 mechanistic interpretability，可用於設計 niche-specific drug。</p>
+
+<h3>🎯 6. NOTEARS-GNN：可微 Causal Discovery 結合 GNN</h3>
+<p><strong>現有限制：</strong>NOTEARS (Zheng 2018) 假設線性 SCM；用 GNN 取代後仍多為 small-scale。<strong>新提案：</strong>把 GNN 當作 non-linear SCM 的 functional form，並用 NOTEARS 的 DAG constraint 做 differentiable 學習。可加 spatial prior（鄰近 spot 更可能有 causal link）。<strong>預期改進：</strong>能在 ST 資料中找到「空間因果」邊——例如「腫瘤旁 spot 的 IFN-γ 高表現是否因果性影響鄰近 spot 的 PD-L1」。</p>
+
+<h3>🎯 7. Multi-hop Drug-Target-Phenotype Reasoning</h3>
+<p><strong>現有限制：</strong>傳統 drug-target prediction 只看 1-hop（藥 → 靶）；下游 phenotype 連結通常另外算。<strong>新提案：</strong>用 GNN 在 multi-relational graph 上做 path-based reasoning：藥 → 靶 → 通路 → 細胞型別 → phenotype。用 PathCon (Wang 2021) 或 R-GCN + path attention。<strong>預期改進：</strong>解釋性藥物再利用——不只說「藥 A 可能治病 B」，還能給出 4–5 hop 的機制路徑，方便濕實驗驗證。</p>
+
+<h3>🎯 8. 跨物種 Spatial Atlas 整合</h3>
+<p><strong>現有限制：</strong>不同物種 ST atlas（人、鼠、斑馬魚）目前各自分析，跨物種比較難。<strong>新提案：</strong>用 cross-species GNN：節點是 cell；邊有 (a) 同物種 spatial neighbor; (b) 跨物種 ortholog gene 表現相似度。學 species-shared embedding 與 species-specific residual。<strong>預期改進：</strong>能找出「保守的 spatial niche」（如所有哺乳類肝臟的 portal vein niche）vs「物種特有 niche」（如人類胎盤特有 trophoblast 結構）。</p>
+
+<h3>🎯 9. 用 GNN 模擬 Perturbation 傳播</h3>
+<p><strong>現有限制：</strong>GEARS 預測 perturbation 後 final state，沒有「動態傳播」模型。<strong>新提案：</strong>用 graph neural ODE：dx/dt = GNN(x, A)，把 perturbation 當初始條件，模擬訊號隨時間在 GRN 上的傳播。可訓練於 time-course Perturb-seq。<strong>預期改進：</strong>能預測「擾動 5 min, 30 min, 6 hr 後的細胞狀態」，對訊號傳遞動力學研究有幫助。</p>
+
+<h3>🎯 10. 單細胞蛋白質 + 轉錄體聯合 Spatial GNN</h3>
+<p><strong>現有限制：</strong>CODEX、CyCIF（空間蛋白）與 Visium、Stereo-seq（空間 RNA）分開分析。<strong>新提案：</strong>用 multi-view GNN：每個 spot 有兩個 view（RNA 與 protein），用 cross-modal attention 整合。可建構 joint niche definition。<strong>預期改進：</strong>找到「轉錄級看似同質但蛋白翻譯後修飾不同」的隱藏 niche——這在腫瘤抗藥性研究尤其重要（藥物靶點通常是蛋白）。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Spatial GNN + RNA Velocity for Spatio-temporal Dynamics</h3>
+<p><strong>Current limit:</strong> STAGATE / SpaGCN use only static expression; scVelo ignores space. <strong>Proposal:</strong> treat RNA velocity (ds/dt) as node attribute, spatial graph as the structure, and learn a graph neural ODE — a "transcription velocity field on a spatial graph". <strong>Expected gain:</strong> predict "in 6 h what cell-type composition this spot will have" — major for development, wound healing, tumor invasion.</p>
+
+<h3>🎯 2. Cross-slice Graph Contrastive Learning (Patient-aware ST)</h3>
+<p><strong>Current limit:</strong> GraphST assumes "same spatial domain aligns across slices", broken by patient-specific disease heterogeneity. <strong>Proposal:</strong> hierarchical contrastive learning — within-slice / patient-aware / disease-state-aware. <strong>Expected gain:</strong> on 100+ patient cohorts, separate "patient-shared disease patterns" from "patient-unique" ones — useful for precision medicine.</p>
+
+<h3>🎯 3. Patient-specific Disease Network via Meta-GNN</h3>
+<p><strong>Current limit:</strong> classical GRN is population-level. <strong>Proposal:</strong> meta-GNN (learn-to-learn): pretrain on cohort, fine-tune per patient. GraphSAGE inductive property avoids retraining on new patients. <strong>Expected gain:</strong> find regulatory edges important for patient A but not B — guides personalized drug target selection.</p>
+
+<h3>🎯 4. Multi-relational Heterogeneous Graph</h3>
+<p><strong>Current limit:</strong> most single-cell GNNs use one relation (co-expression or PPI). <strong>Proposal:</strong> build a heterogeneous graph with nodes {gene, protein, pathway, cell type, drug} and edges {co-expression, PPI, GO membership, expressed-in, target-of}, then HGT or R-GCN learns a unified embedding. <strong>Expected gain:</strong> cross-type link prediction (e.g. "drug X effect on cell type Y") — unifies drug repurposing and single-cell pharmacology.</p>
+
+<h3>🎯 5. GNNExplainer for L–R Edge Importance</h3>
+<p><strong>Current limit:</strong> CellChat ranks L-R pairs by expression product, can't say which is most important for a specific downstream gene in a specific spatial region. <strong>Proposal:</strong> apply GNNExplainer (Ying 2019, NeurIPS) to a trained spatial GNN to find edge subsets critical for predicting specific cell types — niche-specific L-R interactions. <strong>Expected gain:</strong> mechanistic interpretability for niche-targeted drug design.</p>
+
+<h3>🎯 6. NOTEARS-GNN: Differentiable Causal Discovery + GNN</h3>
+<p><strong>Current limit:</strong> NOTEARS (Zheng 2018) assumes linear SCM; non-linear extensions remain small-scale. <strong>Proposal:</strong> use GNN as the SCM's functional form with the NOTEARS DAG constraint for differentiable learning. Add a spatial prior (nearby spots more likely causally linked). <strong>Expected gain:</strong> recover "spatial causal" edges in ST — e.g. "does high IFN-γ in tumor-adjacent spots causally drive PD-L1 in neighbors?"</p>
+
+<h3>🎯 7. Multi-hop Drug-Target-Phenotype Reasoning</h3>
+<p><strong>Current limit:</strong> classical DTI looks only 1-hop. <strong>Proposal:</strong> path-based reasoning on multi-relational graph: drug → target → pathway → cell type → phenotype, via PathCon (Wang 2021) or R-GCN + path attention. <strong>Expected gain:</strong> explainable drug repurposing — not just "drug A may treat disease B" but a 4–5-hop mechanistic path for wet-lab validation.</p>
+
+<h3>🎯 8. Cross-species Spatial Atlas Integration</h3>
+<p><strong>Current limit:</strong> human, mouse, zebrafish ST atlases are analyzed separately. <strong>Proposal:</strong> cross-species GNN with nodes = cells, edges = (a) within-species spatial neighbors and (b) cross-species ortholog expression similarity. Learn species-shared embedding + species-specific residual. <strong>Expected gain:</strong> find "conserved spatial niches" (e.g. mammalian portal-vein niche) vs species-unique ones (e.g. human-specific trophoblast structures).</p>
+
+<h3>🎯 9. GNN-based Perturbation Propagation</h3>
+<p><strong>Current limit:</strong> GEARS predicts only the final state, no dynamic propagation. <strong>Proposal:</strong> graph neural ODE dx/dt = GNN(x, A) with perturbation as initial condition; train on time-course Perturb-seq. <strong>Expected gain:</strong> predict cell state at 5 min, 30 min, 6 h post-perturbation — valuable for signaling kinetics.</p>
+
+<h3>🎯 10. Joint Protein + RNA Spatial GNN</h3>
+<p><strong>Current limit:</strong> CODEX/CyCIF (spatial protein) and Visium/Stereo-seq (spatial RNA) are analyzed independently. <strong>Proposal:</strong> multi-view GNN with two views per spot (RNA + protein), cross-modal attention integrates them, joint niche definition. <strong>Expected gain:</strong> uncover hidden niches that look homogeneous in RNA but differ in protein PTMs — critical for tumor drug resistance research (drug targets are usually proteins).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pyg')">PyTorch Geometric</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sg')">SpaGCN</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sg2')">STAGATE</button>
+</div>
+<div class="code-tab-content active" id="pyg"><pre><span class="keyword">import</span> torch
+<span class="keyword">from</span> torch_geometric.nn <span class="keyword">import</span> GCNConv, GATConv
+
+<span class="keyword">class</span> GCN(torch.nn.Module):
+    <span class="keyword">def</span> __init__(self, in_dim, hid, out):
+        super().__init__()
+        self.c1 = GCNConv(in_dim, hid)
+        self.c2 = GCNConv(hid, out)
+    <span class="keyword">def</span> forward(self, x, edge_index):
+        x = torch.relu(self.c1(x, edge_index))
+        <span class="keyword">return</span> self.c2(x, edge_index)
+
+<span class="comment"># 從 AnnData 建圖</span>
+<span class="keyword">from</span> torch_geometric.data <span class="keyword">import</span> Data
+edge_index = torch.tensor(adata.obsp[<span class="str">"connectivities"</span>].nonzero(), dtype=torch.long)
+data = Data(x=torch.tensor(adata.obsm[<span class="str">"X_pca"</span>]), edge_index=edge_index)</pre></div>
+<div class="code-tab-content" id="sg"><pre><span class="keyword">import</span> SpaGCN <span class="keyword">as</span> spg
+
+adj = spg.calculate_adj_matrix(x=x, y=y, histology=<span class="keyword">False</span>)
+clf = spg.SpaGCN()
+clf.set_l(<span class="num">0.5</span>); clf.train(adata, adj, init_spa=<span class="keyword">True</span>)
+y_pred, prob = clf.predict()
+adata.obs[<span class="str">"spatial_domain"</span>] = y_pred</pre></div>
+<div class="code-tab-content" id="sg2"><pre><span class="keyword">import</span> STAGATE_pyG <span class="keyword">as</span> STAGATE
+
+STAGATE.Cal_Spatial_Net(adata, rad_cutoff=<span class="num">150</span>)
+adata = STAGATE.train_STAGATE(adata, hidden_dims=[<span class="num">512</span>,<span class="num">30</span>], n_epochs=<span class="num">1000</span>)
+sc.pp.neighbors(adata, use_rep=<span class="str">"STAGATE"</span>); sc.tl.louvain(adata)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列哪個是 GCN 的 over-smoothing 問題？</p><p data-lang="en">Which describes GCN's over-smoothing?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 訓練太快</span><span data-lang="en">A. Trains too fast</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 層數過多時所有節點特徵變相同，失去區別力</span><span data-lang="en">B. With too many layers, all node features converge to the same value — losing distinctiveness</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 無法用 GPU</span><span data-lang="en">C. Can't use GPU</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不能 mini-batch</span><span data-lang="en">D. Can't mini-batch</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="0"><p data-lang="zh">SpaGCN 與 STAGATE 共同的特色是？</p><p data-lang="en">What do SpaGCN and STAGATE share?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 利用空間鄰近圖整合空間與表現訊息</span><span data-lang="en">A. Use spatial neighbor graphs to integrate location + expression</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需要表現資料</span><span data-lang="en">B. Don't need expression data</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只能用 R</span><span data-lang="en">C. R-only</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不是 GNN</span><span data-lang="en">D. Not GNNs</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="cycle-following.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 8：Cycle</span></a>
+<a href="spatial-statistics.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 10：空間統計" data-en="Ch 10: Spatial Stats">Ch 10：空間統計</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// Build a small graph: 20 nodes in 2 clusters
+const N=20,nodes=[],edges=[];
+for(let i=0;i<N/2;i++)nodes.push({x:200+Math.random()*100,y:80+Math.random()*100,sig:1});
+for(let i=0;i<N/2;i++)nodes.push({x:400+Math.random()*100,y:80+Math.random()*100,sig:0});
+for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const d=Math.hypot(nodes[i].x-nodes[j].x,nodes[i].y-nodes[j].y);if(d<70)edges.push([i,j]);}
+const adj=Array.from({length:N},()=>new Array(N).fill(0));for(const [a,b] of edges){adj[a][b]=1;adj[b][a]=1;}for(let i=0;i<N;i++)adj[i][i]=1;
+const deg=adj.map(r=>r.reduce((a,b)=>a+b,0));
+function step(s){const ns=new Array(N).fill(0);for(let i=0;i<N;i++){let acc=0;for(let j=0;j<N;j++)acc+=adj[i][j]*s[j];ns[i]=acc/deg[i];}return ns;}
+function render(){const k=+document.getElementById('sGit').value;document.getElementById('gIt').textContent=k;let s=nodes.map(n=>n.sig);for(let t=0;t<k;t++)s=step(s);
+let svg='';for(const [a,b] of edges)svg+=`<line x1="${nodes[a].x}" y1="${nodes[a].y}" x2="${nodes[b].x}" y2="${nodes[b].y}" stroke="rgba(120,120,120,0.4)" stroke-width="1"/>`;
+for(let i=0;i<N;i++){const v=s[i];const r=Math.round(60+v*150),g=Math.round(110+v*80),bl=Math.round(180-v*100);svg+=`<circle cx="${nodes[i].x}" cy="${nodes[i].y}" r="8" fill="rgb(${r},${g},${bl})" stroke="#333" stroke-width="0.5"/>`;}
+document.getElementById('gSvg').innerHTML=svg;
+const L=I18n.get();const std=Math.sqrt(s.reduce((acc,v)=>acc+(v-0.5)**2,0)/N);
+document.getElementById('gMsg').innerHTML=L==='zh'?`迭代 ${k} 次後，節點訊號標準差 = <strong>${std.toFixed(3)}</strong>。可看到隨著迭代增加，所有節點越來越接近平均值（over-smoothing）。`:`After ${k} iterations, signal std = <strong>${std.toFixed(3)}</strong>. As iterations grow, all nodes converge to the mean (over-smoothing).`;}
+document.getElementById('sGit').addEventListener('input',render);document.addEventListener('langchange',render);render();
+
+window._QF={zh:{q1_y:'答對！over-smoothing 是 GNN 的著名問題。',q1_n:'答案是 B。層數太多會讓特徵趨同。',q2_y:'答對！這是 spatial GNN 的核心優勢。',q2_n:'答案是 A。兩者都用空間圖整合位置與表現。'},en:{q1_y:'Correct! Over-smoothing is GNN’s notorious issue.',q1_n:'Answer is B. Too many layers collapse features.',q2_y:'Correct! Core spatial GNN strength.',q2_n:'Answer is A. Both fuse location + expression via spatial graphs.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

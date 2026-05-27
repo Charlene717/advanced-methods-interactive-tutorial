@@ -1,0 +1,666 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Neuro-Symbolic AI / Knowledge Graphs — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html" class="active">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 50 / 50 🏁</div><h1 data-zh="Neuro-Symbolic AI / 知識圖譜：完成 50 章！" data-en="Neuro-Symbolic AI / Knowledge Graphs — All 50 Chapters!">Neuro-Symbolic AI / 知識圖譜（完成 50 章！）</h1>
+<p class="subtitle" data-lang="zh">「神經網路擅長感知與插值；符號推理擅長組合與解釋。」Neuro-symbolic 結合兩者，配合 Knowledge Graph 三元組 (subject, predicate, object)，是 LLM 時代克服「幻覺」與「無法解釋」的關鍵。從 TransE (2013) 到 PrimeKG (2023 Nature Sci Data)、TxGNN (2023 Nature Med)，KG + GNN + LLM 已成為精準醫療的核心 stack。</p>
+<p class="subtitle" data-lang="en">"Neural networks excel at perception and interpolation; symbolic reasoning excels at composition and explanation." Neuro-symbolic combines the two with Knowledge Graph triples (subject, predicate, object) — a key strategy to fight LLM hallucination and opacity. From TransE (2013) to PrimeKG (2023 Nat Sci Data) and TxGNN (2023 Nat Med), KG + GNN + LLM is now the core stack of precision medicine.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為什麼要結合神經與符號？" data-en="Why Combine Neural and Symbolic?">為什麼要結合神經與符號？</h2>
+<div data-lang="zh">
+<p><strong>兩個 AI 傳統的分裂：</strong></p>
+<ul>
+<li><strong>連接主義 (Neural)：</strong>感知強、可從資料學；但「黑盒」、無法解釋、邏輯推理弱、易幻覺、需大量資料。</li>
+<li><strong>符號主義 (Symbolic)：</strong>邏輯一致、可解釋、樣本效率高；但脆弱、無法處理連續/感知資料、知識需手寫。</li>
+</ul>
+<p>過去 50 年兩派輪流主導（symbolic 主導 1960–80 年代專家系統時代，neural 自 2012 ImageNet 後主導）。<strong>Neuro-symbolic（Garcez &amp; Lamb 2020）即「兩者整合」</strong>——讓神經處理感知 + 學習，符號處理組合 + 推理 + 解釋。</p>
+<p><strong>Knowledge Graph (KG) 是符號側的主要載體：</strong></p>
+<ul>
+<li>由 <strong>三元組</strong> (subject, predicate, object) 組成。例：(BRCA1, mutated_in, breast_cancer)；(aspirin, treats, headache)。</li>
+<li>結構化知識：實體 → 節點、關係 → 帶標籤的邊。</li>
+<li>支援 <strong>SPARQL 查詢</strong>、<strong>規則推理</strong>（如 transitivity）、<strong>路徑解釋</strong>。</li>
+</ul>
+<p><strong>三種典型整合方式：</strong></p>
+<ol>
+<li><strong>KG embedding（神經學習符號）：</strong>把 KG 三元組 embed 到向量空間（TransE, ComplEx, RotatE）。能補全缺失邊，但失去原本的離散結構。</li>
+<li><strong>GNN on KG（神經訊息傳遞）：</strong>R-GCN, CompGCN — 在 KG 上跑訊息傳遞，把 relational 結構帶進神經表示。</li>
+<li><strong>LLM + RAG + KG（混合架構，現代主流）：</strong>LLM 生成查詢 → 從 KG retrieve 相關三元組 → context 注入 prompt → LLM 基於可驗證證據作答。GraphRAG (Microsoft 2024) 是代表。</li>
+</ol>
+</div>
+<div data-lang="en">
+<p><strong>The two AI traditions:</strong></p>
+<ul>
+<li><strong>Connectionist (Neural):</strong> strong perception, learns from data; but black-box, weak logic, hallucinates, data-hungry.</li>
+<li><strong>Symbolic:</strong> logically consistent, interpretable, sample-efficient; but brittle, no perception, knowledge is hand-coded.</li>
+</ul>
+<p>For 50 years they alternated dominance (symbolic ruled 1960s–80s expert systems; neural since ImageNet 2012). <strong>Neuro-symbolic (Garcez &amp; Lamb 2020)</strong> = the integration — let neural handle perception + learning, symbolic handle composition + reasoning + explanation.</p>
+<p><strong>The Knowledge Graph (KG) is the main symbolic substrate:</strong></p>
+<ul>
+<li>Built from <strong>triples</strong> (subject, predicate, object). E.g. (BRCA1, mutated_in, breast_cancer); (aspirin, treats, headache).</li>
+<li>Structured knowledge: entities → nodes, relations → labeled edges.</li>
+<li>Supports <strong>SPARQL queries</strong>, <strong>rule-based inference</strong> (transitivity, etc.), <strong>path explanations</strong>.</li>
+</ul>
+<p><strong>Three typical integration modes:</strong></p>
+<ol>
+<li><strong>KG embedding (neural learns the symbolic):</strong> embed KG triples in vector space (TransE, ComplEx, RotatE). Completes missing edges but discards discrete structure.</li>
+<li><strong>GNN on KG (neural message passing):</strong> R-GCN, CompGCN — message passing on KG, importing relational structure into neural reps.</li>
+<li><strong>LLM + RAG + KG (modern hybrid stack):</strong> LLM generates queries → retrieve relevant KG triples → inject as context → LLM answers from verifiable evidence. GraphRAG (Microsoft 2024) is canonical.</li>
+</ol>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🧠</div><h4 data-zh="神經側" data-en="Neural side">神經側</h4><p data-lang="zh">處理感知（影像、序列、計數）+ 從資料自動學習表示。</p><p data-lang="en">Handles perception (images, sequences, counts) + learns representations from data.</p></div>
+  <div class="card"><div class="card-icon">🔣</div><h4 data-zh="符號側" data-en="Symbolic side">符號側</h4><p data-lang="zh">三元組 KG、邏輯規則、可解釋路徑。組合性、可驗證、可推理。</p><p data-lang="en">Triple-based KG, logical rules, explainable paths. Compositional, verifiable, reasoning-capable.</p></div>
+  <div class="card"><div class="card-icon">🔗</div><h4 data-zh="LLM + KG = RAG" data-en="LLM + KG = RAG">LLM + KG = RAG</h4><p data-lang="zh">retrieval-augmented：LLM 從 KG 拉證據再作答，降低幻覺、可解釋。</p><p data-lang="en">Retrieval-augmented — LLM pulls evidence from KG, reducing hallucination and giving explanations.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="KG embedding, R-GCN, LTN, DeepProbLog" data-en="KG Embedding, R-GCN, LTN, DeepProbLog">KG embedding, R-GCN, LTN, DeepProbLog</h2>
+<div data-lang="zh">
+<p><strong>① TransE (Bordes 2013, NeurIPS)：</strong>把每個實體 e、關係 r 嵌成向量。「真」三元組滿足 <strong>e_subj + r ≈ e_obj</strong>。Loss：margin-based ranking — 把真三元組 score 拉高、corrupt 三元組 score 推低。簡單但無法表達 1-to-N、symmetric 關係。</p>
+<p><strong>② ComplEx (Trouillon 2016, ICML)：</strong>用 <strong>複數向量</strong>，score 為 Re(⟨e_subj, r, ē_obj⟩)。複數的非對稱共軛可以自然表達 asymmetric 關係（e.g. parent_of），是 KG embedding 的事實標竿。</p>
+<p><strong>③ RotatE (Sun 2019, ICLR)：</strong>關係看作「複平面旋轉」：e_obj = e_subj ∘ r，其中 |r_i| = 1。可同時表達 symmetric、antisymmetric、inversion、composition 四類關係。當前最強的單模型 KG embedding。</p>
+<p><strong>④ R-GCN (Schlichtkrull 2018, ESWC)：</strong>relational GCN — 每種關係類型有自己的線性變換矩陣 W_r，message passing 為 h_v^{(l+1)} = σ(Σ_r Σ_{u ∈ N_r(v)} (1/c_{v,r}) W_r^{(l)} h_u^{(l)})。可做 entity classification 與 link prediction。</p>
+<p><strong>⑤ Logical Tensor Networks (LTN, Serafini &amp; Garcez 2016)：</strong>把一階邏輯公式用 fuzzy logic 變成可微 loss。例：∀x, ∀y, mutated_in(x, cancer) ∧ codes_for(x, kinase) → druggable(x) — 用 product t-norm 變成 differentiable，可與 neural classifier 聯合訓練。</p>
+<p><strong>⑥ DeepProbLog (Manhaeve 2018, NeurIPS)：</strong>把神經網路當成 probabilistic logic program 的 atomic predicate。MNIST + 加法可用「神經辨識數字 + 邏輯規則做加法」聯合訓練——遠比純神經 sample efficient。</p>
+<p><strong>⑦ LLM + RAG + KG（現代主流）：</strong></p>
+<ol>
+<li>使用者 query。</li>
+<li>LLM 解析為實體 / 關係，產生 KG 查詢（SPARQL 或 Cypher）。</li>
+<li>從 KG retrieve top-k 三元組 / 路徑。</li>
+<li>把 KG 證據 + query 一起 prompt 給 LLM 產生帶引用的答案。</li>
+</ol>
+<p>GraphRAG (Edge 2024, Microsoft) 進一步用 community detection 與 hierarchical summarization 預處理 KG，提升 retrieve 品質。</p>
+</div>
+<div data-lang="en">
+<p><strong>① TransE (Bordes 2013, NeurIPS):</strong> embed each entity e and relation r as vectors. True triples satisfy <strong>e_subj + r ≈ e_obj</strong>. Loss: margin-based ranking — push true scores up, corrupt scores down. Simple but can't represent 1-to-N or symmetric relations.</p>
+<p><strong>② ComplEx (Trouillon 2016, ICML):</strong> use <strong>complex-valued vectors</strong>; score Re(⟨e_subj, r, ē_obj⟩). Asymmetric conjugates naturally represent asymmetric relations (parent_of). De-facto baseline.</p>
+<p><strong>③ RotatE (Sun 2019, ICLR):</strong> relations as rotations in the complex plane: e_obj = e_subj ∘ r with |r_i| = 1. Captures symmetric, antisymmetric, inversion, composition — currently the strongest single-model KG embedding.</p>
+<p><strong>④ R-GCN (Schlichtkrull 2018, ESWC):</strong> relational GCN — each relation type has its own W_r; message passing h_v^{(l+1)} = σ(Σ_r Σ_{u ∈ N_r(v)} (1/c_{v,r}) W_r^{(l)} h_u^{(l)}). Used for entity classification and link prediction.</p>
+<p><strong>⑤ Logical Tensor Networks (LTN, Serafini &amp; Garcez 2016):</strong> turn first-order logic formulas into differentiable losses via fuzzy logic. E.g. ∀x ∀y, mutated_in(x, cancer) ∧ codes_for(x, kinase) → druggable(x) — product t-norm makes it differentiable; jointly trained with a neural classifier.</p>
+<p><strong>⑥ DeepProbLog (Manhaeve 2018, NeurIPS):</strong> use NNs as the atomic predicates of a probabilistic logic program. MNIST + addition trains "NN recognizes digits + logic adds" jointly — far more sample-efficient than pure NN.</p>
+<p><strong>⑦ LLM + RAG + KG (modern stack):</strong></p>
+<ol>
+<li>User query.</li>
+<li>LLM parses entities / relations, generates KG query (SPARQL or Cypher).</li>
+<li>Retrieve top-k triples / paths from KG.</li>
+<li>Provide retrieved KG evidence + query in prompt; LLM returns cited answer.</li>
+</ol>
+<p>GraphRAG (Edge 2024, Microsoft) adds community detection + hierarchical summarization to improve retrieval.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>關鍵直覺：</strong>KG embedding 把離散三元組變連續向量、可微，但失去組合 explainability；LLM + RAG 保留 KG 的離散結構與可解釋 path，但 retrieve 不準時仍會幻覺。<strong>實務最強的 stack 通常是：LLM (高層意圖) + RAG (證據檢索) + KG embedding (推測缺失邊) + 規則引擎 (硬性約束)</strong>，四者協作。</div>
+<div data-lang="en"><strong>Key intuition:</strong> KG embedding makes discrete triples continuous and differentiable, but loses compositional explainability. LLM + RAG preserves discrete structure and explainable paths, but fails on poor retrieval. <strong>Strongest stacks combine four: LLM (high-level intent) + RAG (evidence retrieval) + KG embedding (missing-edge inference) + rule engine (hard constraints).</strong></div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="生物醫學 KG 推理：從 query 到路徑解釋" data-en="Biomedical KG Reasoning: Query to Path Explanation">生物醫學 KG 推理：從 query 到路徑解釋</h2>
+<div data-lang="zh"><p>下方為一個迷你 PrimeKG-style 知識圖譜（含基因、蛋白質、pathway、疾病、藥物五種實體）。<strong>選擇 query 類型</strong>（例如「為某疾病找候選藥物」），系統會在 KG 上做多跳推理並用紅色高亮可解釋的路徑。試試「BRCA1 → ? → ? → drug」這類路徑——這正是 drug repurposing 的核心邏輯。</p></div>
+<div data-lang="en"><p>The SVG below is a mini PrimeKG-style knowledge graph (5 entity types: gene, protein, pathway, disease, drug). <strong>Pick a query type</strong> (e.g. "find candidate drugs for a disease") and the system performs multi-hop reasoning, highlighting explainable paths in red. Try "BRCA1 → ? → ? → drug" — the core logic of drug repurposing.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="查詢類型" data-en="Query type">查詢類型</label>
+  <select id="queryType" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="drug_for_disease" selected>找 breast_cancer 的候選藥物</option>
+    <option value="disease_for_gene">找 BRCA1 相關疾病</option>
+    <option value="drug_target">找 olaparib 的標靶基因</option>
+    <option value="path">解釋 BRCA1 → olaparib 的關聯路徑</option>
+  </select>
+</div>
+<div class="slider-group">
+  <label data-zh="推理跳數" data-en="Reasoning hops">推理跳數 <span id="vHops">3</span></label>
+  <input type="range" id="sHops" min="1" max="4" value="3" step="1">
+</div>
+<svg id="kgSvg" viewBox="0 0 700 380" style="width:100%;height:380px;background:#fafafa;border-radius:6px;"></svg>
+<div id="kgInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🎯 <span data-zh="什麼時候用 neuro-symbolic？" data-en="When to use neuro-symbolic?">什麼時候用 neuro-symbolic？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>已有大量結構化知識</strong>（醫學 ontology, drug-target DB, pathway DB）→ KG-based。比硬塞給 LLM 更可靠。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>需要解釋性 / 監管要求</strong>（藥物審查、臨床決策）→ KG path explanation > black-box 神經網路。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>少樣本 + 強結構</strong>（罕見疾病、孤兒藥）→ DeepProbLog / LTN 結合領域規則，可在小資料下推理。</div></div>
+<div class="dt-node"><span class="dt-q">情境4:</span><div><strong>LLM 答案需可驗證</strong>（生物醫學問答）→ LLM + RAG + KG（GraphRAG, MedGraphRAG）。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>純感知任務（影像分類、語音辨識）符號層多餘；或缺乏領域 KG 的全新領域。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Large existing structured knowledge</strong> (medical ontology, drug-target DB, pathway DB) → KG-based is more reliable than dumping into LLM.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Explainability / regulation</strong> (drug review, clinical decision) → KG path explanation beats black-box.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Few-shot + strong structure</strong> (rare disease, orphan drugs) → DeepProbLog / LTN combining domain rules infers from limited data.</div></div>
+<div class="dt-node"><span class="dt-q">Case 4:</span><div><strong>LLM answers must be verifiable</strong> (biomedical Q&amp;A) → LLM + RAG + KG (GraphRAG, MedGraphRAG).</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Pure perception tasks (image / speech) — symbolic layer is redundant. Or brand-new domains without a KG.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Neuro-symbolic / KG 在生醫" data-en="Neuro-symbolic / KG in Biomedicine">Neuro-symbolic / KG 在生醫</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="PrimeKG (Chandak 2023, Nat Sci Data)" data-en="PrimeKG">PrimeKG：統一醫學 KG</h4>
+<p data-lang="zh">Chandak et al. (2023, Nature Scientific Data) 提出 PrimeKG — 整合 20+ 個生醫資料庫，4M 三元組、129k 節點、10 種關係（gene-disease、drug-protein、disease-symptom 等）。已成為新一代醫學 KG 的事實標準。</p>
+<p data-lang="en">Chandak et al. (2023, Nature Scientific Data) introduce PrimeKG — integrates 20+ biomedical DBs into 4M triples, 129k nodes, 10 relation types (gene-disease, drug-protein, disease-symptom). The new de-facto medical KG.</p></div>
+
+<div class="card"><h4 data-zh="TxGNN (Huang 2023, Nat Med)" data-en="TxGNN">TxGNN：治療標靶預測</h4>
+<p data-lang="zh">Huang et al. (2023, Nature Medicine) 在 PrimeKG 上訓練 graph neural network 預測「藥物 → 疾病」適應症與禁忌症。對 zero-shot 疾病（沒見過的疾病）也能 transfer。每個預測都附 KG 路徑解釋 — 通過 FDA 風格的可解釋性測試。</p>
+<p data-lang="en">Huang et al. (2023, Nature Medicine) train a GNN on PrimeKG to predict drug → disease (indication or contraindication). Generalizes to zero-shot diseases. Every prediction comes with a KG path — passes FDA-style explainability tests.</p></div>
+
+<div class="card"><h4 data-zh="DECAGON (Zitnik 2018, Bioinformatics)" data-en="DECAGON">DECAGON：藥物-藥物副作用</h4>
+<p data-lang="zh">Zitnik et al. (2018, Bioinformatics ISMB) 用 multi-relational GCN 在 drug-drug-protein KG 上預測「兩藥併用會產生何種特定副作用」（964 種副作用類別）。比傳統 baseline AUC 提升 ~5%。仍是 polypharmacy 領域標準 baseline。</p>
+<p data-lang="en">Zitnik et al. (2018, Bioinformatics ISMB) — multi-relational GCN on a drug-drug-protein KG predicts which side effect a drug pair will cause (964 classes). ~5% AUC improvement; still the polypharmacy baseline.</p></div>
+
+<div class="card"><h4 data-zh="Hetionet (Himmelstein 2017, eLife)" data-en="Hetionet">Hetionet：藥物再利用 KG 開端</h4>
+<p data-lang="zh">Himmelstein et al. (2017, eLife) 構建第一個大型 biomedical heterogeneous network（47k 節點、2M 邊、24 種關係）。用 metapath-based machine learning 預測 drug repurposing 候選——後續所有 biomedical KG embedding 論文的 starting point。</p>
+<p data-lang="en">Himmelstein et al. (2017, eLife) build the first large biomedical heterogeneous network (47k nodes, 2M edges, 24 relations). Metapath-based ML predicts drug repurposing candidates — the starting point of biomedical KG embedding.</p></div>
+
+<div class="card"><h4 data-zh="BioBERT + KG fusion" data-en="BioBERT + KG fusion">BioBERT + KG fusion</h4>
+<p data-lang="zh">把 BioBERT (Lee 2019) 學的文字 representation 與 KG embedding (e.g. SapBERT, UMLS) 聯合 — 在 BioRel / DDI 等 relation extraction 任務上比純 BioBERT 高 3–5%。代表「LLM 語意 + KG 結構」融合。</p>
+<p data-lang="en">Combine BioBERT (Lee 2019) text representations with KG embeddings (SapBERT, UMLS) — 3–5% improvement on BioRel / DDI relation extraction. Represents "LLM semantics + KG structure" fusion.</p></div>
+
+<div class="card"><h4 data-zh="GraphRAG for biomedical literature" data-en="GraphRAG for biomedical literature">GraphRAG 生醫文獻</h4>
+<p data-lang="zh">2024 年 Microsoft 提出 GraphRAG（Edge et al.）— 把長文檔轉成 community-structured KG 再做 RAG。在 PubMed 30M 摘要上應用為 MedGraphRAG，回答「某 disease 的最新治療進展」這類「summary-level」問題 比 vanilla RAG 高 20%+。</p>
+<p data-lang="en">Microsoft (Edge et al. 2024) GraphRAG — converts long documents to a community-structured KG before retrieval. Applied as MedGraphRAG on 30M PubMed abstracts, 20%+ improvement on "summary-level" questions like "recent treatments for disease X".</p></div>
+
+<div class="card"><h4 data-zh="罕見疾病推理 (Mondo / HPO)" data-en="Rare-disease reasoning (Mondo / HPO)">罕見疾病推理</h4>
+<p data-lang="zh">Human Phenotype Ontology (HPO) + Mondo disease ontology 提供結構化症狀-疾病樹。Phenoxer / Exomiser 用 KG-based reasoning 從病人臨床表現排序候選疾病。比文字 search 對罕見病敏感度高 30%+。</p>
+<p data-lang="en">Human Phenotype Ontology (HPO) + Mondo disease ontology provide structured symptom-disease trees. Phenoxer / Exomiser use KG-based reasoning to rank candidate diseases from clinical presentations — 30%+ higher sensitivity on rare diseases than text search.</p></div>
+
+<div class="card"><h4 data-zh="DrugBank → drug repurposing via KG embedding" data-en="DrugBank → drug repurposing via KG embedding">DrugBank + KG embedding</h4>
+<p data-lang="zh">把 DrugBank 的 (drug, target, indication) 三元組用 ComplEx / RotatE embed，預測缺失邊 → 候選 repurposing。COVID-19 期間多項加速研究使用此 pipeline，部分預測（如 baricitinib）後續被臨床確認。</p>
+<p data-lang="en">Embed DrugBank's (drug, target, indication) triples with ComplEx / RotatE; predict missing edges → repurposing candidates. Multiple COVID-19 acceleration studies used this pipeline; some predictions (e.g. baricitinib) were later clinically confirmed.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題" data-en="Advanced Topics">進階主題</h2>
+<div data-lang="zh">
+<h3>① 為何 LLM 仍會幻覺？KG 如何修正？</h3>
+<p>LLM 的生成是「下一 token 機率最大化」——當 prompt 涉及訓練時罕見的事實，模型仍會「自信地造假」。KG 提供 ground-truth 三元組，可在生成過程：(i) <strong>檢索</strong>：把相關三元組作為 context；(ii) <strong>驗證</strong>：對 LLM 輸出做 fact-check 比對 KG；(iii) <strong>規則約束</strong>：硬約束生成不能違背 KG（如「不可推薦該病人禁忌的藥」）。</p>
+
+<h3>② KG embedding 的 expressivity 階層</h3>
+<ul>
+<li><strong>TransE：</strong>無法表達 symmetric / 1-to-N / composition 三類關係。</li>
+<li><strong>DistMult：</strong>所有關係都 symmetric（dot product 對稱性）。</li>
+<li><strong>ComplEx：</strong>解決 antisymmetric 問題。</li>
+<li><strong>RotatE：</strong>同時涵蓋 symmetric, antisymmetric, inversion, composition 四類。</li>
+<li><strong>BoxE (Abboud 2020)：</strong>用 hyper-box 表達實體與關係，可表達更廣泛的邏輯模式。</li>
+<li><strong>HypE / hyperbolic KG embedding：</strong>把實體嵌入 Poincaré 球，自然處理 hierarchical KG（如 disease ontology）。</li>
+</ul>
+
+<h3>③ R-GCN 的計算瓶頸</h3>
+<p>R-GCN 每種關係一個 W_r — 若 KG 有數百種關係，參數爆炸。<strong>basis decomposition</strong>（共享 basis matrices）與 <strong>block-diagonal decomposition</strong>（Schlichtkrull 2018）為解。CompGCN (Vashishth 2020) 進一步用 composition function 把 entity 與 relation 同時嵌入。</p>
+
+<h3>④ Logical Tensor Networks 的 differentiable 邏輯</h3>
+<p>LTN 把布林邏輯換成 [0,1] fuzzy logic：A ∧ B → A · B（product t-norm）、A ∨ B → A + B − A·B、∀x → 對所有 x 取「平均」。所有 quantifier 變 differentiable，可與 neural classifier 聯合反傳。<strong>實務：</strong>規則作為 soft constraint，violation 是 loss term。</p>
+
+<h3>⑤ DeepProbLog 的工作流</h3>
+<p>程式碼是 ProbLog（probabilistic logic）。某些 atomic predicate 由 NN 提供（e.g. digit(image, X) 由 CNN 輸出機率分布）。Loss 反傳：邏輯推理結果 → ProbLog 的機率 → 對 NN 參數的梯度。<strong>關鍵突破：</strong>把符號程式變 differentiable 同時保留可解釋性。</p>
+
+<h3>⑥ GraphRAG 與傳統 RAG 的差異</h3>
+<p>傳統 RAG：把文檔切 chunk → embed → vector DB → top-k 取回。對「single fact」query 有效，但對「整本書摘要」這類 summary 需求很差。<strong>GraphRAG：</strong>用 LLM 先把文檔結構化為 entity-relation KG → 對 KG 做 community detection → 對每個 community 生成 hierarchical summary → query 時根據需要取回不同層級的 summary。</p>
+
+<h3>⑦ KG 不完整性（OWA vs CWA）</h3>
+<p>KG 是 open-world assumption：「沒看到的三元組」不代表「不成立」，只是「未知」。這與 closed-world 機器學習假設衝突。<strong>實務：</strong>negative sampling 是「假設大部分 corrupt 三元組是 false」的近似；conformal prediction / probabilistic KG（如 PSL）給出帶不確定度的推理。</p>
+
+<h3>⑧ Neuro-symbolic 的未來方向</h3>
+<ul>
+<li><strong>Differentiable reasoning：</strong>把 SAT / SMT solver 變 differentiable（Wang 2019, SATNet）。</li>
+<li><strong>LLM 作為 KG 構建器：</strong>用 LLM 從非結構化文本自動抽取三元組構建 KG；REBEL (Cabot 2021) 是代表。</li>
+<li><strong>Neuro-symbolic agent：</strong>結合 LLM planner + KG world model + 符號 executor（如 ToolFormer, ReAct 模式）。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① Why does LLM hallucinate? How does KG fix it?</h3>
+<p>LLM generation = "max next-token probability" — when prompts touch rarely-seen facts, the model invents content confidently. KG provides ground truth: (i) <strong>retrieval</strong>: inject relevant triples as context; (ii) <strong>verification</strong>: fact-check LLM output against KG; (iii) <strong>rule constraints</strong>: hard-disallow generation that violates KG (e.g. "cannot recommend a contraindicated drug").</p>
+
+<h3>② KG-embedding expressivity hierarchy</h3>
+<ul>
+<li><strong>TransE:</strong> can't represent symmetric / 1-to-N / composition relations.</li>
+<li><strong>DistMult:</strong> all relations are symmetric (dot-product symmetry).</li>
+<li><strong>ComplEx:</strong> fixes asymmetry.</li>
+<li><strong>RotatE:</strong> covers symmetric, antisymmetric, inversion, composition.</li>
+<li><strong>BoxE (Abboud 2020):</strong> hyper-box-based, captures broader logical patterns.</li>
+<li><strong>HypE / hyperbolic KG embedding:</strong> Poincaré ball naturally handles hierarchical KG (disease ontology).</li>
+</ul>
+
+<h3>③ R-GCN computational bottleneck</h3>
+<p>R-GCN allocates one W_r per relation — parameters explode with hundreds of relations. Solutions: <strong>basis decomposition</strong> (shared bases) and <strong>block-diagonal decomposition</strong> (Schlichtkrull 2018). CompGCN (Vashishth 2020) uses composition functions to jointly embed entities and relations.</p>
+
+<h3>④ Logical Tensor Networks: differentiable logic</h3>
+<p>LTN swaps boolean for [0,1] fuzzy logic: A ∧ B → A·B (product t-norm); A ∨ B → A + B − A·B; ∀x → mean over x. All quantifiers become differentiable, jointly trainable with neural classifiers. <strong>Practically:</strong> rules act as soft constraints; violation is a loss term.</p>
+
+<h3>⑤ DeepProbLog workflow</h3>
+<p>Code is ProbLog (probabilistic logic). Some atomic predicates come from NNs (e.g. digit(image, X) from CNN softmax). Loss backprops: logical inference → ProbLog probability → gradient into NN parameters. <strong>Key breakthrough:</strong> differentiable symbolic programs that retain interpretability.</p>
+
+<h3>⑥ GraphRAG vs traditional RAG</h3>
+<p>Traditional RAG: chunk document → embed → vector DB → top-k. Works for single-fact queries but fails on "summarize the whole book". <strong>GraphRAG:</strong> LLM first structures the corpus into an entity-relation KG → community detection → hierarchical summary per community → retrieve appropriate summary level per query.</p>
+
+<h3>⑦ KG incompleteness (OWA vs CWA)</h3>
+<p>KG uses open-world assumption: missing triple ≠ false; merely unknown. Clashes with closed-world ML assumption. <strong>Practical:</strong> negative sampling approximates "most corrupt triples are false"; conformal prediction / probabilistic KG (PSL) give calibrated uncertainty.</p>
+
+<h3>⑧ Future of neuro-symbolic</h3>
+<ul>
+<li><strong>Differentiable reasoning:</strong> differentiable SAT / SMT solvers (SATNet, Wang 2019).</li>
+<li><strong>LLM as KG builder:</strong> auto-extract triples from text (REBEL, Cabot 2021).</li>
+<li><strong>Neuro-symbolic agents:</strong> LLM planner + KG world model + symbolic executor (ToolFormer, ReAct patterns).</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="還能改良哪些任務？" data-en="What Else Could Be Improved?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 個人化 medical RAG agent</h3>
+<p>結合病人 EMR + PrimeKG + LLM 構建「個人 KG」。<strong>提案：</strong>每個病人即一個 ego-graph，agent 可問「對這個病人，這個新藥是否安全？」並輸出 KG 路徑解釋（過敏史、共病、藥物代謝基因）。</p>
+
+<h3>🎯 2. 多重組學 evidence-aware KG</h3>
+<p>當前 KG 多為 categorical（gene-disease association）。<strong>提案：</strong>把 KG 邊權重來自實驗證據（GWAS p-value、Perturb-seq effect size、表型一致性），用 R-GCN + uncertainty 推理時帶誤差棒。</p>
+
+<h3>🎯 3. Causal KG：超越 association</h3>
+<p>目前 biomedical KG 多表達「相關性」。<strong>提案：</strong>結合 causal discovery（如 Ch 14 的方法）構建「causal KG」，邊代表 do-intervention 效應。配合 LLM 做 counterfactual 推理（「如果敲除這基因會怎樣？」）。</p>
+
+<h3>🎯 4. Temporal KG for disease progression</h3>
+<p>當前 KG 是靜態的；但疾病進展、治療反應都有時間性。<strong>提案：</strong>temporal KG embedding（如 TNTComplEx）模擬「初期 → 中期 → 末期」的關係演化，用於個人化 trajectory prediction。</p>
+
+<h3>🎯 5. 規則學習自動化（Rule mining）</h3>
+<p>當前 KG 規則需專家手寫。<strong>提案：</strong>用 AnyBURL / RNNLogic 自動從 KG 學「Horn rule」，發現如「藥 A treats 疾病 X ∧ X has_symptom Y → 藥 A relieves Y」這類規則。</p>
+
+<h3>🎯 6. KG-aware 蛋白質設計</h3>
+<p>結合 RFdiffusion / FrameFlow + KG（功能標籤、結合伴侶）。<strong>提案：</strong>generative design 條件式於 KG-derived constraints（「設計能 bind 此 target 但不 bind 此 off-target 的蛋白質」）。</p>
+
+<h3>🎯 7. 臨床試驗匹配 (clinical trial matching)</h3>
+<p>當前匹配主要靠關鍵字。<strong>提案：</strong>把試驗 eligibility criteria 轉成符號規則，病人 EMR 轉成 KG，做 symbolic + neural 匹配。可大幅提升 rare-disease 試驗招募效率。</p>
+
+<h3>🎯 8. LLM-fact-checking via KG</h3>
+<p>給 LLM 一個 medical 回答，自動把 claim 抽取後對 PrimeKG check。<strong>提案：</strong>FactScore-Bio benchmark + 訓練 LLM 「在 KG 沒有支持時主動說不知道」。</p>
+
+<h3>🎯 9. Cross-species KG alignment</h3>
+<p>人類 KG 與小鼠 KG 共享結構但 entity 不同（orthologs、homologous diseases）。<strong>提案：</strong>跨物種 KG embedding 對齊——可 transfer 小鼠豐富的 perturbation 資料到人類疾病推理。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Personalized medical RAG agent</h3>
+<p>Combine EMR + PrimeKG + LLM into a "patient KG". <strong>Proposal:</strong> each patient is an ego-graph; agent answers "is this drug safe for this patient?" with KG path explanations (allergies, comorbidities, drug-metabolism genes).</p>
+
+<h3>🎯 2. Multi-omics evidence-aware KG</h3>
+<p>Current KGs are categorical (gene-disease association). <strong>Proposal:</strong> weight KG edges by experimental evidence (GWAS p-value, Perturb-seq effect size, phenotype consistency); R-GCN + uncertainty inference with error bars.</p>
+
+<h3>🎯 3. Causal KG: beyond association</h3>
+<p>Biomedical KGs mostly encode correlation. <strong>Proposal:</strong> combine with causal discovery (Ch 14) to build "causal KG" where edges represent do-intervention effects; LLM-based counterfactual reasoning ("what if we knock out this gene?").</p>
+
+<h3>🎯 4. Temporal KG for disease progression</h3>
+<p>Current KGs are static; disease progression and treatment response are time-dependent. <strong>Proposal:</strong> temporal KG embeddings (e.g. TNTComplEx) to model "early → mid → late" relation evolution for personalized trajectory prediction.</p>
+
+<h3>🎯 5. Automated rule mining</h3>
+<p>Current KG rules are hand-written. <strong>Proposal:</strong> AnyBURL / RNNLogic learn Horn rules from KG — discover patterns like "drug A treats disease X ∧ X has_symptom Y → drug A relieves Y".</p>
+
+<h3>🎯 6. KG-aware protein design</h3>
+<p>Combine RFdiffusion / FrameFlow + KG (functional labels, binding partners). <strong>Proposal:</strong> generative design conditioned on KG-derived constraints ("design a binder for target X that does NOT bind off-target Y").</p>
+
+<h3>🎯 7. Clinical-trial matching</h3>
+<p>Matching is keyword-based today. <strong>Proposal:</strong> convert eligibility criteria to symbolic rules + patient EMR to KG; do symbolic + neural matching. Major boost to rare-disease trial recruitment.</p>
+
+<h3>🎯 8. LLM fact-checking via KG</h3>
+<p>Auto-extract claims from LLM medical answers and verify against PrimeKG. <strong>Proposal:</strong> FactScore-Bio benchmark + train LLM to say "I don't know" when KG lacks support.</p>
+
+<h3>🎯 9. Cross-species KG alignment</h3>
+<p>Human and mouse KGs share structure but differ in entities (orthologs, homologous diseases). <strong>Proposal:</strong> cross-species KG embedding alignment — transfer mouse-rich perturbation data to human disease reasoning.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pyk')">pykeen / KG embedding</button>
+<button class="code-tab-btn" onclick="switchTab(this,'rgcn')">DGL R-GCN</button>
+<button class="code-tab-btn" onclick="switchTab(this,'lc')">LangChain + Neo4j</button>
+<button class="code-tab-btn" onclick="switchTab(this,'ltn')">LTNtorch</button>
+</div>
+
+<div class="code-tab-content active" id="pyk"><pre><span class="comment"># pip install pykeen</span>
+<span class="keyword">from</span> pykeen.pipeline <span class="keyword">import</span> pipeline
+<span class="keyword">from</span> pykeen.datasets <span class="keyword">import</span> Hetionet
+
+<span class="comment"># Train RotatE on Hetionet (biomedical KG)</span>
+result = pipeline(
+    dataset=<span class="str">'Hetionet'</span>,
+    model=<span class="str">'RotatE'</span>,
+    training_loop=<span class="str">'sLCWA'</span>,
+    negative_sampler=<span class="str">'basic'</span>,
+    optimizer=<span class="str">'Adam'</span>,
+    optimizer_kwargs={<span class="str">'lr'</span>: <span class="num">1e-3</span>},
+    training_kwargs={<span class="str">'num_epochs'</span>: <span class="num">200</span>, <span class="str">'batch_size'</span>: <span class="num">1024</span>},
+    evaluation_kwargs={<span class="str">'batch_size'</span>: <span class="num">256</span>},
+    random_seed=<span class="num">42</span>)
+
+<span class="comment"># Predict missing edges (drug repurposing candidates)</span>
+<span class="keyword">from</span> pykeen.predict <span class="keyword">import</span> predict_target
+predictions = predict_target(
+    model=result.model,
+    head=<span class="str">'Compound::DB00997'</span>,             <span class="comment"># Doxorubicin</span>
+    relation=<span class="str">'CtD'</span>,                        <span class="comment"># Compound treats Disease</span>
+    triples_factory=result.training)
+top_diseases = predictions.df.head(<span class="num">10</span>)</pre></div>
+
+<div class="code-tab-content" id="rgcn"><pre><span class="comment"># pip install dgl torch</span>
+<span class="keyword">import</span> dgl, torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> dgl.nn <span class="keyword">import</span> RelGraphConv
+
+<span class="keyword">class</span> RGCN(nn.Module):
+    <span class="keyword">def</span> __init__(self, in_dim, h_dim, n_classes, num_rels):
+        super().__init__()
+        self.conv1 = RelGraphConv(in_dim, h_dim, num_rels,
+                                  regularizer=<span class="str">'basis'</span>, num_bases=<span class="num">30</span>)
+        self.conv2 = RelGraphConv(h_dim, n_classes, num_rels,
+                                  regularizer=<span class="str">'basis'</span>, num_bases=<span class="num">30</span>)
+    <span class="keyword">def</span> forward(self, g, feats, etypes):
+        h = torch.relu(self.conv1(g, feats, etypes))
+        <span class="keyword">return</span> self.conv2(g, h, etypes)
+
+<span class="comment"># Load AIFB / MUTAG benchmark</span>
+data = dgl.data.AIFBDataset()
+g = data[<span class="num">0</span>]; n_rels = len(g.etypes)
+model = RGCN(in_dim=<span class="num">16</span>, h_dim=<span class="num">16</span>,
+             n_classes=data.num_classes, num_rels=n_rels)
+opt = torch.optim.Adam(model.parameters(), lr=<span class="num">5e-3</span>, weight_decay=<span class="num">5e-4</span>)
+<span class="comment"># ... train loop ...</span></pre></div>
+
+<div class="code-tab-content" id="lc"><pre><span class="comment"># pip install langchain neo4j</span>
+<span class="keyword">from</span> langchain_community.graphs <span class="keyword">import</span> Neo4jGraph
+<span class="keyword">from</span> langchain.chains <span class="keyword">import</span> GraphCypherQAChain
+<span class="keyword">from</span> langchain_openai <span class="keyword">import</span> ChatOpenAI
+
+<span class="comment"># Connect to a Neo4j-hosted biomedical KG</span>
+graph = Neo4jGraph(
+    url=<span class="str">"bolt://localhost:7687"</span>,
+    username=<span class="str">"neo4j"</span>, password=<span class="str">"medkg"</span>)
+graph.refresh_schema()
+
+<span class="comment"># LLM-driven Cypher generation + KG retrieval + LLM answer</span>
+chain = GraphCypherQAChain.from_llm(
+    ChatOpenAI(temperature=<span class="num">0</span>, model=<span class="str">"gpt-4o"</span>),
+    graph=graph, verbose=<span class="keyword">True</span>,
+    return_intermediate_steps=<span class="keyword">True</span>)
+
+result = chain.invoke({
+    <span class="str">"query"</span>: <span class="str">"Which drugs target BRCA1-mutated breast cancer, "</span>
+             <span class="str">"and what pathway do they affect?"</span>})
+<span class="keyword">print</span>(result[<span class="str">"result"</span>])                  <span class="comment"># answer with KG citations</span>
+<span class="keyword">print</span>(result[<span class="str">"intermediate_steps"</span>])       <span class="comment"># the Cypher query used</span></pre></div>
+
+<div class="code-tab-content" id="ltn"><pre><span class="comment"># pip install ltntorch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> ltn
+
+<span class="comment"># Predicates as small neural networks</span>
+<span class="keyword">class</span> Druggable(torch.nn.Module):
+    <span class="keyword">def</span> __init__(self):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(<span class="num">128</span>, <span class="num">64</span>), torch.nn.ReLU(),
+            torch.nn.Linear(<span class="num">64</span>, <span class="num">1</span>), torch.nn.Sigmoid())
+    <span class="keyword">def</span> forward(self, x): <span class="keyword">return</span> self.net(x).squeeze(-<span class="num">1</span>)
+
+druggable = ltn.Predicate(Druggable())
+mutated_in = ltn.Predicate(model_or_data_term)
+codes_kinase = ltn.Predicate(model_or_data_term)
+
+<span class="comment"># Rule: ∀x, mutated_in(x, cancer) ∧ codes_kinase(x) → druggable(x)</span>
+And, Implies, ForAll = ltn.fuzzy_ops.AndProd(), ltn.fuzzy_ops.ImpliesReichenbach(), ltn.Quantifier(<span class="str">"forall"</span>)
+
+x = ltn.Variable(<span class="str">"x"</span>, gene_embeddings)         <span class="comment"># batch of gene vectors</span>
+cancer = ltn.Constant(cancer_emb)
+
+axiom = ForAll(x,
+    Implies(And(mutated_in(x, cancer), codes_kinase(x)),
+            druggable(x)))
+<span class="comment"># Loss = 1 − truth value of axiom; backprop trains all predicates</span>
+loss = <span class="num">1</span> - axiom.value</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">為什麼要把 LLM 與 Knowledge Graph 結合（即 RAG + KG）？</p><p data-lang="en">Why combine LLMs with Knowledge Graphs (RAG + KG)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. KG 可以取代 LLM</span><span data-lang="en">A. KG can replace LLM</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 為了讓 LLM 更慢</span><span data-lang="en">B. To make LLM slower</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. KG 提供 ground-truth 三元組與可解釋路徑，降低 LLM 幻覺、支援可驗證的醫療決策</span><span data-lang="en">C. KG provides ground-truth triples and explainable paths, reducing LLM hallucination and supporting verifiable medical decisions</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. KG 的訓練資料更新得比 LLM 快無關緊要</span><span data-lang="en">D. KG update speed is irrelevant</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">TransE 與 RotatE 的關鍵差異是什麼？</p><p data-lang="en">What is the key difference between TransE and RotatE?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. RotatE 是 GNN</span><span data-lang="en">A. RotatE is a GNN</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. TransE 用「向量平移」、無法表達 symmetric / composition；RotatE 用「複平面旋轉」可同時涵蓋 symmetric, antisymmetric, inversion, composition 四類關係</span><span data-lang="en">B. TransE uses vector translation and can't represent symmetric / composition; RotatE uses complex-plane rotation and covers symmetric, antisymmetric, inversion, composition</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. RotatE 不用訓練</span><span data-lang="en">C. RotatE needs no training</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. TransE 只能用於影像</span><span data-lang="en">D. TransE works only on images</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">DeepProbLog 為什麼能在 MNIST + 加法任務上比純神經網路 sample efficient？</p><p data-lang="en">Why is DeepProbLog more sample-efficient than pure neural networks on MNIST + addition?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 神經網路只需學「辨識數字 0-9」，加法由邏輯規則處理；不必為每個 (a+b) 組合都示範資料</span><span data-lang="en">A. The NN only needs to recognize digits 0-9; addition is handled by logical rules — no need to demonstrate every (a+b) combination</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為它使用更多 GPU</span><span data-lang="en">B. It uses more GPUs</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 因為它不訓練</span><span data-lang="en">C. It doesn't train</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 因為它使用更多參數</span><span data-lang="en">D. Uses more parameters</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="tensor-networks.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 49：Tensor Networks" data-en="Ch 49: Tensor Networks">Ch 49：Tensor Networks</span></a>
+<a href="index.html"><span class="nav-dir" data-zh="🏁 完成 50 章！回首頁" data-en="🏁 All 50 Chapters Done! Home">🏁 完成 50 章！回首頁</span><span class="nav-title" data-zh="進階方法演算法系列" data-en="Advanced Methods Series">進階方法演算法系列</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial · 🏁 完成 50 章 / All 50 Chapters Complete</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive biomedical KG reasoning =====
+const SVG=document.getElementById('kgSvg');
+
+// Mini biomedical KG (PrimeKG-style)
+// Entity types: gene, protein, pathway, disease, drug
+const nodes=[
+  // genes
+  {id:'BRCA1', type:'gene', x:120, y:90, label:'BRCA1'},
+  {id:'TP53',  type:'gene', x:120, y:170, label:'TP53'},
+  {id:'EGFR',  type:'gene', x:120, y:250, label:'EGFR'},
+  // proteins
+  {id:'PARP1', type:'protein', x:260, y:60, label:'PARP1'},
+  {id:'p53',   type:'protein', x:260, y:170, label:'p53'},
+  {id:'EGFRp', type:'protein', x:260, y:250, label:'EGFR(p)'},
+  // pathways
+  {id:'HRR', type:'pathway', x:400, y:80, label:'HR repair'},
+  {id:'Apop', type:'pathway', x:400, y:170, label:'Apoptosis'},
+  {id:'MAPK', type:'pathway', x:400, y:260, label:'MAPK signaling'},
+  // diseases
+  {id:'BreastCa', type:'disease', x:540, y:90, label:'Breast Cancer'},
+  {id:'LungCa',   type:'disease', x:540, y:230, label:'Lung Cancer'},
+  // drugs
+  {id:'olaparib',  type:'drug', x:640, y:50, label:'Olaparib'},
+  {id:'tamox',     type:'drug', x:640, y:130, label:'Tamoxifen'},
+  {id:'gefitinib', type:'drug', x:640, y:270, label:'Gefitinib'},
+  {id:'erlotinib', type:'drug', x:640, y:330, label:'Erlotinib'}
+];
+const edges=[
+  // gene -> protein (codes_for)
+  ['BRCA1','PARP1','interacts'],
+  ['BRCA1','HRR','involved_in'],
+  ['TP53','p53','codes_for'],
+  ['EGFR','EGFRp','codes_for'],
+  // protein/gene -> pathway
+  ['PARP1','HRR','involved_in'],
+  ['p53','Apop','involved_in'],
+  ['EGFRp','MAPK','involved_in'],
+  // pathway -> disease
+  ['HRR','BreastCa','dysreg_in'],
+  ['Apop','BreastCa','dysreg_in'],
+  ['Apop','LungCa','dysreg_in'],
+  ['MAPK','LungCa','dysreg_in'],
+  // gene -> disease (directly associated)
+  ['BRCA1','BreastCa','associated_with'],
+  ['EGFR','LungCa','associated_with'],
+  // drug -> protein (targets)
+  ['olaparib','PARP1','targets'],
+  ['tamox','p53','modulates'],
+  ['gefitinib','EGFRp','targets'],
+  ['erlotinib','EGFRp','targets'],
+  // drug -> disease (treats)
+  ['olaparib','BreastCa','treats'],
+  ['tamox','BreastCa','treats'],
+  ['gefitinib','LungCa','treats'],
+  ['erlotinib','LungCa','treats']
+];
+
+const colorOf={gene:'#1a6b5a',protein:'#2563a8',pathway:'#c8aa3e',disease:'#c0392b',drug:'#8e44ad'};
+
+function nodeById(id){return nodes.find(n=>n.id===id);}
+
+function neighborsOut(id){return edges.filter(e=>e[0]===id).map(e=>({to:e[1],rel:e[2]}));}
+function neighborsIn(id){return edges.filter(e=>e[1]===id).map(e=>({from:e[0],rel:e[2]}));}
+
+function bfsPaths(startId, predicate, maxHops){
+  // Find all paths up to maxHops where the terminal node satisfies predicate(node)
+  const found=[];
+  const stack=[[startId, [startId]]];
+  while(stack.length){
+    const [cur, path]=stack.pop();
+    if(path.length-1<=maxHops && predicate(nodeById(cur)) && path.length>1) found.push(path.slice());
+    if(path.length-1>=maxHops) continue;
+    // outgoing
+    neighborsOut(cur).forEach(({to})=>{if(!path.includes(to))stack.push([to,[...path,to]]);});
+    // incoming (treat as undirected for path explanation)
+    neighborsIn(cur).forEach(({from})=>{if(!path.includes(from))stack.push([from,[...path,from]]);});
+  }
+  return found;
+}
+
+function relBetween(a,b){
+  const e=edges.find(x=>(x[0]===a&&x[1]===b)||(x[0]===b&&x[1]===a));
+  return e?e[2]:'';
+}
+
+function render(){
+  const q=document.getElementById('queryType').value;
+  const hops=+document.getElementById('sHops').value;
+  document.getElementById('vHops').textContent=hops;
+
+  // Determine the (start, predicate) for the query
+  let startId, pred, narrative_zh, narrative_en;
+  if(q==='drug_for_disease'){
+    startId='BreastCa'; pred=n=>n.type==='drug';
+    narrative_zh='Query: BreastCa 的候選藥物是？';
+    narrative_en='Query: candidate drugs for BreastCa?';
+  } else if(q==='disease_for_gene'){
+    startId='BRCA1'; pred=n=>n.type==='disease';
+    narrative_zh='Query: BRCA1 相關疾病是？';
+    narrative_en='Query: which diseases are associated with BRCA1?';
+  } else if(q==='drug_target'){
+    startId='olaparib'; pred=n=>n.type==='gene'||n.type==='protein';
+    narrative_zh='Query: olaparib 的標靶？';
+    narrative_en='Query: targets of olaparib?';
+  } else {
+    startId='BRCA1'; pred=n=>n.id==='olaparib';
+    narrative_zh='Query: 解釋 BRCA1 與 olaparib 的因果路徑';
+    narrative_en='Query: explain the causal path from BRCA1 to olaparib';
+  }
+
+  const paths=bfsPaths(startId, pred, hops);
+  // Collect highlighted edges
+  const hi=new Set();
+  const hiNodes=new Set([startId]);
+  paths.forEach(p=>{p.forEach(n=>hiNodes.add(n));for(let i=0;i<p.length-1;i++){const a=p[i],b=p[i+1];hi.add(a+'|'+b);hi.add(b+'|'+a);}});
+
+  let svg='';
+  // Edges
+  edges.forEach(([a,b,r])=>{
+    const A=nodeById(a),B=nodeById(b);
+    const hit=hi.has(a+'|'+b);
+    const stroke=hit?'#c0392b':'#bbb';
+    const sw=hit?2.6:1.0;
+    svg+=`<line x1="${A.x}" y1="${A.y}" x2="${B.x}" y2="${B.y}" stroke="${stroke}" stroke-width="${sw}" opacity="${hit?0.95:0.55}"/>`;
+    if(hit){
+      const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
+      svg+=`<text x="${mx}" y="${my-3}" text-anchor="middle" font-size="9" fill="#c0392b" font-style="italic">${r}</text>`;
+    }
+  });
+  // Nodes
+  nodes.forEach(n=>{
+    const hi_=hiNodes.has(n.id);
+    const r=hi_?17:13;
+    const stroke=hi_?'#c0392b':'#fff';
+    const sw=hi_?2.5:1.5;
+    svg+=`<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="${colorOf[n.type]}" stroke="${stroke}" stroke-width="${sw}"/>`;
+    svg+=`<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="${hi_?9.5:8.5}" fill="#fff" font-weight="${hi_?'700':'500'}">${n.label}</text>`;
+  });
+  // Legend
+  const types=[['gene','Gene'],['protein','Protein'],['pathway','Pathway'],['disease','Disease'],['drug','Drug']];
+  types.forEach((t,i)=>{
+    const x=60+i*120, y=355;
+    svg+=`<circle cx="${x}" cy="${y}" r="6" fill="${colorOf[t[0]]}"/>`;
+    svg+=`<text x="${x+10}" y="${y+4}" font-size="11" fill="#444">${t[1]}</text>`;
+  });
+
+  SVG.innerHTML=svg;
+
+  // Build text explanation of top paths
+  const L=I18n.get();
+  let pathHTML='';
+  if(paths.length===0){
+    pathHTML=L==='zh'?'<em>於指定跳數內無路徑——試試增加 hops。</em>':'<em>No path found within hops — try increasing hops.</em>';
+  } else {
+    const top=paths.slice(0,4);
+    pathHTML=L==='zh'?'<strong>解釋路徑（top '+top.length+' / '+paths.length+'）：</strong><br>':'<strong>Explanation paths (top '+top.length+' of '+paths.length+'):</strong><br>';
+    top.forEach(p=>{
+      const segs=[];
+      for(let i=0;i<p.length;i++){
+        segs.push(p[i]);
+        if(i<p.length-1){segs.push('—['+relBetween(p[i],p[i+1])+']→');}
+      }
+      pathHTML+='&nbsp;&nbsp;'+segs.join(' ')+'<br>';
+    });
+  }
+
+  document.getElementById('kgInfo').innerHTML=L==='zh'?
+    `${narrative_zh}<br>跳數限制 = ${hops}，找到 <strong>${paths.length}</strong> 條解釋路徑。<br>${pathHTML}<br>這正是 TxGNN / GraphRAG 在 PrimeKG 上做藥物再利用的核心：multi-hop reasoning + 路徑解釋 = 可審查的預測。`
+    :
+    `${narrative_en}<br>Max hops = ${hops}, found <strong>${paths.length}</strong> explanation paths.<br>${pathHTML}<br>This is the core of TxGNN / GraphRAG on PrimeKG for drug repurposing: multi-hop reasoning + path explanation = auditable prediction.`;
+}
+
+document.getElementById('queryType').addEventListener('change',render);
+document.getElementById('sHops').addEventListener('input',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！KG 提供可驗證的 ground truth 與路徑解釋，是 LLM 醫療部署的關鍵。',
+  q1_n:'答案是 C。LLM + KG 結合降低幻覺、提供可解釋路徑，是現代醫療 AI 的標準 stack。',
+  q2_y:'答對！TransE 平移無法處理 symmetric；RotatE 複平面旋轉解決四類關係。',
+  q2_n:'答案是 B。TransE = e + r ≈ e\'，限制多；RotatE = e ∘ r（複平面旋轉），可同時表達四類關係。',
+  q3_y:'答對！神經學感知（辨識數字），符號處理組合（加法）——這是 neuro-symbolic 的精髓。',
+  q3_n:'答案是 A。神經網路只學辨識數字，加法靠邏輯規則 — 大幅降低需要的 (a+b) 標註資料量。'
+},en:{
+  q1_y:'Correct! KG provides verifiable ground truth and path explanation — essential for medical LLMs.',
+  q1_n:'Answer is C. LLM + KG reduces hallucination and gives explainable paths — the modern medical AI stack.',
+  q2_y:'Correct! TransE translation can\'t handle symmetric relations; RotatE rotation captures all four types.',
+  q2_n:'Answer is B. TransE = e + r ≈ e\' has limits; RotatE = e ∘ r (complex-plane rotation) covers all four.',
+  q3_y:'Correct! Neural perception (digit recognition) + symbolic composition (addition) — the essence of neuro-symbolic.',
+  q3_n:'Answer is A. NN only learns to recognize digits; addition is logical — far less (a+b) labeled data needed.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

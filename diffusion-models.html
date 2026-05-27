@@ -1,0 +1,427 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Diffusion Models — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html" class="active">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 12 / 14</div><h1 data-zh="擴散模型 (Diffusion Models)" data-en="Diffusion Models">擴散模型 (Diffusion Models)</h1>
+<p class="subtitle" data-lang="zh">從生成圖像走向生成細胞與序列——DDPM、score-based、scDiffusion、EvoDiff、Chroma。最強生成模型如何進入生物學？</p>
+<p class="subtitle" data-lang="en">From image generation to cell and sequence generation — DDPM, score-based, scDiffusion, EvoDiff, Chroma. How the strongest generative models entered biology.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="加噪 → 去噪" data-en="Add Noise → Denoise">加噪 → 去噪</h2>
+<div data-lang="zh">
+<p><strong>前向過程：</strong>把資料 x₀ 逐步加入 Gaussian 噪音，T 步後 x<sub>T</sub> ≈ N(0, I)。每一步：x<sub>t</sub> = √(α<sub>t</sub>) · x<sub>t−1</sub> + √(1 − α<sub>t</sub>) · ε。</p>
+<p><strong>反向過程（學習）：</strong>訓練神經網路 ε<sub>θ</sub>(x<sub>t</sub>, t) 預測「該步加入的噪音是什麼」。生成時從 x<sub>T</sub> ~ N(0, I) 開始，反覆 x<sub>t−1</sub> = (x<sub>t</sub> − √(1−α) · ε<sub>θ</sub>) / √α + 噪音，直到 x₀。</p>
+<p><strong>數學等價：</strong>DDPM (Ho 2020) ≡ score-based SDE (Song & Ermon 2021)，本質都是學 ∇<sub>x</sub> log p(x) — <strong>score function</strong>。</p>
+</div>
+<div data-lang="en">
+<p><strong>Forward process:</strong> Gradually corrupt data x₀ with Gaussian noise over T steps until x<sub>T</sub> ≈ N(0, I). Per step: x<sub>t</sub> = √(α<sub>t</sub>) · x<sub>t−1</sub> + √(1 − α<sub>t</sub>) · ε.</p>
+<p><strong>Reverse process (learned):</strong> Train ε<sub>θ</sub>(x<sub>t</sub>, t) to predict the noise added at each step. Sample by starting from x<sub>T</sub> ~ N(0, I) and iteratively denoising back to x₀.</p>
+<p><strong>Mathematical equivalence:</strong> DDPM (Ho 2020) ≡ score-based SDE (Song & Ermon 2021) — both learn ∇<sub>x</sub> log p(x), the <strong>score function</strong>.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🎯</div><h4 data-zh="高品質樣本" data-en="High quality">高品質樣本</h4><p data-lang="zh">取代 GAN，輸出更穩定、模式覆蓋更全面。</p><p data-lang="en">Replaces GANs — more stable, better mode coverage.</p></div>
+<div class="card"><div class="card-icon">🎛️</div><h4 data-zh="可條件化" data-en="Conditionable">可條件化</h4><p data-lang="zh">classifier-free guidance 等技巧可指定「我要這種細胞型別」。</p><p data-lang="en">Classifier-free guidance enables conditioning on "I want this cell type".</p></div>
+<div class="card"><div class="card-icon">💰</div><h4 data-zh="採樣昂貴" data-en="Slow sampling">採樣昂貴</h4><p data-lang="zh">需要數十到上千步推論——DDIM、consistency model 等加速法在發展中。</p><p data-lang="en">Inference takes tens to thousands of steps — DDIM, consistency models speed it up.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="生物擴散模型大家族" data-en="The Biological Diffusion Family">生物擴散模型大家族</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>scDiffusion (Luo 2024)</h4><p data-lang="zh">第一個 scRNA-seq 擴散模型，能生成「指定條件」的合成細胞——可用於資料增強、平衡稀有細胞型別、in-silico 擾動。</p><p data-lang="en">First scRNA-seq diffusion model; generates synthetic cells under specified conditions — useful for augmentation, balancing rare types, in-silico perturbation.</p></div>
+<div class="card"><h4>scDiff / CFGen (2024)</h4><p data-lang="zh">後續工作：用 classifier-free guidance 控制細胞型別、組織、batch，並改良 score function 適應 NB counts。</p><p data-lang="en">Follow-ups: classifier-free guidance over cell type, tissue, batch; tailored score functions for NB counts.</p></div>
+<div class="card"><h4>EvoDiff (Alamdari 2023)</h4><p data-lang="zh">蛋白質序列擴散模型，直接在離散胺基酸空間取樣，能生成新蛋白並做 inpainting（補序列空缺）。</p><p data-lang="en">Protein sequence diffusion — directly samples in discrete amino-acid space; generates novel proteins and inpaints sequence gaps.</p></div>
+<div class="card"><h4>Chroma (Ingraham 2023, Nature)</h4><p data-lang="zh">蛋白質結構生成，可條件化於 SS、symmetry、function——一步躍進蛋白質設計。</p><p data-lang="en">Protein structure generation, conditioned on secondary structure, symmetry, function — a leap for protein design.</p></div>
+<div class="card"><h4>RFdiffusion (Watson 2023)</h4><p data-lang="zh">基於 RoseTTAFold 的擴散模型，de novo 設計蛋白質骨架，已有實驗驗證的 binder 設計。</p><p data-lang="en">RoseTTAFold-based diffusion for de novo protein backbone design; experimentally validated binder designs exist.</p></div>
+<div class="card"><h4>Sequence-design diffusion (Gosai 2024)</h4><p data-lang="zh">用擴散設計 cis-regulatory elements——「想要這個細胞型別有這種表現量」反推啟動子序列。</p><p data-lang="en">Diffusion-designed cis-regulatory elements — given a desired cell-type-specific expression, generate promoter sequences.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="2D 點雲的去噪過程" data-en="Denoising a 2D Point Cloud">2D 點雲的去噪過程</h2>
+<div data-lang="zh"><p>展示 100 個資料點從 N(0, I) 噪音逐步去噪到目標分布（雙月形）的過程。</p></div>
+<div data-lang="en"><p>Watch 100 points denoise from N(0, I) to the target distribution (two moons).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="去噪步驟" data-en="Denoising step">去噪步驟 t <span id="dStep">0</span> / 50</label><input type="range" id="sDt" min="0" max="50" value="0" step="1"></div>
+<svg id="dSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<button onclick="runAnim()" style="margin-top:8px;padding:8px 16px;background:var(--c-accent,#1A6B5A);color:white;border:none;border-radius:6px;cursor:pointer;font-size:.9rem;" data-zh="▶ 自動播放" data-en="▶ Play">▶ 自動播放</button>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析擴散模型：SDE、guidance、latent diffusion" data-en="Deep Dive: SDE, Guidance, Latent Diffusion">深入解析擴散模型：SDE、guidance、latent diffusion</h2>
+
+<div data-lang="zh">
+<h3>① 前向過程 q(x<sub>t</sub> | x<sub>t−1</sub>) 詳細數學與 noise schedule</h3>
+<p>DDPM (Ho et al. 2020) 定義 Markov chain：q(x<sub>t</sub> | x<sub>t−1</sub>) = N(x<sub>t</sub>; √(1−β<sub>t</sub>) x<sub>t−1</sub>, β<sub>t</sub> I)。β<sub>t</sub> 為 noise variance schedule。由「reparameterization closed-form」可導出直接從 x<sub>0</sub> 跳到 x<sub>t</sub>：</p>
+<p style="font-family:monospace;margin-left:16px;">q(x<sub>t</sub> | x<sub>0</sub>) = N(x<sub>t</sub>; √α̅<sub>t</sub> x<sub>0</sub>, (1−α̅<sub>t</sub>) I)，其中 α<sub>t</sub> = 1−β<sub>t</sub>，α̅<sub>t</sub> = Π<sub>s=1..t</sub> α<sub>s</sub></p>
+<p>意即 x<sub>t</sub> = √α̅<sub>t</sub> x<sub>0</sub> + √(1−α̅<sub>t</sub>) ε，ε ~ N(0, I)——一步取樣即可，不需要走完整條鏈。<strong>Noise schedule：</strong></p>
+<ul>
+<li><strong>Linear schedule：</strong>β<sub>1</sub> = 1e−4 → β<sub>T</sub> = 0.02 等差，T=1000。簡單但前段加噪太慢（早期 step 的 SNR 變化不大，浪費 capacity）。</li>
+<li><strong>Cosine schedule (Nichol & Dhariwal 2021)：</strong>α̅<sub>t</sub> = cos²((t/T + s)/(1+s) · π/2)。讓噪音添加更平均地分散在所有 step，improved-DDPM 用此可顯著提升 FID。</li>
+<li><strong>Sigmoid / EDM schedule (Karras 2022)：</strong>把 log-SNR 視為核心參數，給出 continuous-time 形式，是目前 SOTA 圖像 diffusion 預設。</li>
+</ul>
+
+<h3>② Score function ∇<sub>x</sub> log p(x) 與 noise prediction 的等價性</h3>
+<p>DDPM 把 reverse 過程 p<sub>θ</sub>(x<sub>t−1</sub> | x<sub>t</sub>) 參數化為 N(μ<sub>θ</sub>(x<sub>t</sub>, t), Σ<sub>θ</sub>)。經代數整理（Ho 2020 Section 3.2），訓練目標等價於「預測加在 x<sub>0</sub> 上的噪音」：L<sub>simple</sub> = E<sub>t, x<sub>0</sub>, ε</sub>[‖ε − ε<sub>θ</sub>(√α̅<sub>t</sub> x<sub>0</sub> + √(1−α̅<sub>t</sub>) ε, t)‖²]。</p>
+<p><strong>等價性：</strong>Vincent (2011) 證明 denoising 與 score matching 等價——對加噪資料 x<sub>t</sub>，預測噪音 ε 等價於估計 ∇<sub>x<sub>t</sub></sub> log q(x<sub>t</sub>)：<br>
+∇<sub>x<sub>t</sub></sub> log q(x<sub>t</sub> | x<sub>0</sub>) = − (x<sub>t</sub> − √α̅<sub>t</sub> x<sub>0</sub>) / (1−α̅<sub>t</sub>) = − ε / √(1−α̅<sub>t</sub>)</p>
+<p>所以 score s<sub>θ</sub>(x, t) 與 noise predictor ε<sub>θ</sub>(x, t) 只差一個 scaling factor。Song 等 score-based 觀點與 Ho 等 DDPM 觀點是「同一個物件的兩種寫法」。</p>
+
+<h3>③ DDPM vs DDIM：deterministic vs stochastic sampling</h3>
+<p><strong>DDPM 取樣：</strong>x<sub>t−1</sub> = μ<sub>θ</sub>(x<sub>t</sub>, t) + σ<sub>t</sub> z, z~N(0,I)——每步隨機，需 1000 step。</p>
+<p><strong>DDIM (Song et al. 2021, ICLR)：</strong>用 non-Markovian 推論族，加入 η 參數控制隨機度。η=0 完全 deterministic（同一 x<sub>T</sub> 永遠生成同一 x<sub>0</sub>），可跳 step 從 1000 → 50 而品質幾乎不降。η=1 退化為 DDPM。<strong>實務影響：</strong>幾乎所有現代擴散模型（Stable Diffusion 預設）都用 DDIM 或其變體取樣。η=0 還能做「latent inversion」：對真實圖像找對應的 x<sub>T</sub>，用於 editing。</p>
+
+<h3>④ Score-based SDE 統一觀點 (Song et al. 2021, ICLR)</h3>
+<p>把離散 step 連續化：</p>
+<ul>
+<li><strong>VE-SDE (Variance Exploding)：</strong>dx = √(d[σ²(t)]/dt) dw——σ(t) 從小到很大，x 變異發散。Score-based generative model NCSN/NCSN++ 用此。</li>
+<li><strong>VP-SDE (Variance Preserving)：</strong>dx = −½ β(t) x dt + √β(t) dw——保持有限變異，相當於 DDPM 的連續極限。</li>
+<li><strong>sub-VP-SDE：</strong>進一步壓 variance bound，得到更好的 likelihood。</li>
+</ul>
+<p>反向 SDE：dx = [f(x,t) − g(t)² ∇<sub>x</sub> log p<sub>t</sub>(x)] dt + g(t) dw̃。用 Euler-Maruyama 或更高階 Probability Flow ODE 解。<strong>關鍵洞見：</strong>所有 diffusion 都是 SDE 的離散化；DDPM、NCSN、EDM 只是不同 SDE 與 schedule 的選擇。</p>
+
+<h3>⑤ Classifier-free guidance (Ho & Salimans 2022)</h3>
+<p>條件生成的早期方法（classifier guidance, Dhariwal 2021）需要另訓 noisy classifier。Ho 2022 提出 <strong>不用 classifier</strong> 的方法：訓練同一個網路同時學 unconditional ε<sub>θ</sub>(x, t, ∅) 與 conditional ε<sub>θ</sub>(x, t, c)（10–20% 機率隨機 drop condition）。取樣時：</p>
+<p style="font-family:monospace;margin-left:16px;">ε̃<sub>θ</sub>(x, t, c) = ε<sub>θ</sub>(x, t, ∅) + w · (ε<sub>θ</sub>(x, t, c) − ε<sub>θ</sub>(x, t, ∅))</p>
+<p>w &gt; 1（典型 7.5）放大「條件方向」，得到 sharper、更貼合條件的樣本，代價是 mode coverage 略降。Stable Diffusion、DALL-E 2 都用 CFG。在生物應用：對「給定 cell type 生成 expression profile」、「給定蛋白功能生成序列」皆可用 CFG 加強條件控制。</p>
+
+<h3>⑥ Latent diffusion (Rombach et al. 2022, CVPR) — Stable Diffusion 的核心</h3>
+<p>原 pixel-space diffusion 在高解析圖像極貴（U-Net 處理 512×512×3 → 786K dimensions）。Rombach 等先用 VAE 把圖像壓到 64×64×4 latent，再在 latent 上做 diffusion，最後 VAE decode 回 pixel。優點：</p>
+<ul>
+<li>計算量降 ~50 倍，可在 24 GB GPU 訓練。</li>
+<li>VAE encoder 自動去除像素級高頻雜訊，diffusion 專注語義內容。</li>
+<li>cross-attention 條件機制可整合文字 / 標籤 / 影像。</li>
+</ul>
+<p><strong>對生物應用啟發：</strong>對 scRNA-seq 用 scVI VAE 先壓到 10 維 latent，再在 latent 做 diffusion——scDiffusion (Luo 2024) 正是此思想。對蛋白結構，先用 ESM-2 encode 再 diffuse 也是同樣策略。</p>
+
+<h3>⑦ Consistency model (Song et al. 2023, ICML)</h3>
+<p>One-step generation：訓練 f<sub>θ</sub>(x<sub>t</sub>, t) 滿足 f(x<sub>t</sub>, t) ≈ f(x<sub>t'</sub>, t')（PF-ODE 軌跡上同一條線上的點映射到同一 x<sub>0</sub>）。訓練後可一步 (or 2-4 step) 從 x<sub>T</sub> 直接生成 x<sub>0</sub>，加速 50–1000 倍。可從現有 pretrained diffusion distill 而來。<strong>對生物：</strong>對 in-silico screen 大規模生成（例如 100 萬個候選分子）極有用——傳統 diffusion 太慢。</p>
+
+<h3>⑧ Flow matching / continuous-time normalizing flow (Lipman et al. 2022)</h3>
+<p>把 diffusion 推廣到「任意 conditional probability path」：直接學 velocity field v<sub>θ</sub>(x, t) 使 ODE dx/dt = v<sub>θ</sub>(x, t) 把 prior（高斯）流到資料分布。比 diffusion 訓練更穩定、取樣更快。<strong>Optimal transport coupling：</strong>選 OT-optimal path 可給最直線軌跡，採樣更高效。Meta 2024 推出的 Movie Gen 即用 flow matching。生物界 RFdiffusion 後續、protein flow matching 工作（如 FrameFlow）皆採用。</p>
+
+<h3>⑨ Conditional diffusion in biology — control by cell type, tissue, batch</h3>
+<p>scDiffusion 在 latent space 上條件於 cell type 與 batch；對「給定 type X 生成樣本」極自然。架構：U-Net 在 latent 上 + cross-attention 對 (cell type, batch, drug) embedding。<strong>實踐 trick：</strong>(a) 用 CFG w = 3–10 加強條件控制；(b) 對連續條件（如劑量）用 sinusoidal embedding；(c) classifier-free training 中 condition dropout 15%。</p>
+
+<h3>⑩ Preconditioning 與 EDM (Karras et al. 2022, NeurIPS)</h3>
+<p>Karras 等系統化整理 diffusion design space：把 noise level σ 直接作為輸入，網路改寫成 c<sub>skip</sub>(σ) · x + c<sub>out</sub>(σ) · F<sub>θ</sub>(c<sub>in</sub>(σ) · x, c<sub>noise</sub>(σ))，讓網路在所有 σ 下的有效訊號量都一致。再加 stochastic sampler with churn 參數。在 CIFAR-10 / ImageNet 取得當時 SOTA FID，已成新 baseline 設計。</p>
+
+<h3>⑪ Discrete diffusion: EvoDiff 與 sequence diffusion</h3>
+<p>對離散資料（DNA/RNA/protein sequence）不能直接用高斯噪音。<strong>D3PM (Austin 2021)</strong> 與 <strong>masked diffusion (LLaDA, Shi 2024)</strong> 提出在離散空間的 corruption process：每 step 機率 mask token 或轉成 [MASK]/隨機 token。reverse 學「token denoising」。EvoDiff (Alamdari 2024, Nat Commun) 用 OADM (Order-Agnostic Diffusion Model) 在 protein sequence 上訓練，生成新蛋白序列，可條件於 structure motif。</p>
+
+<h3>⑫ Equivariant diffusion for 3D structure</h3>
+<p>蛋白結構由 atom 坐標構成，旋轉/平移整體 → 同一蛋白。模型必須 SE(3)-equivariant：對輸入做剛體變換，輸出 score 也應做對應變換。<strong>RFdiffusion (Watson 2023, Nature)</strong> 把 RoseTTAFold 結構預測網路改造為 SE(3)-equivariant denoiser。<strong>Chroma (Ingraham 2023, Nature)</strong> 用 SE(3) graph neural network。<strong>FrameDiff (Yim 2023)</strong> 在 SE(3)<sup>N</sup> manifold 上直接 diffuse rigid body frames。equivariance 確保模型 generalize 比 data augmentation 更穩健。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Forward process math and noise schedules</h3>
+<p>DDPM (Ho 2020): q(x<sub>t</sub> | x<sub>t−1</sub>) = N(x<sub>t</sub>; √(1−β<sub>t</sub>) x<sub>t−1</sub>, β<sub>t</sub> I). Closed-form jump:</p>
+<p style="font-family:monospace;margin-left:16px;">q(x<sub>t</sub> | x<sub>0</sub>) = N(x<sub>t</sub>; √α̅<sub>t</sub> x<sub>0</sub>, (1−α̅<sub>t</sub>) I); α<sub>t</sub>=1−β<sub>t</sub>; α̅<sub>t</sub>=∏α<sub>s</sub></p>
+<p>So x<sub>t</sub> = √α̅<sub>t</sub> x<sub>0</sub> + √(1−α̅<sub>t</sub>) ε. <strong>Schedules:</strong></p>
+<ul>
+<li><strong>Linear:</strong> β=1e−4→0.02 over T=1000. Simple but wastes capacity at early steps.</li>
+<li><strong>Cosine (Nichol & Dhariwal 2021):</strong> α̅<sub>t</sub>=cos²(...). Spreads noise injection more evenly; improved-DDPM uses this for better FID.</li>
+<li><strong>Sigmoid / EDM (Karras 2022):</strong> parameterize log-SNR; continuous time; SOTA default.</li>
+</ul>
+
+<h3>② Equivalence of score and noise prediction</h3>
+<p>DDPM's L<sub>simple</sub> = E[‖ε − ε<sub>θ</sub>(√α̅<sub>t</sub> x<sub>0</sub>+√(1−α̅<sub>t</sub>)ε, t)‖²] is equivalent (Vincent 2011) to denoising score matching: ∇<sub>x<sub>t</sub></sub> log q(x<sub>t</sub>|x<sub>0</sub>) = −ε/√(1−α̅<sub>t</sub>). Hence score s<sub>θ</sub>(x,t) and noise predictor ε<sub>θ</sub>(x,t) differ only by a scaling factor — Song's score view and Ho's DDPM view are two writeups of the same object.</p>
+
+<h3>③ DDPM vs DDIM: stochastic vs deterministic sampling</h3>
+<p>DDPM: x<sub>t−1</sub> = μ<sub>θ</sub> + σ z (stochastic, 1000 steps). DDIM (Song 2021, ICLR) introduces η; η=0 is fully deterministic (same x<sub>T</sub> → same x<sub>0</sub>), can skip 1000 → 50 with negligible quality loss; η=1 reduces to DDPM. Nearly all modern diffusion models (Stable Diffusion default) sample with DDIM. η=0 also enables "latent inversion" for real-image editing.</p>
+
+<h3>④ Score-based SDE unified view (Song et al. 2021)</h3>
+<ul>
+<li><strong>VE-SDE:</strong> dx = √(d[σ²(t)]/dt) dw — variance explodes. NCSN/NCSN++.</li>
+<li><strong>VP-SDE:</strong> dx = −½β(t)x dt + √β(t) dw — DDPM's continuous limit.</li>
+<li><strong>sub-VP-SDE:</strong> tighter variance, better likelihood.</li>
+</ul>
+<p>Reverse: dx = [f − g² ∇log p<sub>t</sub>] dt + g dw̃. Solve with Euler-Maruyama or Probability-Flow ODE. <strong>Insight:</strong> all diffusion = SDE discretization; DDPM/NCSN/EDM are schedule choices.</p>
+
+<h3>⑤ Classifier-free guidance (Ho & Salimans 2022)</h3>
+<p>Train one network on both unconditional ε<sub>θ</sub>(x,t,∅) and conditional ε<sub>θ</sub>(x,t,c) (drop c with 10–20% prob). Sample with ε̃ = ε(∅) + w(ε(c) − ε(∅)). w &gt; 1 (often 7.5) amplifies condition direction → sharper, more condition-faithful samples at cost of mode coverage. Used in Stable Diffusion, DALL-E 2. Biology: enhances "generate expression for given cell type" or "generate sequence for given function."</p>
+
+<h3>⑥ Latent diffusion (Rombach 2022, CVPR) — Stable Diffusion core</h3>
+<p>Pixel-space diffusion is expensive (512×512×3 = 786k dim). Rombach: VAE encode to 64×64×4 latent → diffuse → VAE decode. ~50× cheaper, trainable on 24 GB GPU. Cross-attention condition mechanism integrates text / labels / images. <strong>Biology analog:</strong> scVI-VAE latent + latent diffusion = scDiffusion (Luo 2024). For protein, ESM-2 encode + diffuse is the same idea.</p>
+
+<h3>⑦ Consistency model (Song 2023, ICML)</h3>
+<p>One-step generation: f<sub>θ</sub>(x<sub>t</sub>, t) outputs the same x<sub>0</sub> for all points on a PF-ODE trajectory. After training, 1 (or 2–4) step generation, 50–1000× speedup. Can be distilled from pretrained diffusion. Useful for biology in-silico screen generating millions of candidate molecules.</p>
+
+<h3>⑧ Flow matching / CNF (Lipman 2022)</h3>
+<p>Generalizes diffusion to arbitrary conditional paths; learn velocity v<sub>θ</sub>(x,t) so ODE dx/dt = v flows Gaussian to data. More stable training, faster sampling. OT-optimal coupling gives straight trajectories. Meta's Movie Gen and protein flow-matching (FrameFlow) adopt this.</p>
+
+<h3>⑨ Conditional diffusion in biology</h3>
+<p>scDiffusion conditions latent diffusion on cell type and batch. Architecture: U-Net on latent + cross-attention over (cell type, batch, drug) embedding. Tricks: CFG w=3–10, sinusoidal embedding for continuous conditions (dose), 15% condition dropout during training.</p>
+
+<h3>⑩ EDM preconditioning (Karras 2022, NeurIPS)</h3>
+<p>Systematic design-space refactor: noise level σ as direct input; network = c<sub>skip</sub>(σ)·x + c<sub>out</sub>(σ)·F<sub>θ</sub>(c<sub>in</sub>(σ)·x, c<sub>noise</sub>(σ)). Equal effective signal across all σ, plus stochastic sampler with "churn." SOTA FID on CIFAR-10/ImageNet, now the standard baseline.</p>
+
+<h3>⑪ Discrete diffusion — EvoDiff and sequence diffusion</h3>
+<p>For DNA/RNA/protein sequence, can't use Gaussian noise. D3PM (Austin 2021), masked diffusion (LLaDA, Shi 2024): corruption masks tokens or replaces them. EvoDiff (Alamdari 2024, Nat Commun) uses Order-Agnostic Diffusion on protein sequence; can condition on structure motif.</p>
+
+<h3>⑫ Equivariant diffusion for 3D structure</h3>
+<p>Protein structures must be SE(3)-equivariant. RFdiffusion (Watson 2023, Nature) makes RoseTTAFold a SE(3)-equivariant denoiser. Chroma (Ingraham 2023, Nature) uses SE(3) GNN. FrameDiff (Yim 2023) diffuses rigid frames on SE(3)<sup>N</sup>. Equivariance gives generalization beyond augmentation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="擴散模型在生物資訊的具體案例" data-en="Concrete Diffusion Cases in Bioinformatics">擴散模型在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：DDPM (Ho et al. 2020, NeurIPS) — 開創性圖像</h3>
+<p>把 score-based generative model 重新公式化為 hierarchical Markov chain，引入 ε-prediction loss，在 CIFAR-10 取得當時 SOTA FID = 3.17。雖然原作不是生物，但奠定了所有後續生物 diffusion 的數學基礎。Ho 2022 接著用 cascaded diffusion 把解析度推到 1024×1024。</p>
+
+<h3>🧬 案例 2：scDiffusion (Luo et al. 2024, Nature Communications)</h3>
+<p>第一個完整把 latent diffusion 套到 scRNA-seq 的工作。</p>
+<ul>
+<li><strong>架構：</strong>先 pre-train scVI 取 10–20 維 latent，再在 latent 上跑 U-Net diffusion；條件於 cell type、tissue、disease。</li>
+<li><strong>實證：</strong>生成的 synthetic 細胞與真實細胞在 marker gene 表現、分群、軌跡上幾乎不可區分（discriminator AUC ~0.55）。</li>
+<li><strong>應用：</strong>對 rare cell type augmentation、cross-tissue translation、用 limited reference 模擬大型 atlas。</li>
+<li><strong>後續：</strong>已有 scDiff (Liu 2024)、CFGen (Palla 2024) 等多個變體。</li>
+</ul>
+
+<h3>🧬 案例 3：CFGen / scDiff — 條件 cellular state 生成的延伸</h3>
+<p>CFGen (Palla et al. 2024) 用 classifier-free guidance 強化 cell-type 條件控制；scDiff 強調對「多條件組合」（cell type × disease × batch）的解纏。兩者都顯示 CFG w &gt; 5 時 condition 控制更精準但 diversity 下降。</p>
+
+<h3>🧬 案例 4：EvoDiff (Alamdari et al. 2024, Nat Commun) — 蛋白序列</h3>
+<p>對 amino acid sequence 的 discrete diffusion model。在 UniRef50（4500 萬序列）訓練，可條件生成 (a) 給定 structural motif 補完序列；(b) 給定家族生成多樣化新成員。生成的序列在 ESM-2 embedding 上落在合理 protein space，且部分經 AlphaFold 預測有可信結構。</p>
+
+<h3>🧬 案例 5：Chroma (Ingraham et al. 2023, Nature) — 蛋白 3D 結構生成</h3>
+<p>SE(3)-equivariant diffusion 對全長蛋白 backbone 直接生成。可條件於：(a) 對稱性（C3, D2, etc.）；(b) 子結構 motif；(c) 文字描述（"a beta barrel that binds heme"）。生成 200+ 個候選結構交予 Generate Biomedicines 實驗室合成驗證，多數可摺疊。</p>
+
+<h3>🧬 案例 6：RFdiffusion (Watson et al. 2023, Nature) — De novo 蛋白設計，實驗驗證</h3>
+<p>把 RoseTTAFold 結構預測網路改裝為 SE(3)-equivariant denoiser；可生成符合目標 binding interface、scaffold motif、對稱性的全新蛋白。</p>
+<ul>
+<li><strong>實驗驗證：</strong>對 IL-7Rα、TrkA 等難 target 設計 binder，部分達到 nM 親和力。</li>
+<li><strong>對稱蛋白設計：</strong>對 C2-C8 對稱性，60%+ 設計可表現可溶。</li>
+<li><strong>影響：</strong>2023 Nature 同期 4 篇 paper 都用 RFdiffusion，啟動了「生成式蛋白工程」新時代。</li>
+</ul>
+
+<h3>🧬 案例 7：ESM-IF + diffusion 整合工作</h3>
+<p>ESM-IF (Hsu 2022) 是 inverse folding 模型——給結構預測序列。把 ESM-IF 與 RFdiffusion / Chroma 串接：先 diffusion 生成 backbone，再 ESM-IF 生成序列，再 AlphaFold 驗證 self-consistency（refold 看是否回到原 backbone）。這套 pipeline 已成標準的 de novo design workflow。</p>
+
+<h3>🧬 案例 8：DiffSDS (Wu et al. 2023) — 小分子設計</h3>
+<p>用 SE(3)-equivariant diffusion 直接在 3D atomic coordinates 上生成 drug-like molecules。能條件於 binding pocket、ADMET 性質。比 SMILES-based 自回歸（如 MolGPT）更尊重 3D 結構物理。延伸到 protein-ligand co-design (DiffDock 2023 做 docking、PocketGen 2024 做 binder 設計)。</p>
+
+<h3>🧬 案例 9：Gosai et al. 2024 (Nature) — cis-regulatory element design</h3>
+<p>對 promoter/enhancer DNA 序列做 diffusion 生成。訓練資料：MPRA 量化的 enhancer 活性。條件於目標 cell type 與目標表現強度生成全新 cis-regulatory sequence，部分在實驗中達到 native enhancer 強度——首次展示 diffusion 對「DNA regulatory grammar」的學習能力。</p>
+
+<h3>🧬 案例 10：Boltz / MoleculeDiffusion — 小分子家族</h3>
+<p>Boltz-1 (Wohlwend 2024) 是 AlphaFold3 開源等價物，內部用 diffusion 模組做 protein-ligand 結構預測。MoleculeDiffusion (Hoogeboom 2022) 是 E(3)-equivariant diffusion 對小分子生成。配合 score-based optimization 可做「conditional 對 ADMET / binding affinity 最佳化」。</p>
+
+<h3>🧬 案例 11：Cell Painting Diffusion</h3>
+<p>對 Cell Painting 高內容篩選（HCS）顯微圖像做 conditional diffusion——給定化合物 SMILES 生成預期的 cellular morphology 圖像。Recursion Pharma 2024 公布的 Phenom 模型走此路線，用於 high-throughput 藥物表型篩選。延伸用於 morphology-based MoA classification。</p>
+
+<h3>🧬 案例 12：Protein-ligand co-diffusion (DiffDock-PP, Plinder 等)</h3>
+<p>DiffDock (Corso 2023) 把 docking 改為 diffusion 過程：先隨機放置 ligand，再 reverse diffuse 到 binding pose。在 PDBBind benchmark 上 RMSD &lt; 2 Å 命中率超越傳統 AutoDock / GLIDE。延伸 DiffDock-PP 對 protein-protein docking、Plinder benchmark 統一評估。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: DDPM (Ho et al. 2020, NeurIPS) — foundational</h3>
+<p>Reformulated score-based generative model as hierarchical Markov chain with ε-prediction loss. SOTA FID 3.17 on CIFAR-10 at the time. Not biology, but founded the math for all downstream biology diffusion.</p>
+
+<h3>🧬 Case 2: scDiffusion (Luo et al. 2024, Nature Communications)</h3>
+<p>First full latent diffusion for scRNA-seq. Pre-train scVI for 10–20 dim latent, then U-Net diffusion in latent, conditioned on cell type/tissue/disease. Synthetic cells nearly indistinguishable from real (discriminator AUC ~0.55). Applications: rare-cell augmentation, cross-tissue translation, atlas simulation from limited reference.</p>
+
+<h3>🧬 Case 3: CFGen / scDiff — conditional cellular state extensions</h3>
+<p>CFGen (Palla 2024) uses CFG to enhance cell-type control; scDiff disentangles multi-condition combinations. CFG w &gt; 5 gives tighter condition control with diversity drop.</p>
+
+<h3>🧬 Case 4: EvoDiff (Alamdari et al. 2024, Nat Commun) — protein sequence</h3>
+<p>Discrete diffusion over amino-acid sequence, trained on UniRef50 (45 M seqs). Conditional on structure motif (motif scaffolding) or family. Generated sequences fall in plausible ESM-2 embedding space; some yield confident AlphaFold structures.</p>
+
+<h3>🧬 Case 5: Chroma (Ingraham et al. 2023, Nature) — 3D protein structure</h3>
+<p>SE(3)-equivariant diffusion for full-length protein backbone. Conditions: symmetry (C3, D2…), substructure motif, text description ("a beta barrel that binds heme"). 200+ generated candidates synthesized at Generate Biomedicines, most fold.</p>
+
+<h3>🧬 Case 6: RFdiffusion (Watson et al. 2023, Nature) — experimentally validated</h3>
+<p>RoseTTAFold turned into SE(3)-equivariant denoiser. Generates proteins for target binding interfaces, scaffold motifs, symmetry. Experimentally validated nM binders for IL-7Rα, TrkA. C2–C8 symmetric designs: 60%+ express solubly. Launched "generative protein engineering" era; same Nature issue had 4 RFdiffusion papers.</p>
+
+<h3>🧬 Case 7: ESM-IF + diffusion pipelines</h3>
+<p>ESM-IF (Hsu 2022) does inverse folding (structure → sequence). Standard de-novo pipeline: diffusion → backbone, ESM-IF → sequence, AlphaFold → self-consistency check (refold to original backbone).</p>
+
+<h3>🧬 Case 8: DiffSDS (Wu et al. 2023) — small molecules</h3>
+<p>SE(3)-equivariant diffusion on 3D atomic coords for drug-like molecules. Conditional on binding pocket, ADMET. Respects 3D physics better than SMILES autoregressive (MolGPT). Extensions: DiffDock 2023 (docking), PocketGen 2024 (binder design).</p>
+
+<h3>🧬 Case 9: Gosai et al. 2024 (Nature) — cis-regulatory element design</h3>
+<p>Diffusion on promoter/enhancer DNA sequence. Trained on MPRA-measured enhancer activity. Conditional on target cell type + activity strength generates novel cis-regulatory sequences, some reaching native enhancer activity experimentally — first demonstration of diffusion learning DNA regulatory grammar.</p>
+
+<h3>🧬 Case 10: Boltz / MoleculeDiffusion — small-molecule family</h3>
+<p>Boltz-1 (Wohlwend 2024) is open-source AlphaFold3 analog using diffusion for protein-ligand structure prediction. MoleculeDiffusion (Hoogeboom 2022) is E(3)-equivariant for small molecules. Conditional optimization on ADMET / binding affinity via score guidance.</p>
+
+<h3>🧬 Case 11: Cell Painting diffusion</h3>
+<p>Conditional diffusion on Cell Painting high-content microscopy: given compound SMILES, generate expected cellular morphology. Recursion's 2024 Phenom model uses this for high-throughput phenotypic screening and morphology-based MoA classification.</p>
+
+<h3>🧬 Case 12: Protein-ligand co-diffusion (DiffDock, Plinder)</h3>
+<p>DiffDock (Corso 2023) reframes docking as diffusion: random initial pose → reverse-diffuse to binding pose. RMSD &lt; 2 Å hit rate beats AutoDock/GLIDE on PDBBind. Extensions: DiffDock-PP for protein-protein docking; Plinder for unified benchmarking.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="擴散模型還能改良 / 新解決哪些任務？" data-en="What Else Could Diffusion Improve?">擴散模型還能改良 / 新解決哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 用 diffusion 生成 rare cell types 做資料增強</h3>
+<p><strong>現有不足：</strong>稀有細胞型別（&lt; 100 cells/sample）的下游分析（DE、軌跡）統計檢力極差；SMOTE 等簡單 oversampling 在高維 + 非線性 manifold 上效果差。<strong>新提案：</strong>對 atlas 訓練 conditional latent diffusion，條件於 rare cell type label，生成 1000s 個合成稀有細胞補足樣本。用 CFG 加強條件信號。<strong>預期改進：</strong>對下游 DE 統計檢力提升 2–5 倍；可用於 rare disease cohort 的 atlas 比對（避免 query 細胞數太少而結果隨機）。需注意「合成細胞不能用於新假設驗證，只能用於增強檢力」。</p>
+
+<h3>🎯 2. In-silico perturbation prediction 用 conditional diffusion</h3>
+<p><strong>現有不足：</strong>scGen / GEARS 用 VAE / GNN 預測擾動效應，但對「組合擾動」(double KO)、「dose-response 曲線」泛化差；確定性點估計沒有不確定度。<strong>新提案：</strong>conditional latent diffusion，條件於 (cell baseline state, perturbation list, dose)，生成「擾動後的 cell state 分布」。可天然處理組合擾動（多個 condition embedding 串接）。<strong>預期改進：</strong>給出後驗分布而非點估；對未見過的組合擾動有 calibrated uncertainty；可優先排序 wet-lab Perturb-seq 候選。</p>
+
+<h3>🎯 3. Antibody / paratope inverse design with diffusion</h3>
+<p><strong>現有不足：</strong>抗體設計主要靠 phage display 篩選 + AlphaFold 驗證；正向生成模型對 CDR loop 的多樣性 + functional 約束沒法兼顧。<strong>新提案：</strong>SE(3)-equivariant diffusion 在 antibody Fv 結構上 + 條件於 antigen epitope structure；同時做 backbone diffusion + ESM-IF sequence design 共學。<strong>預期改進：</strong>對給定 epitope 生成 high-affinity binder 候選，預測 K<sub>D</sub> nM 級；對 broad-neutralizing antibody 設計（HIV, influenza）有突破潛力。可整合 OpenAirView / IgBLAST 做 germline-aware design。</p>
+
+<h3>🎯 4. Drug-induced cellular state diffusion (sci-Plex / Tahoe-100M scale)</h3>
+<p><strong>現有不足：</strong>LINCS L1000 用 bulk profile；藥物在不同細胞型別 / 不同基因背景下的效應未被系統建模。<strong>新提案：</strong>對 sci-Plex (Srivatsan 2020)、Tahoe-100M (Tahoe Therapeutics 2024 公布的 100M 細胞 × 數千藥物 perturbation) 訓 conditional diffusion，學 p(z<sub>perturbed</sub> | z<sub>baseline</sub>, drug, dose)。<strong>預期改進：</strong>對新藥可預測「在任意 cell context 下的反應」；藥物 repurposing 透過 latent vector 比對；可生成「給定目標表型反推藥物」的 inverse design。</p>
+
+<h3>🎯 5. 空間轉錄體 imputation 與 super-resolution</h3>
+<p><strong>現有不足：</strong>Visium 解析度 ~55 μm（多細胞 spot）；MERFISH/Xenium 雖單細胞但基因 panel 限 100–500 個；無 method 同時擴 panel 與提解析度。<strong>新提案：</strong>conditional diffusion，輸入 (low-res Visium, paired scRNA reference)，輸出 (high-res, full transcriptome)。類似圖像 super-resolution diffusion，但條件於配對資料。<strong>預期改進：</strong>從 Visium 公開資料即可獲得近 Xenium 等級的空間解析度；對 tumor microenvironment、發育 atlas 釐清極為有用；可生成 spatial multi-omics 整合圖。</p>
+
+<h3>🎯 6. 多模態 conditional diffusion: RNA + ATAC 共同生成</h3>
+<p><strong>現有不足：</strong>multiVI 整合，但生成新樣本困難；無模型可從一個 modality 生成另一個 modality（給 ATAC 預測 RNA 或反之）的高保真樣本。<strong>新提案：</strong>joint diffusion in shared latent，訓練 unconditional p(z<sub>RNA</sub>, z<sub>ATAC</sub>) 與 conditional p(z<sub>RNA</sub> | z<sub>ATAC</sub>)、p(z<sub>ATAC</sub> | z<sub>RNA</sub>)，用 CFG。<strong>預期改進：</strong>對 SHARE-seq / 10x Multiome 半配對資料，可補齊缺失 modality；對 single-modality cohort 可用 cross-modality prediction 推 chromatin landscape；提供「what if I had ATAC for this RNA-only sample」的反事實。</p>
+
+<h3>🎯 7. Disease state generation for rare diseases</h3>
+<p><strong>現有不足：</strong>罕見疾病樣本極稀（部分病例全球 &lt; 10 病人），無法訓練 disease-specific model；現有 disease atlas 都偏 common disease。<strong>新提案：</strong>對 Tabula Sapiens / CELLxGENE 大型健康 atlas 訓 unconditional diffusion，再用少量 rare disease 樣本 fine-tune 透過 LoRA / score distillation。<strong>預期改進：</strong>對 N=5 病人即可得到 disease-state-aware generative model；可生成 synthetic disease cells 供下游 ML 訓練；提供「健康→疾病」軌跡的潛在分子機制 hypothesis。</p>
+
+<h3>🎯 8. 跨物種 cell state translation</h3>
+<p><strong>現有不足：</strong>SAMap、CellHint 做跨物種 cell type label transfer 但 expression-level translation（給人類細胞「翻譯」成等效小鼠細胞）沒系統方法。<strong>新提案：</strong>conditional diffusion 條件於 (cell embedding, source species, target species)，學「物種 translation」變換。可用 ortholog gene mapping 作 prior。<strong>預期改進：</strong>對藥物開發從鼠模型外推到人類效應有定量基礎；對 evolution 研究可量化「保守表現程式」vs「物種特異 program」。</p>
+
+<h3>🎯 9. Synthetic Perturb-seq augmentation</h3>
+<p><strong>現有不足：</strong>Perturb-seq 對每個 gRNA 通常只獲 10–100 cells；統計檢力對細微效應極弱；可同時測的 gRNA 有限。<strong>新提案：</strong>訓 conditional diffusion p(cell | perturbation embedding)，用已測 Perturb-seq 學「擾動 → 效應」對應，對未測過的擾動（或低效應 gRNA）生成合成細胞補充。可用 Replogle 2022 genome-scale Perturb-seq 為訓練底。<strong>預期改進：</strong>降低 Perturb-seq cost / scale 2–5 倍；對組合擾動（synergy）給出先驗預測。</p>
+
+<h3>🎯 10. 用 score function 找 cell fate transition states</h3>
+<p><strong>現有不足：</strong>軌跡分析（Monocle、PAGA）找 cell fate 分支點但是後驗的（fit 後找）；無 principled way 找「臨界轉變」(critical transition / saddle point)。<strong>新提案：</strong>用 score function ∇<sub>x</sub> log p(x)（diffusion 訓練的副產品）找 cell state landscape 上的 saddle point：score 在 saddle 附近梯度小但 Hessian 有負特徵值。標記這些點為「決策點」。<strong>預期改進：</strong>定量找出 fate-determining transition states，提供生物實驗（time-lapse imaging、lineage tracing）的精準目標時點。</p>
+
+<h3>🎯 11. Diffusion-based ChIP-seq peak generation</h3>
+<p><strong>現有不足：</strong>ChIP-seq 對少量細胞或 hard-to-ChIP factor 訊號弱；Cut&Tag、Cut&Run 有解但對 cell type 解析仍粗。<strong>新提案：</strong>用 sequence-conditioned diffusion 對 (DNA sequence, TF identity, cell type) 預測 ChIP-seq signal track。訓練於 ENCODE 等大規模 ChIP atlas。<strong>預期改進：</strong>對未測 TF / 罕見 cell type 預測 binding landscape；對 cancer-specific oncogenic TF（如某些 fusion）的 ChIP 模擬；可作為 GRN 推論的 prior。</p>
+
+<h3>🎯 12. 用 diffusion 學細胞 trajectory 的 stochastic 模型</h3>
+<p><strong>現有不足：</strong>RNA velocity 給瞬時動力學但是確定性的（單一向量場）；scVelo dynamic model 加 noise 但僅 per-gene Gaussian。<strong>新提案：</strong>用 latent SDE 形式的 diffusion 直接學 cell state trajectory 的 drift μ(z) + diffusion σ(z)，得到全分布級的軌跡預測。<strong>預期改進：</strong>對 lineage commitment 給機率分布（不是單一 fate）；對 rare branching event 量化機率；自然處理 multi-modal 軌跡（一個前驅多個終態）。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Rare-cell-type augmentation via diffusion</h3>
+<p><strong>Gap:</strong> rare cell types (&lt; 100 cells/sample) suffer from poor statistical power; SMOTE-style oversampling fails on high-dim non-linear manifolds. <strong>Proposal:</strong> conditional latent diffusion on atlas, generate 1000s of synthetic rare cells with CFG-enhanced conditioning. <strong>Expected gain:</strong> 2–5× DE power; safer rare-disease atlas matching. Caveat: synthetic cells must augment power, not test new hypotheses.</p>
+
+<h3>🎯 2. In-silico perturbation prediction with conditional diffusion</h3>
+<p><strong>Gap:</strong> scGen / GEARS give point estimates without uncertainty; struggle on combinatorial perturbations and dose-response. <strong>Proposal:</strong> conditional diffusion on (baseline, perturbation list, dose) → post-perturbation distribution. Naturally handles combinatorial via concatenated condition embeddings. <strong>Expected gain:</strong> calibrated posterior; prioritize wet-lab Perturb-seq candidates.</p>
+
+<h3>🎯 3. Antibody / paratope inverse design with diffusion</h3>
+<p><strong>Gap:</strong> antibody design relies on phage display + AlphaFold; no forward model balances CDR diversity with functional constraints. <strong>Proposal:</strong> SE(3)-equivariant diffusion on Fv structure conditioned on epitope; joint backbone diffusion + ESM-IF sequence. <strong>Expected gain:</strong> nM-affinity binder candidates for given epitope; broadly-neutralizing antibody design (HIV, flu); germline-aware via OpenAirView/IgBLAST.</p>
+
+<h3>🎯 4. Drug-induced cellular state diffusion (sci-Plex / Tahoe-100M scale)</h3>
+<p><strong>Gap:</strong> LINCS L1000 is bulk; cell-type-specific drug effects unmodeled. <strong>Proposal:</strong> conditional diffusion on sci-Plex / Tahoe-100M learning p(z<sub>perturbed</sub> | z<sub>baseline</sub>, drug, dose). <strong>Expected gain:</strong> predict response in any cell context; drug repurposing via latent similarity; target-phenotype → drug inverse design.</p>
+
+<h3>🎯 5. Spatial transcriptomics imputation & super-resolution</h3>
+<p><strong>Gap:</strong> Visium is ~55 μm; MERFISH/Xenium is single-cell but limited gene panel; nothing extends both. <strong>Proposal:</strong> conditional diffusion (low-res Visium + paired scRNA ref) → (high-res, full transcriptome). Like image super-resolution. <strong>Expected gain:</strong> public Visium gives near-Xenium resolution; great for TME, developmental atlases; enables spatial multi-omics.</p>
+
+<h3>🎯 6. Multimodal conditional diffusion (RNA + ATAC)</h3>
+<p><strong>Gap:</strong> multiVI integrates but doesn't generate; cross-modality high-fidelity prediction missing. <strong>Proposal:</strong> joint diffusion in shared latent + CFG over modality identity. <strong>Expected gain:</strong> impute missing modality in SHARE-seq / Multiome; cross-modality prediction for RNA-only cohorts to recover chromatin landscape.</p>
+
+<h3>🎯 7. Disease-state generation for rare diseases</h3>
+<p><strong>Gap:</strong> rare diseases (sometimes &lt; 10 patients globally) can't train disease-specific models. <strong>Proposal:</strong> pretrain unconditional diffusion on Tabula Sapiens / CELLxGENE, fine-tune with few-shot LoRA / score distillation on rare cohort. <strong>Expected gain:</strong> disease-aware generative model from N=5; synthetic cells for downstream ML; hypothesis on health→disease trajectory.</p>
+
+<h3>🎯 8. Cross-species cell-state translation</h3>
+<p><strong>Gap:</strong> SAMap / CellHint do cross-species label transfer; expression-level translation (human → equivalent mouse cell) lacks systematic method. <strong>Proposal:</strong> diffusion conditional on (cell, source species, target species); ortholog mapping as prior. <strong>Expected gain:</strong> quantitative basis for mouse → human drug extrapolation; evolution: quantify conserved vs species-specific programs.</p>
+
+<h3>🎯 9. Synthetic Perturb-seq augmentation</h3>
+<p><strong>Gap:</strong> Perturb-seq has 10–100 cells per gRNA; low power for subtle effects; gRNA capacity limited. <strong>Proposal:</strong> train diffusion p(cell | perturbation embedding) on Replogle 2022 etc., augment for untested gRNAs. <strong>Expected gain:</strong> 2–5× cost reduction; prior predictions for combinatorial synergy.</p>
+
+<h3>🎯 10. Fate-transition state discovery via score function</h3>
+<p><strong>Gap:</strong> Monocle / PAGA find branches post hoc; no principled saddle-point (critical transition) detection. <strong>Proposal:</strong> use diffusion's learned ∇<sub>x</sub> log p(x); saddles have small gradient + negative-eigenvalue Hessian. Mark as "decision points." <strong>Expected gain:</strong> quantitative fate-determining transition states for time-lapse imaging / lineage tracing targeting.</p>
+
+<h3>🎯 11. Diffusion-based ChIP-seq peak generation</h3>
+<p><strong>Gap:</strong> ChIP-seq is weak in few cells / hard-to-ChIP factors; Cut&Tag / Cut&Run improve but cell-type resolution is coarse. <strong>Proposal:</strong> sequence-conditioned diffusion on (DNA, TF, cell type) → ChIP signal track, trained on ENCODE atlas. <strong>Expected gain:</strong> binding prediction for untested TF / rare cell types; cancer-specific fusion TF simulation; GRN inference prior.</p>
+
+<h3>🎯 12. Stochastic trajectory model via diffusion</h3>
+<p><strong>Gap:</strong> RNA velocity is deterministic; scVelo dynamic adds per-gene Gaussian only. <strong>Proposal:</strong> latent SDE diffusion learning drift μ(z) + diffusion σ(z) of cell trajectories. <strong>Expected gain:</strong> probabilistic lineage commitment (not single fate); quantify rare branching events; naturally handles multi-modal trajectories (one progenitor → many fates).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'scdf')">scDiffusion</button>
+<button class="code-tab-btn" onclick="switchTab(this,'evd')">EvoDiff</button>
+<button class="code-tab-btn" onclick="switchTab(this,'min')">迷你 DDPM</button>
+</div>
+<div class="code-tab-content active" id="scdf"><pre><span class="comment"># pip install scdiffusion (假設可用)</span>
+<span class="keyword">from</span> scdiffusion <span class="keyword">import</span> ScDiffusion
+
+model = ScDiffusion(in_dim=adata.n_vars, n_steps=<span class="num">1000</span>, cond_keys=[<span class="str">"celltype"</span>])
+model.fit(adata, batch_size=<span class="num">128</span>, epochs=<span class="num">100</span>)
+
+<span class="comment"># 生成指定條件的細胞</span>
+synthetic = model.sample(n=<span class="num">5000</span>, conditions={<span class="str">"celltype"</span>: <span class="str">"NK cells"</span>})</pre></div>
+<div class="code-tab-content" id="evd"><pre><span class="keyword">from</span> evodiff <span class="keyword">import</span> OAMaskCollater, OADM
+<span class="keyword">import</span> torch
+
+model = OADM.from_pretrained(<span class="str">"evodiff-oa-dm-640M"</span>)
+seqs = model.sample(n=<span class="num">10</span>, length=<span class="num">150</span>)  <span class="comment"># 生成 10 條長度 150 的蛋白</span>
+
+<span class="comment"># Inpainting：給定某些位置，補其他</span>
+template = <span class="str">"M___A___D_____"</span>
+filled = model.inpaint(template)</pre></div>
+<div class="code-tab-content" id="min"><pre><span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+T = <span class="num">1000</span>
+betas = torch.linspace(<span class="num">1e-4</span>, <span class="num">0.02</span>, T)
+alphas = <span class="num">1</span> - betas; abar = torch.cumprod(alphas, dim=<span class="num">0</span>)
+
+<span class="keyword">def</span> forward_diff(x0, t):
+    eps = torch.randn_like(x0)
+    <span class="keyword">return</span> torch.sqrt(abar[t]) * x0 + torch.sqrt(<span class="num">1</span>-abar[t]) * eps, eps
+
+<span class="comment"># 訓練 loss</span>
+<span class="keyword">def</span> loss_fn(model, x0):
+    t = torch.randint(<span class="num">0</span>, T, (x0.size(<span class="num">0</span>),))
+    xt, eps = forward_diff(x0, t)
+    eps_pred = model(xt, t)
+    <span class="keyword">return</span> ((eps - eps_pred)**<span class="num">2</span>).mean()</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">擴散模型的網路實際上在學什麼？</p><p data-lang="en">What does the diffusion network actually learn?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 細胞分類</span><span data-lang="en">A. Cell classification</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 細胞數量</span><span data-lang="en">B. Cell counts</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 預測每步加入的噪音 (≡ ∇ log p(x))</span><span data-lang="en">C. The noise added at each step (≡ ∇ log p(x))</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 基因標籤</span><span data-lang="en">D. Gene labels</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列何者是擴散模型在生物的代表性應用？</p><p data-lang="en">A representative biological application?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 計算 Pearson 相關</span><span data-lang="en">A. Pearson correlation</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. RFdiffusion 設計新蛋白質骨架</span><span data-lang="en">B. RFdiffusion designs novel protein backbones</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 細胞分群</span><span data-lang="en">C. Cell clustering</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. PCA 降維</span><span data-lang="en">D. PCA reduction</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="variational-inference.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 11：VAE</span></a>
+<a href="scllms.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 13：scLLMs" data-en="Ch 13: scLLMs">Ch 13：scLLMs</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// Target: two moons
+const N=120;const target=[];for(let i=0;i<N;i++){const moon=i<N/2?0:1;const t=Math.random()*Math.PI;const r=1+0.1*Math.random();const cx=moon===0?-0.5:0.5;const cy=moon===0?-0.1:0.1;const x=cx+r*Math.cos(t)*(moon===0?1:-1);const y=cy+r*Math.sin(t)*(moon===0?1:-1);target.push({x,y});}
+const noise=[];for(let i=0;i<N;i++)noise.push({x:(Math.random()-0.5)*4,y:(Math.random()-0.5)*4});
+function lerp(a,b,t){return a+(b-a)*t;}
+function render(step){const t=step/50;document.getElementById('dStep').textContent=step;let svg='';for(let i=0;i<N;i++){const x=lerp(noise[i].x,target[i].x,t);const y=lerp(noise[i].y,target[i].y,t);const px=300+x*100;const py=140-y*60;svg+=`<circle cx="${px}" cy="${py}" r="3.5" fill="#1A6B5A" opacity="0.7"/>`;}
+document.getElementById('dSvg').innerHTML=svg;}
+document.getElementById('sDt').addEventListener('input',()=>render(+document.getElementById('sDt').value));render(0);
+function runAnim(){let s=0;const id=setInterval(()=>{document.getElementById('sDt').value=s;render(s);s++;if(s>50)clearInterval(id);},80);}
+
+window._QF={zh:{q1_y:'答對！這正是擴散模型的核心。',q1_n:'答案是 C。學的是 score function。',q2_y:'答對！RFdiffusion 是蛋白質設計的里程碑。',q2_n:'答案是 B。RFdiffusion 在 2023 年震撼結構生物學界。'},en:{q1_y:'Correct! Core of diffusion models.',q1_n:'Answer is C. Learning the score function.',q2_y:'Correct! RFdiffusion is a landmark.',q2_n:'Answer is B. RFdiffusion shook structural biology in 2023.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

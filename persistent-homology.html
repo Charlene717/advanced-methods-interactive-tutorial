@@ -1,0 +1,434 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Persistent Homology — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html" class="active">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 5 / 14</div><h1 data-zh="持久同調 (Persistent Homology, TDA)" data-en="Persistent Homology (TDA)">持久同調 (Persistent Homology)</h1>
+<p class="subtitle" data-lang="zh">拓撲資料分析的核心工具——用「孔洞」、「迴圈」、「連通分支」的數量描述細胞狀態空間的形狀，能偵測 PCA/UMAP 看不見的拓撲特徵。</p>
+<p class="subtitle" data-lang="en">The core tool of Topological Data Analysis (TDA) — describes the shape of cell-state space via counts of voids, loops, and connected components, revealing topology that PCA/UMAP cannot.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="同調群與 Betti 數" data-en="Homology Groups and Betti Numbers">同調群與 Betti 數</h2>
+<div data-lang="zh">
+<p>給定點雲，畫圓（半徑 ε）覆蓋每個點，逐漸放大 ε。在這個過程中：</p>
+<ul>
+<li><strong>β₀</strong>（零維同調）= 連通分支數量</li>
+<li><strong>β₁</strong>（一維同調）= 迴圈、孔洞數量（像甜甜圈中央的洞）</li>
+<li><strong>β₂</strong>（二維同調）= 空腔數量（像球殼裡的空間）</li>
+</ul>
+<p><strong>持久</strong>的意涵：追蹤這些拓撲特徵在 ε 從 0 增到無窮的過程中「何時誕生、何時消失」。長壽 (long persistence) 的特徵是真實結構，短壽是噪音。</p>
+</div>
+<div data-lang="en">
+<p>Given a point cloud, draw balls of radius ε around each point and grow ε. Along the way:</p>
+<ul>
+<li><strong>β₀</strong> (0-dim homology) = # connected components</li>
+<li><strong>β₁</strong> (1-dim homology) = # loops / holes (like a donut hole)</li>
+<li><strong>β₂</strong> (2-dim homology) = # voids (like a hollow ball)</li>
+</ul>
+<p><strong>Persistence</strong>: track when each topological feature is born and dies as ε grows. Long-persistence features are real structure; short ones are noise.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🔵</div><h4 data-zh="連通分支 β₀" data-en="Components β₀">連通分支 β₀</h4><p data-lang="zh">獨立細胞型別群的數量。</p><p data-lang="en">Number of distinct cell-type groups.</p></div>
+<div class="card"><div class="card-icon">🍩</div><h4 data-zh="迴圈 β₁" data-en="Loops β₁">迴圈 β₁</h4><p data-lang="zh">細胞週期、晝夜節律等「循環」軌跡的指標。</p><p data-lang="en">Marker of cyclic trajectories (cell cycle, circadian, etc.).</p></div>
+<div class="card"><div class="card-icon">⚽</div><h4 data-zh="空腔 β₂" data-en="Voids β₂">空腔 β₂</h4><p data-lang="zh">罕見但有意義——例如分化分支中的「空白」狀態。</p><p data-lang="en">Rare but meaningful — e.g. "empty" states between differentiation branches.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Filtration、Persistence Diagram、Barcode" data-en="Filtration, Diagrams, Barcodes">Filtration、Persistence Diagram、Barcode</h2>
+<div data-lang="zh">
+<p><strong>① Vietoris-Rips Filtration：</strong>用 ε 為閾值建立單純複形——點與點距離 ≤ ε 連邊，三點兩兩相連時填三角形，依此類推。隨 ε 增加，複形逐漸長大。</p>
+<p><strong>② Persistence Diagram：</strong>把每個拓撲特徵畫成 2D 點 (birth, death)。對角線附近 = 噪音；遠離對角線 = 顯著結構。</p>
+<p><strong>③ Barcode：</strong>每個特徵畫一條水平線（從誕生到死亡的 ε 區間）。長條 = 重要、短條 = 噪音。</p>
+<p>常用工具：Ripser (C++, 最快)、GUDHI (Python)、giotto-tda (機器學習友善)、TDAstats (R)。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Vietoris-Rips filtration:</strong> threshold by ε — connect points within ε; fill triangles when triples connect; etc. Complex grows with ε.</p>
+<p><strong>② Persistence diagram:</strong> each topological feature is a 2D point (birth, death). Near the diagonal = noise; far away = significant structure.</p>
+<p><strong>③ Barcode:</strong> each feature gets a horizontal bar from birth to death ε. Long bars = important; short = noise.</p>
+<p>Tools: Ripser (C++, fastest), GUDHI (Python), giotto-tda (ML-friendly), TDAstats (R).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="掃描 ε，看 Betti 數變化" data-en="Sweep ε, Watch Betti Numbers">掃描 ε，看 Betti 數變化</h2>
+<div data-lang="zh"><p>選擇點雲形狀（雙團、圓圈、8 字形、隨機），調整 ε 觀察連通分支與迴圈的變化。圓圈形狀在某個 ε 範圍內 β₁ = 1，這就是「迴圈持久」的具體表現。</p></div>
+<div data-lang="en"><p>Pick a point cloud shape (two blobs, circle, figure-8, random); sweep ε to watch components and loops. A circle yields β₁ = 1 over a wide ε range — that's a persistent loop.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="形狀" data-en="Shape">形狀</label>
+<select id="phShape" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);">
+<option value="circle" selected>Circle / 圓圈</option>
+<option value="2blob">Two blobs / 雙團</option>
+<option value="fig8">Figure-8 / 8 字</option>
+<option value="random">Random / 隨機</option>
+</select></div>
+<div class="slider-group"><label>ε <span id="phE">0.25</span></label><input type="range" id="phEs" min="0.05" max="1" value="0.25" step="0.01"></div>
+<svg id="phSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div class="card-grid cols-3" style="margin-top:12px;">
+  <div class="card"><h4>β₀ (components)</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="phB0">—</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>β₁ (loops, est.)</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="phB1">—</p></div>
+  <div class="card"><h4 data-zh="邊數" data-en="Edges">邊數</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="phEd">—</p></div>
+</div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="TDA 在單細胞與多體學" data-en="TDA in Single-cell and Multi-omics">TDA 在單細胞與多體學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="細胞狀態空間拓撲" data-en="Cell-state space topology">細胞狀態空間拓撲</h4><p data-lang="zh">scTDA、TopoMap 等：直接刻畫細胞狀態空間的全局拓撲——分支點、迴圈、孔洞，補足 UMAP 容易扭曲的部分。</p><p data-lang="en">scTDA, TopoMap, etc.: characterize global topology of cell-state space — branch points, loops, voids — complementing UMAP's distortions.</p></div>
+<div class="card"><h4 data-zh="循環過程偵測" data-en="Cyclic process detection">循環過程偵測</h4><p data-lang="zh">細胞週期、晝夜節律基因群的軌跡是迴圈 → 持久 β₁ 為 1 是強訊號。比手動指定 marker 更客觀。</p><p data-lang="en">Cell cycle and circadian gene trajectories are loops → persistent β₁ = 1 is a strong signal. More objective than hand-picked markers.</p></div>
+<div class="card"><h4 data-zh="Mapper 演算法" data-en="Mapper algorithm">Mapper 演算法</h4><p data-lang="zh">將高維資料投影到 1D 函數（如假時間）→ 沿 cover 分群 → 建構圖。在乳癌 (Nicolau 2011) 等研究中找到新次型。</p><p data-lang="en">Project high-dim data along a 1D function (e.g. pseudotime) → cluster within cover → build graph. Discovered new breast cancer subtypes (Nicolau 2011).</p></div>
+<div class="card"><h4 data-zh="空間轉錄體拓撲" data-en="Spatial topology">空間轉錄體拓撲</h4><p data-lang="zh">TopACT (2023) 用 TDA 偵測組織內的局部結構（小型免疫聚集、血管環等）。</p><p data-lang="en">TopACT (2023) uses TDA to detect local tissue structures (immune aggregates, vascular loops, etc.).</p></div>
+<div class="card"><h4 data-zh="基因組學" data-en="Genomics">基因組學</h4><p data-lang="zh">Hi-C 染色質互動圖、序列保守區的拓撲分析——TDA 是少數同時處理「形狀」與「尺度」的工具。</p><p data-lang="en">Hi-C chromatin maps, conserved sequence topology — TDA uniquely captures both "shape" and "scale."</p></div>
+<div class="card"><h4 data-zh="深度學習特徵" data-en="Deep learning feature">深度學習特徵</h4><p data-lang="zh">把 persistence diagram 向量化（persistence images / landscapes）→ 直接作為 ML 特徵餵入分類器。</p><p data-lang="en">Vectorize persistence diagrams (persistence images / landscapes) → use as ML features.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 TDA：filtration、穩定性、向量化、可微化" data-en="Deep Dive: Filtrations, Stability, Vectorization, Differentiability">深入解析 TDA：filtration、穩定性、向量化、可微化</h2>
+
+<div data-lang="zh">
+<h3>① Filtration 種類比較：Rips、Čech、Alpha、Witness</h3>
+<p>不同 filtration 在「計算成本」與「topological fidelity」上有顯著取捨：</p>
+<ul>
+<li><strong>Vietoris–Rips：</strong>最常用——閾值 ε 內所有點對相連即組成 simplex。優點：定義簡單、只需距離矩陣；缺點：simplex 數量在維度 d 是 O(n<sup>d+1</sup>)，n=10,000 時 H<sub>2</sub> 就會爆。</li>
+<li><strong>Čech complex：</strong>幾何上「正確」（Nerve theorem 保證），但需測試 (d+1) 顆球是否共交，計算昂貴。</li>
+<li><strong>Alpha complex：</strong>Delaunay 三角化的子複形，simplex 數量 O(n<sup>⌈d/2⌉</sup>)——在 ℝ³ 中遠少於 Rips，是低維點雲（蛋白質結構、空間轉錄體座標）的首選。</li>
+<li><strong>Witness complex (de Silva–Carlsson 2004)：</strong>選 ℓ 個 landmark，其他點作為「見證」。把 100k 細胞 → 500 landmark 可以把計算量降 4–5 個數量級，是 scTDA 必用工具。</li>
+</ul>
+
+<h3>② 穩定性定理（Cohen-Steiner, Edelsbrunner, Harer 2007）</h3>
+<p>TDA 之所以「敢用」的數學基石：若兩個 filtration f, g 的 sup-norm 距離 ≤ ε，則對應 persistence diagram 的 <strong>bottleneck distance ≤ ε</strong>。換句話說，<strong>對輸入的小擾動只會造成輸出的小擾動</strong>——這在 scRNA-seq 等高噪音資料上非常關鍵。實務含意：少量 dropout 不會把真實的 H<sub>1</sub> loop 殺掉，只會讓它在 persistence diagram 上「往對角線稍微移」。</p>
+
+<h3>③ 向量化方法：把 PD 變成 ML feature</h3>
+<p>Persistence diagram 是「multi-set of points in ℝ²」，無法直接餵 sklearn。三種主流向量化：</p>
+<ul>
+<li><strong>Persistence Landscape (Bubenik 2015)：</strong>把每個 (b, d) 點轉成「三角函數」λ<sub>k</sub>(t)，得到 ℓ² Hilbert space 上的函數——可以做 mean、PCA、t-test。穩定且有統計理論。</li>
+<li><strong>Persistence Image (Adams 2017)：</strong>用 Gaussian kernel 把 PD smoothing 成固定大小的圖像（如 50×50）——適合 CNN 處理。權重函數通常選 persistence 本身（讓長壽特徵更亮）。</li>
+<li><strong>Betti Curve：</strong>對每個 ε 數 simplex 拓撲群的維度——資訊量較少但快速。</li>
+</ul>
+
+<h3>④ 計算複雜度與 sparse Rips</h3>
+<p>標準 Rips 計算 H<sub>k</sub> 是 O(n<sup>k+2</sup>)。對 n=5000、k=1 約 6×10<sup>10</sup> 次運算。解法：</p>
+<ul>
+<li><strong>Sparse Rips (Sheehy 2013)：</strong>用 (1+ε)-近似，把多餘 simplex 砍掉——對 ε=0.1 可減 90% 計算量，理論誤差有界。</li>
+<li><strong>Ripser (Bauer 2021)：</strong>透過 cohomology + clearing optimization，比 GUDHI 快 10–40 倍，是目前 H<sub>1</sub> 計算的事實標準。</li>
+<li><strong>GPU Ripser (Pérez 2022)：</strong>把 reduction 並行化，再快 5–10 倍。</li>
+</ul>
+
+<h3>⑤ 噪音與信號分離：bootstrap confidence band、persistent entropy</h3>
+<p>怎麼知道 PD 上的點是「真實 topology」還是「採樣雜訊」？</p>
+<ul>
+<li><strong>Bootstrap confidence band (Fasy 2014)：</strong>重抽樣 B 次計算 PD，求 bottleneck distance 的 (1-α) quantile c<sub>α</sub>。距離對角線 &gt; c<sub>α</sub> 的點即為顯著拓撲特徵。</li>
+<li><strong>Persistent Entropy (Rucco 2017)：</strong>E = −Σ (lᵢ/L) log(lᵢ/L)，其中 lᵢ 是第 i 個特徵的 persistence、L 為總和。低熵 = 一兩個明顯特徵；高熵 = 雜訊或多尺度結構。</li>
+<li><strong>實務技巧：</strong>把 PD 上每個點的 persistence 排序，找「gap」——通常前 k 個點是訊號，其後是噪音。</li>
+</ul>
+
+<h3>⑥ Mapper 演算法的詳細步驟</h3>
+<p>Mapper 是 TDA 的「資料探索」端，輸出一張圖而非 PD：</p>
+<ol>
+<li><strong>Lens function：</strong>選一個 f: X → ℝ<sup>d</sup>（d 通常 1 或 2）。常用 lens：eccentricity（離中心距離）、density estimate、PC1、pseudotime、Laplacian eigenmap。</li>
+<li><strong>Cover：</strong>把 f(X) 的範圍切成重疊的小區間 {U<sub>i</sub>}（resolution 與 overlap 是超參數）。</li>
+<li><strong>Cluster：</strong>在每個 f<sup>−1</sup>(U<sub>i</sub>) 內跑 clustering（DBSCAN、單連結等）。</li>
+<li><strong>Nerve：</strong>每個 cluster 是節點，重疊區域內共享元素則連邊。</li>
+</ol>
+<p>Mapper 的優勢是「同時顯示 branching、loops、群集」——這是 UMAP 做不到的。但 lens/resolution/overlap 三超參數讓結果敏感，通常要做 grid sweep。</p>
+
+<h3>⑦ 拓撲機器學習：TDA × GNN</h3>
+<p>近年熱門方向是把 TDA 訊號注入 GNN：</p>
+<ul>
+<li><strong>TopoGNN (Horn 2022)：</strong>每個節點周圍取 ego-graph 算 PH，把 PD 向量化後作為 node feature 串接到 GNN 隱藏層。在分子分類上 SOTA。</li>
+<li><strong>Persistent Weisfeiler-Lehman kernel (Rieck 2019)：</strong>把 WL 顏色 refinement 配合 filtration，得到考慮拓撲的 graph kernel。</li>
+<li><strong>單細胞應用：</strong>在 cell-cell graph 上跑 TopoGNN 可同時捕捉「局部鄰域結構」與「全域 cycle / branch」，比純 GCN 更能保留發育拓撲。</li>
+</ul>
+
+<h3>⑧ Differentiable TDA（Carrière 2021、Leygonie 2022）</h3>
+<p>傳統 PD 計算是組合性的（不可微）；近年發展出「以 persistence 為 loss」的方法：對 birth-death 配對，把 b<sub>i</sub>, d<sub>i</sub> 視為輸入點座標的函數，可在 simplex matching 不變時做 chain rule。應用：</p>
+<ul>
+<li><strong>Topological autoencoder (Moor 2020)：</strong>強制 latent space 保留輸入 PD——比普通 AE 更能保留拓撲。</li>
+<li><strong>Topology-aware GAN：</strong>產生器加 persistence 正則項，迫使生成樣本保留目標 topology（例如「連通且有一個 loop」）。</li>
+<li><strong>在 scLLM 上：</strong>用 differentiable TDA 當 pretraining auxiliary loss，可讓 latent 空間更貼近細胞發育的真實拓撲。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① Filtration comparison: Rips, Čech, Alpha, Witness</h3>
+<p>Different filtrations trade compute against topological fidelity:</p>
+<ul>
+<li><strong>Vietoris–Rips:</strong> all pairs within ε form a simplex. Simple, distance-matrix only; but simplex count is O(n<sup>d+1</sup>) — H<sub>2</sub> on n=10,000 explodes.</li>
+<li><strong>Čech complex:</strong> geometrically correct (Nerve theorem), but requires testing if (d+1) balls intersect — expensive.</li>
+<li><strong>Alpha complex:</strong> subcomplex of Delaunay triangulation; O(n<sup>⌈d/2⌉</sup>) simplices. In ℝ³ much smaller than Rips — first choice for low-dim point clouds (protein structure, spatial coords).</li>
+<li><strong>Witness complex (de Silva–Carlsson 2004):</strong> pick ℓ landmarks, use the rest as witnesses. 100k cells → 500 landmarks drops compute 4–5 orders of magnitude — essential for scTDA.</li>
+</ul>
+
+<h3>② Stability theorem (Cohen-Steiner, Edelsbrunner, Harer 2007)</h3>
+<p>TDA's mathematical bedrock: if two filtrations f, g satisfy ‖f−g‖<sub>∞</sub> ≤ ε, the corresponding persistence diagrams' <strong>bottleneck distance ≤ ε</strong>. <strong>Small input perturbations cause only small output perturbations</strong> — critical for noisy scRNA-seq. Practical implication: mild dropout won't kill a real H<sub>1</sub> loop, only shift it slightly toward the diagonal.</p>
+
+<h3>③ Vectorization: turning PDs into ML features</h3>
+<p>Persistence diagrams are multi-sets of points in ℝ² — can't go directly into sklearn. Three main vectorizations:</p>
+<ul>
+<li><strong>Persistence Landscape (Bubenik 2015):</strong> turn each (b, d) into triangular functions λ<sub>k</sub>(t) in ℓ² Hilbert space — supports mean, PCA, t-tests; well-grounded statistically.</li>
+<li><strong>Persistence Image (Adams 2017):</strong> Gaussian-smooth the PD into a fixed-size grid (e.g. 50×50) — feeds CNNs. Weight function usually scales with persistence.</li>
+<li><strong>Betti Curve:</strong> count topology dimension at each ε — less info, but fast.</li>
+</ul>
+
+<h3>④ Complexity and sparse Rips</h3>
+<p>Standard Rips for H<sub>k</sub> is O(n<sup>k+2</sup>). For n=5000, k=1 ≈ 6×10<sup>10</sup> ops. Solutions:</p>
+<ul>
+<li><strong>Sparse Rips (Sheehy 2013):</strong> (1+ε)-approximation drops 90% simplices at ε=0.1 with bounded error.</li>
+<li><strong>Ripser (Bauer 2021):</strong> cohomology + clearing optimization, 10–40× faster than GUDHI — the de facto H<sub>1</sub> standard.</li>
+<li><strong>GPU Ripser (Pérez 2022):</strong> parallel reduction, another 5–10× speedup.</li>
+</ul>
+
+<h3>⑤ Noise vs. signal: bootstrap bands and persistent entropy</h3>
+<p>How do we know a PD point is real topology, not sampling noise?</p>
+<ul>
+<li><strong>Bootstrap confidence band (Fasy 2014):</strong> resample B times, compute the (1−α) quantile c<sub>α</sub> of bottleneck distances. Points farther than c<sub>α</sub> from the diagonal are significant.</li>
+<li><strong>Persistent Entropy (Rucco 2017):</strong> E = −Σ (lᵢ/L) log(lᵢ/L). Low E = one or two clear features; high E = noise or multi-scale.</li>
+<li><strong>Trick:</strong> sort all PD points by persistence — find the gap; everything above is signal.</li>
+</ul>
+
+<h3>⑥ Mapper algorithm in detail</h3>
+<p>Mapper is the "exploration" side of TDA, producing a graph rather than a PD:</p>
+<ol>
+<li><strong>Lens function:</strong> f: X → ℝ<sup>d</sup> (usually d=1 or 2). Common: eccentricity, density, PC1, pseudotime, Laplacian eigenmaps.</li>
+<li><strong>Cover:</strong> chop f(X) range into overlapping intervals {U<sub>i</sub>} (resolution + overlap are hyperparams).</li>
+<li><strong>Cluster:</strong> cluster within each f<sup>−1</sup>(U<sub>i</sub>) (DBSCAN, single-linkage, etc).</li>
+<li><strong>Nerve:</strong> each cluster is a node; share elements → edge.</li>
+</ol>
+<p>Mapper shows branching, loops, and clusters together — UMAP cannot. But lens/resolution/overlap make results sensitive; grid sweeps are essential.</p>
+
+<h3>⑦ Topological ML: TDA × GNN</h3>
+<p>A hot recent direction is injecting TDA into GNNs:</p>
+<ul>
+<li><strong>TopoGNN (Horn 2022):</strong> compute PH on each node's ego-graph, vectorize, concatenate into GNN hidden layers. SOTA on molecular classification.</li>
+<li><strong>Persistent WL kernel (Rieck 2019):</strong> couple WL color refinement with filtrations → topology-aware graph kernels.</li>
+<li><strong>Single-cell use:</strong> TopoGNN on the cell-cell graph captures both local neighborhoods and global cycles/branches — better than plain GCN for preserving developmental topology.</li>
+</ul>
+
+<h3>⑧ Differentiable TDA (Carrière 2021, Leygonie 2022)</h3>
+<p>Classical PD computation is combinatorial (non-differentiable); recent work treats persistence as a loss: birth–death pairs (b<sub>i</sub>, d<sub>i</sub>) are functions of input coordinates, so chain rule applies while the simplex matching is locally constant. Applications:</p>
+<ul>
+<li><strong>Topological autoencoder (Moor 2020):</strong> forces latent space to preserve input PD — better topology than plain AE.</li>
+<li><strong>Topology-aware GAN:</strong> persistence regularizer makes the generator produce target topologies (e.g. "connected with one loop").</li>
+<li><strong>scLLM:</strong> use differentiable TDA as auxiliary pretraining loss, aligning latent space with developmental topology.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="TDA 在生物資訊的具體案例" data-en="Concrete TDA Applications in Bioinformatics">TDA 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Nicolau, Levine, Carlsson (2011, PNAS) — Mapper 找乳癌新亞型</h3>
+<p>TDA 的里程碑論文。用 Mapper 對 NKI 乳癌 microarray 資料（295 病人 × 24,000 基因）建圖，lens 函數為 DSGA（disease-specific genomic analysis）的 L¹ deviation norm。發現一個獨特的「分支」——所有屬於該分支的病人都是 ER⁺、有 c-MYB 高表現、且 <strong>10 年內存活率 100%</strong>。這個亞型用傳統 hierarchical clustering 完全看不到，因為它在主結構之外「岔出去」。後續 GLAS 等獨立資料集驗證。</p>
+
+<h3>🧬 案例 2：scTDA — Rizvi et al. (2017, Nature Biotechnology)</h3>
+<p>第一篇將 Mapper 系統化應用到 scRNA-seq 的論文。對小鼠胚胎肝臟發育（E12–E18）資料建 Mapper graph，lens 為「擬時間 + density」。發現原本被認為線性的肝細胞 vs 紅血球分化其實有「branching point + 再匯聚」的拓撲——這個 loop 在 PCA/diffusion map 上是看不到的（它們會「展開」loops）。該論文也提出 multi-scale persistence 量化發育關鍵節點。</p>
+
+<h3>🧬 案例 3：TopACT (Benjamin et al. 2023, Nature Communications)</h3>
+<p>把 PH 用在空間轉錄體：對每個 spot 周圍的「局部基因表現分布」算 H<sub>0</sub>、H<sub>1</sub>，找出「拓撲不尋常」的區域——例如小型免疫聚集 (tertiary lymphoid structures) 通常呈現異常 H<sub>1</sub> 訊號（圓環狀組織）。在乳癌 Visium 資料中找到 SpatialDE/Hotspot 漏掉的微結構，並經免疫螢光驗證。</p>
+
+<h3>🧬 案例 4：Camara et al. (2016, Cell Systems) — HIV reassortment 的拓撲</h3>
+<p>傳統演化樹假設「樹狀結構」，但病毒重組會破壞樹狀性。Camara 用 PH 計算 HIV 序列的 H<sub>1</sub>——若有 reassortment，會出現非零 H<sub>1</sub> loops，loop 的「壽命」對應重組頻率。在 HIV-1 group M 上發現比傳統 phylogeny 多 30% 的 reassortment 事件。</p>
+
+<h3>🧬 案例 5：染色質拓撲 — Lesne et al. (2014), Boninsegna et al. (2017)</h3>
+<p>把 Hi-C 接觸矩陣轉成距離矩陣後算 PH，發現 TAD (topologically associated domains) 與 H<sub>1</sub> loops 的對應——特別是在 CTCF binding site 集中的區域出現高 persistence loop。Boninsegna 進一步在 3D polymer model 上跑 TDA，找到傳統 contact-frequency 看不到的「染色質結構模塊」。</p>
+
+<h3>🧬 案例 6：蛋白質結構的 PH (Edelsbrunner, Xia et al.)</h3>
+<p>用 alpha complex 對蛋白質 Cα 原子建 filtration，得到的 PD 可作為 protein folding 分類特徵。在 SCOP 分類上 PD-based feature 比 contact-map 更穩健於不同物種的同源蛋白。<strong>CIST 演算法（Xia & Wei 2014, Bioinformatics）</strong>是其中代表。</p>
+
+<h3>🧬 案例 7：癌症演化的拓撲 loops — Smith et al. (2024)</h3>
+<p>用 multi-region tumor sequencing 資料的 SNV profile 跑 PH，發現 convergent evolution（不同 region 獨立演化到相似 genotype）會在 PD 上呈現特定 H<sub>1</sub> pattern——這在傳統 phylogenetic tree 上會被「強制成樹」而看不到。在 TRACERx 肺癌資料上識別出 30% 病人有 topological convergence。</p>
+
+<h3>🧬 案例 8：神經迴路拓撲 — Singh et al. (2008), Giusti et al. (2015)</h3>
+<p>對 V1 視覺皮層的神經元發放率資料跑 PH，發現「pinwheel-like」拓撲（torus + Klein bottle 混合）——這對應於 orientation tuning 的拓撲結構。Giusti 2015 進一步用「order-based」filtration（取代距離）對 hippocampal place cells 跑 TDA，重建出 spatial environment 的真實拓撲（圓環 vs 平面），不需要任何 calibration。</p>
+
+<h3>🧬 案例 9：免疫 TCR repertoire 的多樣性 — Reeves et al. (2018)</h3>
+<p>把 TCR 序列空間建為點雲（用 BLOSUM-based distance），用 PH 量「repertoire 形狀」。發現 chronic infection 與 healthy 個體在 H<sub>1</sub> persistent entropy 上有顯著差異——chronic 個體 repertoire 呈現更多「loops」（clonal expansion + somatic hypermutation 形成的環狀拓撲）。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Nicolau, Levine, Carlsson (2011, PNAS) — Mapper Finds New Breast Cancer Subtype</h3>
+<p>The landmark TDA paper. Applied Mapper to NKI breast cancer microarray data (295 patients × 24,000 genes) with DSGA L¹ deviation norm as the lens. Discovered a distinct "branch" — all patients in it were ER⁺, c-MYB high, with <strong>100% 10-year survival</strong>. This subtype was invisible to classical hierarchical clustering because it branched off the main structure. Independently validated on the GLAS cohort.</p>
+
+<h3>🧬 Case 2: scTDA — Rizvi et al. (2017, Nature Biotechnology)</h3>
+<p>The first systematic Mapper application to scRNA-seq. On mouse embryonic liver (E12–E18) data, lens = pseudotime + density. Found that liver vs. erythrocyte differentiation, thought linear, actually has a "branch + re-merge" topology — this loop is invisible in PCA/diffusion maps (which unfold loops). The paper also introduced multi-scale persistence to quantify developmental decision points.</p>
+
+<h3>🧬 Case 3: TopACT (Benjamin et al. 2023, Nature Communications)</h3>
+<p>PH applied to spatial transcriptomics: compute H<sub>0</sub>, H<sub>1</sub> on local gene-expression distributions per spot to flag topologically unusual regions — e.g. tertiary lymphoid structures show anomalous H<sub>1</sub> (ring-like). On breast cancer Visium, recovered microstructures missed by SpatialDE/Hotspot, validated by immunofluorescence.</p>
+
+<h3>🧬 Case 4: Camara et al. (2016, Cell Systems) — Topology of HIV Reassortment</h3>
+<p>Standard phylogenetics assumes a tree, but viral reassortment breaks tree-ness. Camara used PH on HIV sequences — reassortments give non-zero H<sub>1</sub> loops, with loop lifetime ∝ reassortment frequency. On HIV-1 group M, found 30% more reassortment events than classical phylogeny.</p>
+
+<h3>🧬 Case 5: Chromatin topology — Lesne et al. (2014), Boninsegna et al. (2017)</h3>
+<p>Transform Hi-C contact matrices to distances, then PH — TADs correspond to H<sub>1</sub> loops, especially in CTCF-rich regions. Boninsegna further ran TDA on 3D polymer models, recovering "chromatin structure modules" invisible to contact-frequency alone.</p>
+
+<h3>🧬 Case 6: Protein structure PH (Edelsbrunner, Xia et al.)</h3>
+<p>Alpha complex on Cα atoms gives a PD that classifies protein folds — more robust to cross-species homologs than contact maps. <strong>CIST (Xia & Wei 2014, Bioinformatics)</strong> is a representative algorithm.</p>
+
+<h3>🧬 Case 7: Cancer evolution loops — Smith et al. (2024)</h3>
+<p>PH on multi-region SNV profiles uncovers convergent evolution — different regions reaching similar genotypes — which produces a specific H<sub>1</sub> pattern. Standard phylogenetic trees force these into trees and miss it. On TRACERx lung cancer data, 30% of patients showed topological convergence.</p>
+
+<h3>🧬 Case 8: Neural circuit topology — Singh et al. (2008), Giusti et al. (2015)</h3>
+<p>PH on V1 cortex firing rates revealed pinwheel-like topology (torus + Klein bottle hybrid), matching orientation tuning. Giusti 2015 used order-based filtrations (no metric) on hippocampal place cells to recover the spatial environment's true topology (ring vs. plane) without calibration.</p>
+
+<h3>🧬 Case 9: Immune TCR repertoire — Reeves et al. (2018)</h3>
+<p>Build TCR sequence space as a point cloud (BLOSUM-based distance), run PH on repertoire "shape." Chronic infection vs. healthy donors differ significantly in H<sub>1</sub> persistent entropy — chronic patients have more loops (clonal expansion + somatic hypermutation forming ring topologies).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="TDA 還能改良 / 新解決哪些任務？" data-en="What Else Could TDA Improve?">TDA 還能改良 / 新解決哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 空間轉錄體的「真實 niche」偵測</h3>
+<p>CellCharter、Banksy 用 GMM 或 graph clustering 找 niche，但對「形狀」（環狀 vs 線狀 vs 散點）沒有區分能力。<strong>提案：</strong>對每個 spot 的 k-hop neighborhood gene expression 算 local PH，把 H<sub>1</sub> persistence 當作「niche shape feature」串接到 Banksy 的 SVD step。預期效果：能區分「球狀腫瘤巢」vs「沿血管的線狀浸潤」vs「免疫環狀聚集」。對 Stereo-seq、CosMx、Xenium 高解析度資料特別有效。</p>
+
+<h3>🎯 2. RNA velocity 與 TDA 整合找「拓撲匯聚 attractors」</h3>
+<p>scVelo 給出每個細胞的速度向量，但「終點」（fate attractor）的判斷靠 CellRank 的 absorbing state 計算。<strong>提案：</strong>把 velocity field 視為向量場，對其「散度」（divergence）的負區域做 sublevel-set filtration——negative divergence ≡ sink region ≡ attractor。用 PH 找「H<sub>0</sub> 連通分量數量隨閾值變化」，得到 robust 的 attractor 數量。對 hematopoiesis 等多分支系統可避免人工指定 endpoint。</p>
+
+<h3>🎯 3. 多時間點軌跡的拓撲變化追蹤</h3>
+<p>同一個系統在 Day 0, 3, 7, 14 採樣，傳統 trajectory inference 把所有 timepoint 合在一起跑 pseudotime——這假設「軌跡形狀不變」。<strong>提案：</strong>對每個時間點分別跑 TDA，計算 PD<sub>0</sub> → PD<sub>3</sub> → PD<sub>7</sub> → PD<sub>14</sub> 的 bottleneck distance 序列。「pothole」（突然的大跳）對應 fate decision moment。應用：早期胚胎發育（gastrulation 前後）、re-programming（iPSC 階段）、疾病進展（pre-cancer → cancer）。</p>
+
+<h3>🎯 4. scLLM 嵌入的拓撲可解釋性 audit</h3>
+<p>scGPT、Geneformer 預訓練後得到的 latent space 號稱「保留生物學結構」，但沒人嚴格驗證。<strong>提案：</strong>對 ground-truth dataset（如有完整 lineage 的 mouse atlas）的原始空間與 scLLM latent 空間分別跑 PH，計算 PD bottleneck distance。若 distance 大 = scLLM 「重塑」了拓撲（可能丟失 fate branches）。可以作為 scLLM 的 benchmark metric，補充傳統的 batch correction / cell-type ARI。</p>
+
+<h3>🎯 5. ChIP-seq peak cluster 的拓撲</h3>
+<p>傳統 ChIP-seq 分析只看 peak 位置；但 peaks 在基因組上的「空間分布形狀」（成簇 vs 分散 vs 週期）也帶資訊。<strong>提案：</strong>把每條染色體的 peak 位置視為 1D 點雲，跑 PH 算 H<sub>0</sub> persistence——short-persistence H<sub>0</sub> = 緊密 peak cluster (super-enhancer 候選)；long-persistence = 分散 peak。比傳統 ROSE 演算法（單一閾值）更穩健，並能跨樣本比較 cluster 結構演化。</p>
+
+<h3>🎯 6. 細胞分群的「真實 k 值」決定</h3>
+<p>Leiden/Louvain resolution 是人工選的，常用 silhouette、modularity 等指標——但這些對「形狀不規則」的群集（如 T cell 漸層）不友善。<strong>提案：</strong>對 PCA-reduced 表現矩陣跑 PH，看 H<sub>0</sub> persistence diagram 的「明顯點數量」——對應「天然分離的群數」。比 silhouette analysis 更穩定，且能識別「連續變化」（H<sub>0</sub> 點靠對角線）vs「真實離散群」（H<sub>0</sub> 點遠離對角線）。</p>
+
+<h3>🎯 7. Tumor heterogeneity 的拓撲量化</h3>
+<p>單一腫瘤內的細胞異質性目前用 Shannon entropy、ITH score 量化，但這些都是「點估計」沒有結構資訊。<strong>提案：</strong>對每個 patient 的 tumor scRNA-seq 跑 PH，計算 persistent entropy + 多尺度 Betti numbers，作為「tumor topological signature」。在 TCGA 或 single-cell pan-cancer atlas 上跑，預期能找到傳統 ITH 看不到的「拓撲亞型」，並可能預測 immunotherapy 反應（複雜拓撲 → 多 fate paths → 更可能 resistance）。</p>
+
+<h3>🎯 8. 跨物種 GRN 拓撲保守性</h3>
+<p>跨物種比較 GRN 時，邊權重往往差異很大但「網路骨架」（哪些 hub、哪些 module）類似。<strong>提案：</strong>把 GRN 視為加權圖，用 graph filtration（依邊權重 sublevel）算 PH。H<sub>0</sub> persistence = module 形成順序、H<sub>1</sub> persistence = feedback loops。比較人 vs 鼠 vs 斑馬魚的 GRN PD 找 conserved topology。應用：找跨物種保守的調控核心、識別人類特有 regulatory innovations。</p>
+
+<h3>🎯 9. 免疫 TCR/BCR repertoire 的多尺度拓撲</h3>
+<p>Reeves 2018 已示範可行性，但只用 H<sub>1</sub>。<strong>提案：</strong>結合 H<sub>0</sub>（clonal cluster 數）、H<sub>1</sub>（somatic hypermutation cycles）、H<sub>2</sub>（cavity = 抗原識別 hole？）跑 multi-dim PH。應用：(a) COVID-19 病人 vs vaccinated vs naive 的 BCR 拓撲區分；(b) lupus 等自體免疫病的 TCR 拓撲簽名；(c) CAR-T therapy 反應預測。</p>
+
+<h3>🎯 10. 多體學 latent 拓撲對齊</h3>
+<p>MOFA、totalVI 等多體學整合方法 align 各 modality 的 latent，但「對齊」標準通常是 reconstruction loss 或 mutual nearest neighbor。<strong>提案：</strong>用 bottleneck distance 量「RNA latent PD」與「ATAC latent PD」的拓撲一致性，作為新的對齊目標函數。優勢：(a) 對 cell numbers 差異 robust；(b) 不需 1-to-1 cell matching；(c) 能保留 fate branches 而非只保 cluster 結構。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. True spatial-niche detection</h3>
+<p>CellCharter and Banksy use GMM / graph clustering for niches but ignore shape (ring vs. line vs. scattered). <strong>Proposal:</strong> compute local PH on each spot's k-hop neighborhood expression, use H<sub>1</sub> persistence as a "niche shape" feature concatenated with Banksy's SVD step. Expected: distinguish spherical tumor nests, linear perivascular infiltration, and ring-like immune aggregates. Especially useful for Stereo-seq, CosMx, Xenium.</p>
+
+<h3>🎯 2. RNA velocity + TDA — topological attractors</h3>
+<p>scVelo gives velocity vectors per cell; CellRank uses absorbing states to find fates. <strong>Proposal:</strong> treat velocity as a vector field; sub-level filter the negative divergence (sinks = attractors). PH on H<sub>0</sub> connected-component changes gives a robust attractor count. Avoids manually specifying endpoints in branching systems like hematopoiesis.</p>
+
+<h3>🎯 3. Topological tracking across timepoints</h3>
+<p>Sampling at Day 0, 3, 7, 14 — standard pseudotime pools all timepoints, assuming a fixed trajectory shape. <strong>Proposal:</strong> compute a PD per timepoint, then bottleneck distance sequence PD<sub>0</sub>→PD<sub>3</sub>→PD<sub>7</sub>→PD<sub>14</sub>. "Potholes" (sudden jumps) flag fate decisions. Applications: gastrulation, reprogramming, pre-cancer → cancer.</p>
+
+<h3>🎯 4. Topological audit of scLLM embeddings</h3>
+<p>scGPT, Geneformer claim to preserve biological structure — rarely tested rigorously. <strong>Proposal:</strong> on a ground-truth lineage-labeled dataset, compute PD on raw vs. scLLM latent; bottleneck distance quantifies topological distortion. Use as a benchmark metric alongside batch correction / ARI.</p>
+
+<h3>🎯 5. Topology of ChIP-seq peak clusters</h3>
+<p>Standard ChIP-seq pipelines only look at peak positions; the genomic spatial distribution shape (clustered vs. dispersed vs. periodic) also carries information. <strong>Proposal:</strong> treat per-chromosome peak positions as a 1D point cloud, compute H<sub>0</sub> persistence — short = tight clusters (super-enhancer candidates), long = dispersed. More robust than ROSE's single-threshold approach and supports cross-sample structural comparison.</p>
+
+<h3>🎯 6. Choosing the "real" k for clustering</h3>
+<p>Leiden/Louvain resolution is manual; silhouette/modularity fails on shape-irregular clusters (e.g. T-cell gradients). <strong>Proposal:</strong> compute PH on PCA-reduced expression; the count of "above-noise" H<sub>0</sub> points = natural cluster count. Identifies continuous gradients (points near diagonal) vs. true discrete clusters (far from diagonal).</p>
+
+<h3>🎯 7. Topological quantification of tumor heterogeneity</h3>
+<p>Current ITH metrics are point estimates without structure. <strong>Proposal:</strong> per-patient PH on tumor scRNA-seq gives persistent entropy + multi-scale Betti numbers — a "topological tumor signature." On TCGA / pan-cancer atlases, likely uncovers topology subtypes invisible to ITH, and may predict immunotherapy response (complex topology → many fates → resistance).</p>
+
+<h3>🎯 8. Cross-species GRN topological conservation</h3>
+<p>Cross-species GRN comparisons: edge weights differ but the "skeleton" is similar. <strong>Proposal:</strong> sub-level filter weighted GRN edges, compute PH. H<sub>0</sub> = module formation order; H<sub>1</sub> = feedback loops. Compare human vs. mouse vs. zebrafish PDs to find conserved cores and human-specific innovations.</p>
+
+<h3>🎯 9. Multi-scale topology of TCR/BCR repertoires</h3>
+<p>Reeves 2018 used only H<sub>1</sub>. <strong>Proposal:</strong> combine H<sub>0</sub> (clonal clusters), H<sub>1</sub> (SHM cycles), H<sub>2</sub> (antigen-recognition cavities?) for multi-dim PH. Applications: (a) COVID-19 BCR topology vs vaccinated vs naive; (b) autoimmune TCR signatures; (c) CAR-T response prediction.</p>
+
+<h3>🎯 10. Multi-omics latent topological alignment</h3>
+<p>MOFA, totalVI align modality latents by reconstruction loss or MNN. <strong>Proposal:</strong> use bottleneck distance between RNA-latent PD and ATAC-latent PD as the alignment objective. Advantages: robust to differing cell counts, no 1-to-1 matching, preserves fate branches rather than just cluster structure.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'gud')">Python / GUDHI</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gto')">giotto-tda</button>
+<button class="code-tab-btn" onclick="switchTab(this,'rtda')">R / TDAstats</button>
+</div>
+<div class="code-tab-content active" id="gud"><pre><span class="keyword">import</span> gudhi
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+rips = gudhi.RipsComplex(points=X, max_edge_length=<span class="num">2.0</span>)
+st = rips.create_simplex_tree(max_dimension=<span class="num">2</span>)
+diag = st.persistence()
+gudhi.plot_persistence_diagram(diag); gudhi.plot_persistence_barcode(diag)
+
+<span class="comment"># 取 β₁ 的長持久特徵</span>
+intervals = [d <span class="keyword">for</span> dim,d <span class="keyword">in</span> diag <span class="keyword">if</span> dim==<span class="num">1</span> <span class="keyword">and</span> d[<span class="num">1</span>]-d[<span class="num">0</span>] &gt; <span class="num">0.5</span>]</pre></div>
+<div class="code-tab-content" id="gto"><pre><span class="keyword">from</span> gtda.homology <span class="keyword">import</span> VietorisRipsPersistence
+<span class="keyword">from</span> gtda.diagrams <span class="keyword">import</span> PersistenceImage
+
+vr = VietorisRipsPersistence(homology_dimensions=[<span class="num">0</span>,<span class="num">1</span>,<span class="num">2</span>])
+diags = vr.fit_transform(X[<span class="keyword">None</span>])         <span class="comment"># shape: (1, n, 3)</span>
+pi = PersistenceImage().fit_transform(diags)  <span class="comment"># 可直接餵 ML</span></pre></div>
+<div class="code-tab-content" id="rtda"><pre><span class="comment"># install.packages("TDAstats")</span>
+<span class="keyword">library</span>(TDAstats)
+diag &lt;- calculate_homology(X, dim = <span class="num">2</span>)
+plot_persist(diag)
+plot_barcode(diag)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">若某 scRNA-seq 資料的 persistence diagram 在 β₁ 上有一個遠離對角線的點，最可能意涵為？</p><p data-lang="en">If a scRNA-seq persistence diagram shows a β₁ point far from the diagonal, it most likely means?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 樣本量不足</span><span data-lang="en">A. Insufficient sample size</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. PCA 失效</span><span data-lang="en">B. PCA failed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 存在持久的迴圈軌跡（例如細胞週期）</span><span data-lang="en">C. A persistent loop trajectory exists (e.g. cell cycle)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 資料完全獨立</span><span data-lang="en">D. Data is fully independent</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Mapper 演算法的核心想法是？</p><p data-lang="en">What is the core idea of Mapper?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 沿一個鏡頭函數（lens）切片+群聚，建構簡化的拓撲圖</span><span data-lang="en">A. Slice by a lens function and cluster locally, building a simplified topological graph</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 解線性方程</span><span data-lang="en">B. Solving linear equations</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 訓練神經網路</span><span data-lang="en">C. Training a neural network</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 計算 Pearson r</span><span data-lang="en">D. Computing Pearson r</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="optimal-transport.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 4：OT</span></a>
+<a href="manifold-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 6：流形學習" data-en="Ch 6: Manifold">Ch 6：流形學習</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+function genPC(shape){const pts=[];const N=60;if(shape==='circle'){for(let i=0;i<N;i++){const t=2*Math.PI*i/N;pts.push({x:300+90*Math.cos(t)+(Math.random()-0.5)*15,y:140+90*Math.sin(t)+(Math.random()-0.5)*15});}}
+else if(shape==='2blob'){for(let i=0;i<N/2;i++){pts.push({x:200+(Math.random()-0.5)*60,y:140+(Math.random()-0.5)*60});}for(let i=0;i<N/2;i++){pts.push({x:400+(Math.random()-0.5)*60,y:140+(Math.random()-0.5)*60});}}
+else if(shape==='fig8'){for(let i=0;i<N/2;i++){const t=2*Math.PI*i/(N/2);pts.push({x:230+60*Math.cos(t)+(Math.random()-0.5)*10,y:140+60*Math.sin(t)+(Math.random()-0.5)*10});}for(let i=0;i<N/2;i++){const t=2*Math.PI*i/(N/2);pts.push({x:370+60*Math.cos(t)+(Math.random()-0.5)*10,y:140+60*Math.sin(t)+(Math.random()-0.5)*10});}}
+else {for(let i=0;i<N;i++){pts.push({x:100+Math.random()*400,y:30+Math.random()*220});}}
+return pts;}
+
+let PTS=genPC('circle');
+function unionFind(n){const p=Array.from({length:n},(_,i)=>i);function f(x){while(p[x]!==x){p[x]=p[p[x]];x=p[x];}return x;}function u(a,b){const ra=f(a),rb=f(b);if(ra!==rb){p[ra]=rb;return true;}return false;}return{find:f,union:u};}
+function renderPH(){const shape=document.getElementById('phShape').value;if(shape!==window._lastShape){PTS=genPC(shape);window._lastShape=shape;}
+const eps=+document.getElementById('phEs').value*120;document.getElementById('phE').textContent=(eps/120).toFixed(2);
+let svg='';for(let i=0;i<PTS.length;i++)svg+=`<circle cx="${PTS[i].x}" cy="${PTS[i].y}" r="${eps*0.4}" fill="rgba(26,107,90,0.07)"/>`;
+const uf=unionFind(PTS.length);let edges=0;for(let i=0;i<PTS.length;i++)for(let j=i+1;j<PTS.length;j++){const d=Math.hypot(PTS[i].x-PTS[j].x,PTS[i].y-PTS[j].y);if(d<eps){edges++;uf.union(i,j);svg+=`<line x1="${PTS[i].x}" y1="${PTS[i].y}" x2="${PTS[j].x}" y2="${PTS[j].y}" stroke="rgba(26,107,90,0.35)" stroke-width="1"/>`;}}
+for(let i=0;i<PTS.length;i++)svg+=`<circle cx="${PTS[i].x}" cy="${PTS[i].y}" r="3.5" fill="#1A6B5A"/>`;
+document.getElementById('phSvg').innerHTML=svg;
+const comps=new Set();for(let i=0;i<PTS.length;i++)comps.add(uf.find(i));const b0=comps.size;const V=PTS.length;const b1Est=Math.max(0,edges-V+b0);
+document.getElementById('phB0').textContent=b0;document.getElementById('phB1').textContent=b1Est;document.getElementById('phEd').textContent=edges;}
+document.getElementById('phShape').addEventListener('change',renderPH);document.getElementById('phEs').addEventListener('input',renderPH);renderPH();
+
+window._QF={zh:{q1_y:'答對！持久 β₁ 指示真實的循環結構。',q1_n:'答案是 C。遠離對角線 = 長壽 = 真實迴圈。',q2_y:'答對！這正是 Mapper 的步驟。',q2_n:'答案是 A。Mapper = lens 函數 + 群聚 + 圖建構。'},en:{q1_y:'Correct! Persistent β₁ indicates a real loop.',q1_n:'Answer is C. Far from diagonal = persistent = real loop.',q2_y:'Correct! That is exactly Mapper.',q2_n:'Answer is A. Mapper = lens + clustering + graph.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

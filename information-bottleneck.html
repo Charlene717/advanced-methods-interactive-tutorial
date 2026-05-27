@@ -1,0 +1,434 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Information Bottleneck — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html" class="active">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 21 / 26</div><h1 data-zh="資訊瓶頸 (Information Bottleneck)" data-en="Information Bottleneck">資訊瓶頸 (Information Bottleneck)</h1>
+<p class="subtitle" data-lang="zh">Tishby 在 1999 年提出的「最小充分統計量」原則——找到一個表徵 T，盡可能壓縮輸入 X，但保留與目標 Y 相關的訊息。今天它支配著可解釋表徵學習、scRNA-seq 整合與 scLLM 微調。</p>
+<p class="subtitle" data-lang="en">Tishby's 1999 "minimal sufficient statistic" principle — find a representation T that compresses X as much as possible while preserving information relevant to target Y. It now underpins interpretable representation learning, scRNA-seq integration, and scLLM fine-tuning.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="壓縮與保留之間的最佳折衷" data-en="The Compression–Prediction Trade-off">壓縮與保留之間的最佳折衷</h2>
+<div data-lang="zh"><p>Tishby, Pereira &amp; Bialek (1999) 提出資訊瓶頸 (Information Bottleneck, IB) 原則：學一個隨機表徵 T = f(X)，使得</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">L<sub>IB</sub> = I(X; T) − β · I(T; Y)</p>
+<p>最小化此目標等價於：T 對 X 「忘掉」越多越好（壓縮 I(X;T)↓），但對 Y 「保留」越多越好（預測 I(T;Y)↑）。係數 β 控制兩者權衡——β 小強調壓縮、β 大強調預測。</p>
+<p>幾何上，這在 (I(X;T), I(T;Y)) 平面定義一條「資訊瓶頸曲線」(information curve)：所有可行的 (壓縮、預測) 組合的 Pareto front。</p></div>
+<div data-lang="en"><p>Tishby, Pereira &amp; Bialek (1999) proposed the Information Bottleneck (IB) principle: learn a stochastic representation T = f(X) that minimizes</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">L<sub>IB</sub> = I(X; T) − β · I(T; Y)</p>
+<p>This trades off compression (forget X as much as possible — I(X;T)↓) against prediction (retain Y as much as possible — I(T;Y)↑). β controls the balance — small β favours compression, large β favours prediction.</p>
+<p>Geometrically, this traces the <strong>information curve</strong> in the (I(X;T), I(T;Y)) plane — the Pareto frontier of all feasible (compression, prediction) pairs.</p></div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🧬</div><h4 data-zh="最小充分統計量" data-en="Minimal sufficient statistic">最小充分統計量</h4><p data-lang="zh">IB 給出「統計學的最佳壓縮」——保留所有對 Y 有用的訊息，丟棄其他。</p><p data-lang="en">IB defines the statistically optimal compression — keeps everything useful for Y, discards the rest.</p></div>
+<div class="card"><div class="card-icon">⚖️</div><h4 data-zh="β 的調控" data-en="β tuning">β 的調控</h4><p data-lang="zh">β=0 → 常數編碼；β→∞ → 完整 X（無壓縮）。中間有「相變」現象，T 維度跳階增加。</p><p data-lang="en">β=0 → constant code; β→∞ → full X (no compression). Phase transitions appear at critical β values where T's effective dimensionality jumps.</p></div>
+<div class="card"><div class="card-icon">🔬</div><h4 data-zh="深度學習詮釋" data-en="Deep-learning view">深度學習詮釋</h4><p data-lang="zh">Tishby &amp; Schwartz-Ziv (2017) 主張 SGD 隱含執行 IB——先擬合再壓縮。雖有爭議，但啟發 VIB 等實用方法。</p><p data-lang="en">Tishby &amp; Schwartz-Ziv (2017) argued SGD implicitly performs IB — fit-then-compress. Controversial, but inspired VIB and related practical methods.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 Blahut-Arimoto 到 Variational IB" data-en="From Blahut-Arimoto to Variational IB">從經典到深度的演算法家族</h2>
+<div data-lang="zh">
+<h3>① Classical IB（離散 X, Y）</h3>
+<p>當 X、Y 為離散變量時，IB 可由類似 Blahut-Arimoto 的迭代解出：交替更新 p(t|x)、p(t)、p(y|t)，類似 EM。Tishby 原始 1999 paper 給出收斂保證。缺點：需要 p(X,Y) 已知或良好估計，無法擴展到高維連續資料。</p>
+<h3>② Variational Information Bottleneck (VIB)</h3>
+<p>Alemi et al. (2017, ICLR) 把 IB 變成可微目標：</p>
+<p style="text-align:center;font-family:Georgia,serif;">L<sub>VIB</sub> = E<sub>q(t|x)</sub>[−log p(y|t)] + β · KL(q(t|x) ‖ r(t))</p>
+<p>其中 q(t|x) 為編碼器（如 NN 輸出 μ, σ 的 Gaussian），p(y|t) 為解碼器，r(t) 為先驗（通常 N(0,I)）。第一項是 cross-entropy（−I(T;Y) 的上界），第二項是 KL（I(X;T) 的上界）。整個架構長得像 VAE，但條件是 Y 不是 X。</p>
+<h3>③ IB-VAE / Conditional IB</h3>
+<p>當 Y 不存在（無監督）時，可把 IB 變成自我預測（X 預測自身的部分）；或加入額外 condition（細胞型別、batch）做 Conditional IB——用於 scRNA-seq batch removal。</p>
+<h3>④ Recursive / Sloppy / Sparse IB</h3>
+<p>Recursive IB 把 T 進一步分層；Sloppy IB 處理 ill-conditioned 情境；Sparse IB 把 KL 換成 L1，得到「sparse code」。</p>
+</div>
+<div data-lang="en">
+<h3>① Classical IB (discrete X, Y)</h3>
+<p>For discrete variables, IB is solved by Blahut-Arimoto-like iteration: alternately update p(t|x), p(t), p(y|t), similar to EM. Tishby's 1999 paper guarantees convergence. Limitation: requires p(X,Y) known or well estimated — doesn't scale to high-dim continuous data.</p>
+<h3>② Variational Information Bottleneck (VIB)</h3>
+<p>Alemi et al. (2017, ICLR) made IB differentiable:</p>
+<p style="text-align:center;font-family:Georgia,serif;">L<sub>VIB</sub> = E<sub>q(t|x)</sub>[−log p(y|t)] + β · KL(q(t|x) ‖ r(t))</p>
+<p>where q(t|x) is the encoder (e.g. NN outputting Gaussian μ, σ), p(y|t) the decoder, and r(t) a prior (usually N(0,I)). The first term upper-bounds −I(T;Y); the second upper-bounds I(X;T). Architecturally similar to a VAE but conditioned on Y, not X.</p>
+<h3>③ IB-VAE / Conditional IB</h3>
+<p>Without explicit Y (unsupervised), replace Y by self-prediction (predicting masked X) or add a side variable (cell type, batch) for Conditional IB — used in scRNA-seq batch removal.</p>
+<h3>④ Recursive / Sloppy / Sparse IB</h3>
+<p>Recursive IB stacks IB layers; Sloppy IB handles ill-conditioning; Sparse IB swaps KL for L1, yielding sparse codes.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>數學連結：</strong>VAE = IB 的特例（取 Y = X、β = 1）。β-VAE (Higgins 2017) 就是 β ≠ 1 的 IB-VAE，β &gt; 1 鼓勵 disentanglement。所以 IB 是 VAE 家族的「母原理」。</div>
+<div data-lang="en"><strong>Math link:</strong> VAE = IB special case (Y = X, β = 1). β-VAE (Higgins 2017) is IB-VAE with β ≠ 1; β &gt; 1 encourages disentanglement. IB is the "mother principle" of the VAE family.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Information Plane：β 改變壓縮–預測權衡" data-en="The Information Plane: β Sweeps Compression vs Prediction">Information Plane：β 改變壓縮–預測權衡</h2>
+<div data-lang="zh"><p>下方圖示 (I(X;T), I(T;Y)) 平面上，理論最佳曲線（resolved by classical IB on a toy joint distribution）。拖動 β 滑桿觀察「目前操作點」在曲線上的位置；β 小停在左下（高壓縮、低預測），β 大跑到右上（無壓縮、完美預測）。中間相變點 (★) 對應「新增一個有效維度」的階段轉移。</p></div>
+<div data-lang="en"><p>The plot below shows the (I(X;T), I(T;Y)) plane with the theoretical optimal curve (resolved by classical IB on a toy joint distribution). Drag β to see the current operating point on the curve: small β → lower-left (heavy compression, low prediction); large β → upper-right (no compression, perfect prediction). Phase transition points (★) mark where a new effective dimension activates.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label>β <span id="vBeta">1.0</span></label><input type="range" id="sBeta" min="0.01" max="5" value="1" step="0.01"></div>
+<div class="chart-container" style="height:320px;"><canvas id="ibChart"></canvas></div>
+<div class="card-grid cols-3" style="margin-top:14px;">
+<div class="card"><h4>I(X;T)</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vIxt">—</p><p data-lang="zh" style="font-size:.8rem;">壓縮成本 (bits)</p><p data-lang="en" style="font-size:.8rem;">compression cost (bits)</p></div>
+<div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>I(T;Y)</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="vIty">—</p><p data-lang="zh" style="font-size:.8rem;">預測能力 (bits)</p><p data-lang="en" style="font-size:.8rem;">predictive info (bits)</p></div>
+<div class="card"><h4>L<sub>IB</sub></h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vLoss">—</p><p data-lang="zh" style="font-size:.8rem;">當前損失</p><p data-lang="en" style="font-size:.8rem;">current loss</p></div>
+</div>
+<div id="ibInterp" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="如何選 β？" data-en="How to pick β?">如何選 β？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>跨 batch 整合</strong>——希望 T 不含 batch info → β 小，壓縮主導。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>下游分類（如 cell type）</strong>——預測效能優先 → β 大。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>可解釋 / disentanglement</strong>——β 略大於 1（β-VAE 配方），但會犧牲重建。</div></div>
+<div class="dt-node"><span class="dt-q">情境4:</span><div><strong>隱私保護</strong>——β 越小，T 含的個人資訊越少（k-anonymity 連結）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Cross-batch integration</strong> — want T free of batch info → small β, compression dominates.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Downstream classification (e.g. cell type)</strong> — prediction priority → large β.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Interpretability / disentanglement</strong> — β slightly &gt; 1 (β-VAE recipe), at the cost of reconstruction fidelity.</div></div>
+<div class="dt-node"><span class="dt-q">Case 4:</span><div><strong>Privacy</strong> — smaller β → less personal info in T (k-anonymity-like guarantee).</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="IB 在單細胞與多體學的應用" data-en="IB in Single-cell and Multi-omics">IB 在單細胞與多體學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="scVI + IB batch removal" data-en="scVI + IB batch removal">scVI + IB batch removal</h4>
+<p data-lang="zh">Lopez et al. (2018, Nature Methods) 的 scVI 是 IB-VAE 的單細胞版本——把 batch 當 condition、cell type 當 Y，β 壓低使 T 不含 batch info，但保留 cell type 訊號。是 scRNA-seq 整合的 gold standard 之一。</p>
+<p data-lang="en">Lopez et al. (2018, Nat Methods) scVI is the single-cell version of IB-VAE — batch as a condition, cell type as Y, small β so T loses batch info while retaining cell-type signal. A gold-standard scRNA-seq integration method.</p></div>
+
+<div class="card"><h4 data-zh="IB-based marker selection" data-en="IB-based marker selection">IB-based marker selection</h4>
+<p data-lang="zh">mRMR (minimum-redundancy-maximum-relevance, Peng 2005) 可重新詮釋為 IB 的離散近似——找一組基因 T ⊂ X 使 I(T; cell_type) 最大、I(T; X\T) 最小。</p>
+<p data-lang="en">mRMR (Peng 2005) is an IB-flavoured discrete approximation — find genes T ⊂ X maximizing I(T; cell_type) while minimizing I(T; X\T).</p></div>
+
+<div class="card"><h4 data-zh="Brain decoding (視覺神經科學)" data-en="Brain decoding (visual neuroscience)">Brain decoding (視覺神經科學)</h4>
+<p data-lang="zh">Strouse &amp; Schwab (2017) 用 IB 從 fMRI 解碼受試者看到的視覺刺激類別——T 為 minimal sufficient neural code。比 raw SVM 在 generalization 上更穩。</p>
+<p data-lang="en">Strouse &amp; Schwab (2017) used IB to decode visual stimuli from fMRI — T as the minimal sufficient neural code, generalizing better than raw SVM.</p></div>
+
+<div class="card"><h4 data-zh="DNA motif discovery" data-en="DNA motif discovery">DNA motif discovery</h4>
+<p data-lang="zh">Slonim et al. (2005, PNAS) 用 IB 把 promoter sequence 壓縮到「足以預測基因表現」的最小 motif 集合——比 MEME 等做出更精簡且生物上有意義的 motif。</p>
+<p data-lang="en">Slonim et al. (2005, PNAS) used IB to compress promoter sequences to the minimal motif set sufficient to predict expression — yielding more parsimonious and biologically meaningful motifs than MEME.</p></div>
+
+<div class="card"><h4 data-zh="scRNA-seq imputation" data-en="scRNA-seq imputation">scRNA-seq imputation</h4>
+<p data-lang="zh">DCA (Eraslan 2019)、scVI 與後續 imputation 方法的 latent space 本質上是 IB-style 表徵——壓縮掉 dropout 噪音，保留真實表現訊號。</p>
+<p data-lang="en">DCA (Eraslan 2019), scVI, and successors use IB-style latent spaces — compress out dropout noise while preserving true expression signal.</p></div>
+
+<div class="card"><h4 data-zh="Cross-modal IB (RNA → protein)" data-en="Cross-modal IB (RNA → protein)">Cross-modal IB</h4>
+<p data-lang="zh">CITE-seq / 10x Multiome 整合：T 編碼 RNA，預測對應 surface protein 表現。β 控制「跨模態映射」的緊密度，太大反而過擬合單細胞噪音。</p>
+<p data-lang="en">CITE-seq / 10x Multiome integration: T encodes RNA, predicts surface protein levels. β controls cross-modal mapping tightness; too large over-fits single-cell noise.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="陷阱、估計、相變" data-en="Pitfalls, Estimation, Phase Transitions">陷阱、估計與相變</h2>
+
+<div data-lang="zh">
+<h3>① 互資訊估計是難題</h3>
+<p>I(X;T) 在高維連續資料估計極不穩定。VIB 用 KL 上界繞過——但這只是上界、不是真值。若想得到「真實」的資訊曲線，需 MINE (Belghazi 2018)、InfoNCE 下界、或 Donsker-Varadhan dual。實務上：把 KL 視為 surrogate 即可，不必執著於 absolute bits。</p>
+
+<h3>② 相變 (Phase transitions)</h3>
+<p>Wu et al. (2019, ICLR) 嚴格證明：在 IB-VAE 中，當 β 跨越某些 critical 值時，T 的「有效維度」會跳階——這是 disentanglement 與「latent collapse」（部分維度突然失活）的根本原因。實務上，當訓練曲線突然不穩，往往是 β 太接近 critical point。</p>
+
+<h3>③ Information plane controversy</h3>
+<p>Tishby &amp; Schwartz-Ziv (2017) 在 MNIST + tanh activation 上看到「擬合 → 壓縮」兩階段。Saxe et al. (2018, ICLR) 用 ReLU 重做後反駁——壓縮並非 SGD 的普遍行為，而依賴 activation 飽和。今日共識：information plane 是有趣的觀察視角，但「SGD = IB」仍未被嚴格證實。</p>
+
+<h3>④ Open IB & General IB</h3>
+<p>對連續 Y，標準 IB 退化（I(T;Y) 可能無界）。Achille &amp; Soatto (2018) 提出 Information Dropout / Bottleneck 改進；Yu &amp; Yang (2023) 提出 Open IB 對「未見類別」也能 well-defined。</p>
+
+<h3>⑤ Mutual Information Neural Estimation</h3>
+<p>結合 IB 與 MINE：用 MINE 估 I(T;Y)、用 KL 估 I(X;T) → 直接優化 IB 不再透過 VAE-style reparameterization。在 high-dim image 與 sequence 任務上更穩。</p>
+
+<h3>⑥ IB 與 SDPI / Fano 不等式</h3>
+<p>IB 的可行區域受 SDPI (Strong Data Processing Inequality) 限制：I(T;Y) ≤ I(X;Y)。所以 IB 不會「無中生有」——預測上限受真實 X–Y 依賴決定。資訊曲線的「右上界」就是 I(X;Y)。</p>
+
+<h3>⑦ Conditional IB 的精確形式</h3>
+<p>對 batch removal 等任務，目標是 min I(X;T) − β·I(T;Y) + γ·I(T;B)，其中 B 為 batch label。實作上把第三項換成 adversarial loss（讓 T 騙過 batch classifier），即 scVI 的核心。</p>
+
+<h3>⑧ IB vs Sufficient Statistic</h3>
+<p>古典統計：sufficient statistic T 滿足 I(T;Y) = I(X;Y)。IB 是其「鬆綁」版本——允許略小於 I(X;Y) 換取壓縮。Achille &amp; Soatto 證明：在 deep learning 中，「invariant」表徵（不受 nuisance 影響）必然在 IB 曲線上的特定點。</p>
+</div>
+
+<div data-lang="en">
+<h3>① MI estimation is hard</h3>
+<p>I(X;T) is unstable to estimate in high dims. VIB sidesteps via the KL upper bound — but it's only a bound, not the truth. For "real" info curves use MINE (Belghazi 2018), InfoNCE lower bound, or Donsker-Varadhan dual. In practice, treat KL as a surrogate; don't fixate on absolute bits.</p>
+
+<h3>② Phase transitions</h3>
+<p>Wu et al. (2019, ICLR) proved rigorously that in IB-VAE, T's "effective dimension" jumps at critical β values — the root cause of disentanglement and latent collapse. If training becomes unstable, β is likely near a critical point.</p>
+
+<h3>③ Information-plane controversy</h3>
+<p>Tishby &amp; Schwartz-Ziv (2017) observed a "fit-then-compress" pattern with tanh on MNIST. Saxe et al. (2018, ICLR) refuted this with ReLU — compression isn't universal in SGD; it depends on activation saturation. Today's consensus: information plane is an interesting lens, but "SGD = IB" remains unproven.</p>
+
+<h3>④ Open IB &amp; General IB</h3>
+<p>For continuous Y, standard IB degenerates (I(T;Y) can be unbounded). Achille &amp; Soatto (2018) proposed Information Dropout / Bottleneck; Yu &amp; Yang (2023) proposed Open IB for well-definedness on unseen classes.</p>
+
+<h3>⑤ Mutual-Information Neural Estimation</h3>
+<p>Combine IB with MINE: estimate I(T;Y) via MINE and I(X;T) via KL → optimize IB directly without VAE-style reparam. More stable on high-dim images and sequences.</p>
+
+<h3>⑥ IB and SDPI / Fano's inequality</h3>
+<p>IB's feasible region is bounded by SDPI: I(T;Y) ≤ I(X;Y). IB doesn't create information — the prediction ceiling is the true X–Y dependence. The right-upper bound of the info curve is exactly I(X;Y).</p>
+
+<h3>⑦ Conditional IB in detail</h3>
+<p>For batch removal: min I(X;T) − β·I(T;Y) + γ·I(T;B), B = batch label. In practice, the third term becomes an adversarial loss (T fools a batch classifier) — the core of scVI.</p>
+
+<h3>⑧ IB vs sufficient statistic</h3>
+<p>Classical stats: sufficient T satisfies I(T;Y) = I(X;Y). IB is a relaxation — slightly less than I(X;Y) in exchange for compression. Achille &amp; Soatto showed that "invariant" deep representations (free of nuisance variables) sit on specific IB-curve points.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="IB 還能改良哪些生物資訊任務？" data-en="Where else could IB improve biology?">IB 還能改良哪些生物資訊任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. scGPT / Geneformer 加 IB 正則化</h3>
+<p>現有 scLLM latent 過度高維（512–1024）、難解釋。加入 IB 正則化（VIB head）可強制 latent 「對下游任務」最小且足夠——預期更可解釋、更 robust 於 batch、計算下游更便宜。</p>
+
+<h3>🎯 2. 藥物效應 latent disentanglement</h3>
+<p>Perturb-seq 訓練時把「擾動類型」當 Y，IB 學出「擾動相關」 vs 「基線變異」分離的 latent。可用於 perturbation transfer learning（在 K562 學的擾動效應，預測 HEK293 上的反應）。</p>
+
+<h3>🎯 3. Rare disease 表徵</h3>
+<p>大型 atlas 加 IB（Y = disease label，β 小）→ 可學「在病人中保持與健康細胞最大相似度」的 latent，凸顯真正的疾病訊號。對 N-of-1 罕病診斷有潛力。</p>
+
+<h3>🎯 4. 隱私保護表徵學習</h3>
+<p>對病人多體學資料學 latent，β 設小到 mutual info I(T; patient_id) 接近 0，但保留 I(T; phenotype)。即 differential privacy 的 IB 版本（Asoodeh 2020）。</p>
+
+<h3>🎯 5. Multi-task / Multi-Y IB</h3>
+<p>同時預測多個 Y（cell type、disease、batch）的 IB——分配不同 β_k 給每個 Y_k。可學「對所有下游任務最佳壓縮」的 universal representation。</p>
+
+<h3>🎯 6. IB 用於 Spatial transcriptomics</h3>
+<p>把 spatial coordinate 當 Y，學「保留空間結構但壓縮細胞 idiosyncrasy」的 latent。預期對 niche 與 trajectory 同時偵測有助。</p>
+
+<h3>🎯 7. IB-based GRN 簡化</h3>
+<p>傳統 GRN 過度連結。對每個 TF–target 邊用 IB 評估「條件 mutual info 是否大於壓縮成本」——保留邊只在「真的傳訊息」時。預期得到更稀疏、可解釋的網路。</p>
+
+<h3>🎯 8. Cross-species IB</h3>
+<p>把「物種 label」當 nuisance、cell type 當 Y → 學「跨物種保守」的 cell-type latent。用於 evolutionary atlas 比對。</p>
+
+<h3>🎯 9. 細胞軌跡 + IB</h3>
+<p>把 pseudotime 當 Y，IB 學「對 pseudotime 必要」的最小基因集——這就是「動態 marker discovery」。比 tradeSeq GAM 更聚焦於「資訊瓶頸」基因。</p>
+
+<h3>🎯 10. IB for Foundation-model evaluation</h3>
+<p>給定 scGPT 與 Geneformer，計算各自 latent 與 cell type 的 I(T;Y) 在固定 I(X;T) 下誰高？這給 foundation-model 比較的客觀指標。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. scGPT / Geneformer + IB regularization</h3>
+<p>Current scLLM latents are oversized (512–1024) and hard to interpret. A VIB head forces the latent to be minimal yet sufficient for downstream tasks — more interpretable, more batch-robust, cheaper downstream.</p>
+
+<h3>🎯 2. Drug-effect latent disentanglement</h3>
+<p>Train Perturb-seq with perturbation type as Y, IB learns a latent that separates perturbation-related signal from baseline variability — useful for perturbation transfer learning (K562 → HEK293).</p>
+
+<h3>🎯 3. Rare-disease representations</h3>
+<p>Atlas + IB (Y = disease label, small β) → latent that maximally resembles healthy cells while preserving disease signal. Promising for N-of-1 rare-disease diagnostics.</p>
+
+<h3>🎯 4. Privacy-preserving representations</h3>
+<p>For patient multi-omics, set β small so I(T; patient_id) ≈ 0 while I(T; phenotype) stays high. IB version of differential privacy (Asoodeh 2020).</p>
+
+<h3>🎯 5. Multi-task / multi-Y IB</h3>
+<p>Predict multiple Y (cell type, disease, batch) with per-Y β_k. Learns a universal representation optimally compressed for all downstream tasks.</p>
+
+<h3>🎯 6. IB for spatial transcriptomics</h3>
+<p>Treat spatial coordinates as Y — learn a latent preserving spatial structure while compressing cell idiosyncrasy. Useful for joint niche + trajectory detection.</p>
+
+<h3>🎯 7. IB-based GRN simplification</h3>
+<p>Classical GRNs are too dense. For each TF–target edge, ask whether conditional MI exceeds compression cost — retain edge only if it really conveys information. Yields sparser, interpretable networks.</p>
+
+<h3>🎯 8. Cross-species IB</h3>
+<p>Species label as nuisance, cell type as Y → cross-species conserved cell-type latents. Useful for evolutionary atlas alignment.</p>
+
+<h3>🎯 9. Trajectory + IB</h3>
+<p>Pseudotime as Y, IB learns the minimal gene set required for the trajectory — "dynamic marker discovery." More focused on bottleneck genes than tradeSeq GAM.</p>
+
+<h3>🎯 10. IB for foundation-model evaluation</h3>
+<p>Given scGPT and Geneformer, at fixed I(X;T), whose I(T;Y) is higher for cell type prediction? Provides an objective metric for foundation-model comparison.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'tfp')">TF Probability VIB</button>
+<button class="code-tab-btn" onclick="switchTab(this,'pt')">PyTorch VIB</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cls')">Classical IB</button>
+</div>
+<div class="code-tab-content active" id="tfp"><pre><span class="keyword">import</span> tensorflow <span class="keyword">as</span> tf
+<span class="keyword">import</span> tensorflow_probability <span class="keyword">as</span> tfp
+tfd = tfp.distributions
+
+<span class="comment"># Encoder: x -> (mu, sigma)</span>
+encoder = tf.keras.Sequential([
+    tf.keras.layers.Dense(<span class="num">256</span>, activation=<span class="str">'relu'</span>),
+    tf.keras.layers.Dense(<span class="num">2</span> * D)])
+
+<span class="keyword">def</span> vib_loss(x, y, beta=<span class="num">0.01</span>):
+    h = encoder(x)
+    mu, log_sigma = tf.split(h, <span class="num">2</span>, axis=-<span class="num">1</span>)
+    q = tfd.Normal(mu, tf.exp(log_sigma))
+    t = q.sample()
+    <span class="comment"># Prior r(t) = N(0, I)</span>
+    r = tfd.Normal(<span class="num">0.</span>, <span class="num">1.</span>)
+    kl = tf.reduce_sum(tfd.kl_divergence(q, r), axis=-<span class="num">1</span>)
+    logits = classifier(t)
+    ce = tf.nn.sparse_softmax_cross_entropy_with_logits(y, logits)
+    <span class="keyword">return</span> tf.reduce_mean(ce + beta * kl)</pre></div>
+
+<div class="code-tab-content" id="pt"><pre><span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+<span class="keyword">import</span> torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">class</span> VIB(nn.Module):
+    <span class="keyword">def</span> __init__(self, d_in, d_z, n_class):
+        super().__init__()
+        self.enc = nn.Sequential(nn.Linear(d_in, <span class="num">256</span>), nn.ReLU(),
+                                  nn.Linear(<span class="num">256</span>, <span class="num">2</span>*d_z))
+        self.cls = nn.Linear(d_z, n_class)
+        self.d_z = d_z
+    <span class="keyword">def</span> forward(self, x):
+        h = self.enc(x)
+        mu, logvar = h[:, :self.d_z], h[:, self.d_z:]
+        std = (<span class="num">0.5</span>*logvar).exp()
+        z = mu + std * torch.randn_like(std)
+        <span class="keyword">return</span> self.cls(z), mu, logvar
+
+<span class="keyword">def</span> vib_loss(logits, y, mu, logvar, beta=<span class="num">1e-2</span>):
+    ce = F.cross_entropy(logits, y)
+    kl = -<span class="num">0.5</span> * (<span class="num">1</span> + logvar - mu.pow(<span class="num">2</span>) - logvar.exp()).sum(-<span class="num">1</span>).mean()
+    <span class="keyword">return</span> ce + beta * kl</pre></div>
+
+<div class="code-tab-content" id="cls"><pre><span class="comment"># Classical (discrete) IB via Blahut-Arimoto-like updates</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> classical_ib(p_xy, n_T, beta, n_iter=<span class="num">200</span>):
+    nx, ny = p_xy.shape
+    p_x  = p_xy.sum(<span class="num">1</span>); p_y_x = p_xy / p_x[:, <span class="keyword">None</span>]
+    p_t_x = np.random.rand(nx, n_T); p_t_x /= p_t_x.sum(<span class="num">1</span>, keepdims=<span class="keyword">True</span>)
+    <span class="keyword">for</span> _ <span class="keyword">in</span> range(n_iter):
+        p_t   = p_x @ p_t_x
+        p_y_t = (p_t_x.T * p_x) @ p_y_x / (p_t[:, <span class="keyword">None</span>] + <span class="num">1e-12</span>)
+        kl    = (p_y_x[:, <span class="keyword">None</span>, :] *
+                 np.log((p_y_x[:, <span class="keyword">None</span>, :] + <span class="num">1e-12</span>) /
+                        (p_y_t[<span class="keyword">None</span>, :, :] + <span class="num">1e-12</span>))).sum(-<span class="num">1</span>)
+        p_t_x = p_t[<span class="keyword">None</span>, :] * np.exp(-beta * kl)
+        p_t_x /= p_t_x.sum(<span class="num">1</span>, keepdims=<span class="keyword">True</span>)
+    <span class="keyword">return</span> p_t_x, p_t, p_y_t</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">資訊瓶頸目標 L = I(X;T) − β·I(T;Y) 中，β 增大會發生什麼？</p><p data-lang="en">In L = I(X;T) − β·I(T;Y), what happens as β grows?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 壓縮主導，T 變成常數</span><span data-lang="en">A. Compression dominates; T becomes constant</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 預測主導，T 越接近完整 X</span><span data-lang="en">B. Prediction dominates; T approaches full X</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. T 與 Y 變獨立</span><span data-lang="en">C. T becomes independent of Y</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 無論 β 結果都不變</span><span data-lang="en">D. β has no effect on the solution</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">VIB (Alemi 2017) 中，KL(q(t|x) ‖ r(t)) 起到什麼作用？</p><p data-lang="en">In VIB (Alemi 2017), what role does KL(q(t|x) ‖ r(t)) play?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 估計 I(T;Y) 的下界</span><span data-lang="en">A. Lower-bounds I(T;Y)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 標準化梯度</span><span data-lang="en">B. Normalizes gradients</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 上界 I(X;T) 的壓縮項</span><span data-lang="en">C. Upper-bounds I(X;T), serving as the compression term</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 取代 cross-entropy 損失</span><span data-lang="en">D. Replaces cross-entropy loss</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">β-VAE (Higgins 2017) 與 IB 的關係為何？</p><p data-lang="en">What's the relationship between β-VAE (Higgins 2017) and IB?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. β-VAE 是 IB 的特例（Y = X）</span><span data-lang="en">A. β-VAE is a special case of IB (Y = X)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 兩者完全無關</span><span data-lang="en">B. Completely unrelated</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. β-VAE 取代 IB 用在離散資料</span><span data-lang="en">C. β-VAE replaces IB for discrete data</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. β-VAE 只用於 GAN</span><span data-lang="en">D. β-VAE is for GANs only</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="active-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 20：主動學習" data-en="Ch 20: Active Learning">Ch 20：主動學習</span></a>
+<a href="tensor-decomposition.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 22：張量分解" data-en="Ch 22: Tensor Decomposition">Ch 22：張量分解</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Information Plane =====
+// Theoretical IB curve via toy joint p(X,Y): 8 X-bins, 4 Y-classes
+// Use a parametric Pareto frontier approximation: I(T;Y) = I_max * (1 - exp(-I(X;T)/k))
+const I_XY = 1.8;          // bits, I(X;Y) ceiling
+const k    = 1.0;          // curvature scale
+function curvePoint(beta){
+  // Closed-form-ish: operating point depends on beta via dI/dI_x = 1/beta on curve
+  // I(T;Y) = I_max * (1 - exp(-Ixt/k)); slope = (I_max/k) * exp(-Ixt/k) = 1/beta
+  // => Ixt = k * ln(I_max * beta / k); clamp to [0, log2(8)]
+  const Ixt_raw = k * Math.log(I_XY * beta / k);
+  const Ixt = Math.max(0, Math.min(3, Ixt_raw));
+  const Ity = I_XY * (1 - Math.exp(-Ixt / k));
+  return {Ixt, Ity};
+}
+// Pre-compute curve
+const curve = [];
+for(let i=0;i<=120;i++){
+  const Ixt = i/40;
+  const Ity = I_XY * (1 - Math.exp(-Ixt / k));
+  curve.push({x: Ixt, y: Ity});
+}
+// Phase-transition markers (toy)
+const phases = [{x:0.25,y:I_XY*(1-Math.exp(-0.25))},{x:0.9,y:I_XY*(1-Math.exp(-0.9))},{x:1.8,y:I_XY*(1-Math.exp(-1.8))}];
+
+const ibChart = new Chart(document.getElementById('ibChart'),{
+  type:'scatter',
+  data:{datasets:[
+    {label:'IB curve',data:curve,showLine:true,borderColor:'#1A6B5A',backgroundColor:'rgba(26,107,90,0.1)',pointRadius:0,borderWidth:2,fill:true},
+    {label:'Phase transition',data:phases,backgroundColor:'#D4A03C',borderColor:'#D4A03C',pointRadius:7,pointStyle:'star'},
+    {label:'Operating point',data:[{x:0,y:0}],backgroundColor:'#C83C3C',borderColor:'#C83C3C',pointRadius:10}
+  ]},
+  options:{responsive:true,maintainAspectRatio:false,animation:false,
+    plugins:{legend:{display:true,labels:{boxWidth:12}}},
+    scales:{
+      x:{title:{display:true,text:'I(X;T)  — compression cost (bits)'},min:0,max:3},
+      y:{title:{display:true,text:'I(T;Y)  — predictive info (bits)'},min:0,max:2}
+    }
+  }
+});
+
+function ibUpdate(){
+  const beta = +document.getElementById('sBeta').value;
+  document.getElementById('vBeta').textContent = beta.toFixed(2);
+  const p = curvePoint(beta);
+  ibChart.data.datasets[2].data = [{x: p.Ixt, y: p.Ity}];
+  ibChart.update('none');
+  document.getElementById('vIxt').textContent = p.Ixt.toFixed(2);
+  document.getElementById('vIty').textContent = p.Ity.toFixed(2);
+  const loss = p.Ixt - beta * p.Ity;
+  document.getElementById('vLoss').textContent = loss.toFixed(2);
+  const L = I18n.get();
+  let msg;
+  if(beta < 0.3) msg = L==='zh'?'β 很小 → 壓縮主導。T 幾乎不含 X 訊息，預測能力低（適合 batch removal / 隱私）。':'Very small β → compression dominates. T retains little of X, low prediction (useful for batch removal / privacy).';
+  else if(beta < 1.5) msg = L==='zh'?'β 適中 → 操作點在曲線「彎處」。經典 β-VAE / disentanglement 範圍。':'Moderate β → operating at the curve elbow. The classic β-VAE / disentanglement regime.';
+  else msg = L==='zh'?'β 較大 → 預測主導。T 越來越像完整 X，幾乎無壓縮（適合純分類）。':'Large β → prediction dominates. T approaches full X with little compression (good for pure classification).';
+  document.getElementById('ibInterp').innerHTML = msg;
+}
+document.getElementById('sBeta').addEventListener('input', ibUpdate);
+document.addEventListener('langchange', ibUpdate);
+ibUpdate();
+
+window._QF={zh:{
+q1_y:'答對！β 增大時，−β·I(T;Y) 被加重 → 目標傾向 I(T;Y) 最大（T 越像 X）。',
+q1_n:'答案是 B。β 增大時 −β·I(T;Y) 變主導，T 越靠近完整 X、預測 Y 越好。',
+q2_y:'答對！KL 為 I(X;T) 的 tractable 上界，正是 IB 的壓縮項。',
+q2_n:'答案是 C。VIB 用 KL(q(t|x)‖r(t)) 上界 I(X;T)，作為壓縮 cost。',
+q3_y:'答對！β-VAE 取 Y = X 即得 IB-VAE 的純重建版本。',
+q3_n:'答案是 A。β-VAE 對應 IB 的「自監督」特例 Y = X。'
+},en:{
+q1_y:'Correct! As β grows, −β·I(T;Y) weighs more → solution maximizes I(T;Y); T approaches full X.',
+q1_n:'Answer is B. Larger β → −β·I(T;Y) dominates; T converges to X, predicts Y best.',
+q2_y:'Correct! KL is a tractable upper bound for I(X;T), serving as the IB compression term.',
+q2_n:'Answer is C. VIB uses KL(q(t|x)‖r(t)) as an upper bound on I(X;T).',
+q3_y:'Correct! β-VAE corresponds to IB with Y = X — the self-supervised special case.',
+q3_n:'Answer is A. β-VAE is IB with Y = X (self-prediction).'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

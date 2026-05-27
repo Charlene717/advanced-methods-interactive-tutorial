@@ -1,0 +1,538 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Change-point Detection — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html" class="active">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 45 / 50</div><h1 data-zh="變點偵測 (Change-point Detection)" data-en="Change-point Detection">變點偵測 (Change-point Detection)</h1>
+<p class="subtitle" data-lang="zh">時間序列裡突然「均值跳一階」、「方差爆掉」或「整個分布變了」的位置在哪？從基因組 CNV breakpoint、ChIP-seq 區域邊界、藥物治療 onset，到 ICU 病程斷點——變點偵測是把連續觀測切成不同 regime 的核心工具。</p>
+<p class="subtitle" data-lang="en">Where does a time series suddenly shift in mean, variance, or distribution? From CNV breakpoints to ChIP-seq domain boundaries, drug-onset detection, and ICU disease-stage shifts — change-point detection is the core tool for slicing continuous data into distinct regimes.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="什麼是變點？" data-en="What is a Change-point?">什麼是變點？</h2>
+<div data-lang="zh">
+<p><strong>定義：</strong>給定時間序列 y₁, y₂, …, y_T，<strong>變點</strong> τ 是滿足「y_{1:τ} 的分布 ≠ y_{τ+1:T} 的分布」的位置。最常見的差異類型：</p>
+<ul>
+<li><strong>均值變點 (mean shift):</strong> μ₁ → μ₂，方差不變——例如基因組 segment 的 log2 ratio 從 0 跳到 +0.5。</li>
+<li><strong>方差變點 (variance shift):</strong> σ₁² → σ₂²，均值不變——例如治療後生理訊號雜訊驟增。</li>
+<li><strong>分布變點 (distribution shift):</strong> 整個分布族都換——非參數方法（如 E-Divisive）擅長處理。</li>
+<li><strong>趨勢變點 (trend break):</strong> 斜率變化——疾病進程從緩慢到急劇惡化。</li>
+</ul>
+<p><strong>Offline vs Online：</strong></p>
+<ul>
+<li><strong>Offline (batch):</strong> 拿到完整序列後找全部變點——典型如 CNV 分析、回溯研究。</li>
+<li><strong>Online (streaming):</strong> 邊接收邊偵測，盡早 alarm——典型如 ICU 監護、wearable 即時警報。</li>
+</ul>
+<p><strong>Single vs Multiple：</strong>單變點是經典統計（Page 1954, CUSUM），多變點則是 NP-hard 在無剪枝下，需要 binary segmentation、PELT、dynamic programming 等技巧。</p>
+</div>
+<div data-lang="en">
+<p><strong>Definition:</strong> Given a series y₁, y₂, …, y_T, a <strong>change-point</strong> τ is a location where the distribution of y_{1:τ} differs from y_{τ+1:T}. Common types:</p>
+<ul>
+<li><strong>Mean shift:</strong> μ₁ → μ₂ with constant variance — e.g. genomic log2-ratio jumping from 0 to +0.5.</li>
+<li><strong>Variance shift:</strong> σ₁² → σ₂² with constant mean — e.g. physiological signal noise jumping post-treatment.</li>
+<li><strong>Distribution shift:</strong> the whole distribution family changes — non-parametric methods (E-Divisive) handle this.</li>
+<li><strong>Trend break:</strong> slope changes — slow → steep disease progression.</li>
+</ul>
+<p><strong>Offline vs Online:</strong></p>
+<ul>
+<li><strong>Offline (batch):</strong> Find all change-points after observing the full series — CNV analysis, retrospective studies.</li>
+<li><strong>Online (streaming):</strong> Detect as data arrive, with low delay — ICU monitoring, wearable alarms.</li>
+</ul>
+<p><strong>Single vs Multiple:</strong> Single change-point is classic (Page 1954, CUSUM). Multiple change-points are NP-hard without pruning — needs binary segmentation, PELT, or dynamic programming.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📊</div><h4 data-zh="均值跳變" data-en="Mean shift">均值跳變</h4><p data-lang="zh">最常見類型——CUSUM、likelihood ratio 都直接適用。</p><p data-lang="en">Most common type — directly addressed by CUSUM and likelihood ratios.</p></div>
+  <div class="card"><div class="card-icon">⏱</div><h4 data-zh="Online 偵測" data-en="Online detection">Online 偵測</h4><p data-lang="zh">BOCPD (Adams & MacKay 2007) 是貝氏 streaming 黃金標準。</p><p data-lang="en">BOCPD (Adams & MacKay 2007) is the Bayesian streaming gold standard.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="生物應用廣" data-en="Wide bio use">生物應用廣</h4><p data-lang="zh">CNV、ChIP-seq、ECG、CGM、microbiome、scRNA trajectory branches。</p><p data-lang="en">CNV, ChIP-seq, ECG, CGM, microbiome, scRNA trajectory branching.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="主流變點偵測演算法" data-en="Main Change-point Algorithms">主流變點偵測演算法</h2>
+<div data-lang="zh">
+<p><strong>① CUSUM (Page 1954, Biometrika)：</strong>累積和檢定。對均值 shift，計算 S_t = max(0, S_{t-1} + (y_t − μ₀ − k))，當 S_t 超過 threshold h 時宣告變點。Online 友善，但只擅長 single change-point。</p>
+
+<p><strong>② Binary Segmentation (Scott & Knott 1974)：</strong>先找全局單一最佳變點 τ*，再對左右兩段遞迴找下一個變點，直到無顯著改善。複雜度 O(T log T)，但<strong>貪婪</strong>——可能漏掉成對近距變點。</p>
+
+<p><strong>③ PELT (Killick 2012, JASA)：</strong>Pruned Exact Linear Time。用 dynamic programming 找全局最佳分段（penalty + cost）：</p>
+<p style="text-align:center;font-family:Georgia,serif;">F(s) = min_{τ &lt; s} { F(τ) + C(y_{τ+1:s}) + β }</p>
+<p>關鍵<strong>剪枝</strong>定理：若 F(τ) + C(y_{τ+1:s}) ≥ F(s) 則 τ 永遠不會是後續最佳起點 → 可剪掉。複雜度<strong>幾乎線性</strong>（與變點數成比例），是 offline 主流。</p>
+
+<p><strong>④ BOCPD (Adams & MacKay 2007)：</strong>Bayesian Online Change-point Detection。每步更新「run length r_t」的後驗——r_t 表「自上次變點以來的時間」。Hazard function H(r) 決定變點機率，後驗以遞迴更新：</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(r_t | y_{1:t}) ∝ Σ_{r_{t-1}} P(r_t | r_{t-1}) P(y_t | r_{t-1}, y_{1:t-1}) P(r_{t-1} | y_{1:t-1})</p>
+<p>輸出是每時刻變點的<strong>機率分布</strong>，而非 hard alarm。可整合任意 conjugate likelihood（Gaussian、Poisson、Bernoulli）。</p>
+
+<p><strong>⑤ E-Divisive (Matteson & James 2014, JASA)：</strong>非參數，<strong>不假設任何分布</strong>。用能量距離 (energy distance) 衡量「左半段 vs 右半段」差異，遞迴找最大分隔點。對非高斯、heavy-tailed、多模態資料尤其穩健。</p>
+
+<p><strong>⑥ NEUROC / 神經網路法：</strong>近年用 transformer/CNN 從 raw 訊號直接 regress 變點位置（如 TIRE, KL-CPD, NEUROC）。優勢：可學複雜模式（如同時 mean + variance shift）；缺點：需要訓練資料。</p>
+</div>
+<div data-lang="en">
+<p><strong>① CUSUM (Page 1954, Biometrika):</strong> Cumulative sum test. For mean shift, S_t = max(0, S_{t-1} + (y_t − μ₀ − k)); alarm when S_t exceeds h. Online-friendly but only suited to single change-point.</p>
+
+<p><strong>② Binary Segmentation (Scott & Knott 1974):</strong> Find the global single best τ*, then recurse on left/right segments. Complexity O(T log T), but <strong>greedy</strong> — may miss pairs of close change-points.</p>
+
+<p><strong>③ PELT (Killick 2012, JASA):</strong> Pruned Exact Linear Time. Dynamic programming for optimal segmentation (penalty + cost):</p>
+<p style="text-align:center;font-family:Georgia,serif;">F(s) = min_{τ &lt; s} { F(τ) + C(y_{τ+1:s}) + β }</p>
+<p>Key <strong>pruning</strong> rule: if F(τ) + C(y_{τ+1:s}) ≥ F(s), then τ can never be the future best origin → pruned. Near-linear complexity (with change-point count); the offline workhorse.</p>
+
+<p><strong>④ BOCPD (Adams & MacKay 2007):</strong> Bayesian Online Change-point Detection. Update posterior over "run length r_t" — time since last change-point. Hazard H(r) controls change-point probability, with recursive update:</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(r_t | y_{1:t}) ∝ Σ_{r_{t-1}} P(r_t | r_{t-1}) P(y_t | r_{t-1}, y_{1:t-1}) P(r_{t-1} | y_{1:t-1})</p>
+<p>Output is a <strong>distribution</strong> over change-points at each step, not a hard alarm. Works with any conjugate likelihood (Gaussian, Poisson, Bernoulli).</p>
+
+<p><strong>⑤ E-Divisive (Matteson & James 2014, JASA):</strong> Non-parametric, <strong>distribution-free</strong>. Uses energy distance between left and right halves, recursively finding maximum separation. Robust to non-Gaussian, heavy-tailed, multi-modal data.</p>
+
+<p><strong>⑥ NEUROC / Neural approaches:</strong> Recent transformer/CNN models regress change-points from raw signals (TIRE, KL-CPD, NEUROC). Pros: learns complex patterns (joint mean + variance shifts). Cons: needs training data.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>實務選擇指南：</strong>已知變點數量少 + Gaussian → PELT；streaming + 要機率不確定性 → BOCPD；分布未知 / 多模態 → E-Divisive；有大量標註資料 + 複雜 pattern → 神經網路法。<strong>切記：</strong> penalty β 是 PELT 最敏感的超參——太小會 over-segment、太大會錯過。常用 BIC: β = 2 log T。</div>
+<div data-lang="en"><strong>Choice guide:</strong> Few changes + Gaussian → PELT; streaming + uncertainty needed → BOCPD; unknown distribution / multimodal → E-Divisive; large labeled data + complex patterns → neural methods. <strong>Note:</strong> the PELT penalty β is the most sensitive hyperparameter — too small over-segments, too large misses changes. Standard BIC: β = 2 log T.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="調整 threshold 觀察變點偵測" data-en="Tune Threshold and Watch Detection">調整 threshold 觀察變點偵測</h2>
+<div data-lang="zh"><p>下方為含 3 個真實變點的時間序列（紅色虛線）。演算法用<strong>滑動視窗 t-test</strong>（簡化版 CUSUM-likelihood）計算每位置的「左右均值差統計量」，threshold 以上的局部極大視為偵測到的變點（綠色實線）。調整 threshold 觀察 <strong>false positive / false negative</strong> 的權衡。</p></div>
+<div data-lang="en"><p>The series below contains 3 true change-points (red dashed). The algorithm uses a sliding-window t-test (simplified CUSUM-likelihood), declaring local maxima above the threshold as detected change-points (green solid). Adjust the threshold to see the <strong>false positive / false negative trade-off</strong>.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="偵測 threshold" data-en="Detection threshold">偵測 threshold <span id="vThr">3.0</span></label><input type="range" id="sThr" min="0.5" max="8" value="3.0" step="0.1"></div>
+<div class="slider-group"><label data-zh="視窗大小 w" data-en="Window size w">視窗大小 w <span id="vW">15</span></label><input type="range" id="sW" min="5" max="40" value="15" step="1"></div>
+<div class="slider-group"><label data-zh="噪音強度 σ" data-en="Noise σ">噪音強度 σ <span id="vSig">0.5</span></label><input type="range" id="sSig" min="0.1" max="1.5" value="0.5" step="0.05"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnReshuffle" class="toggle-btn"><span data-zh="重新生成資料" data-en="Resample data">重新生成資料</span></button>
+</div>
+<svg id="cpSvg" viewBox="0 0 700 400" style="width:100%;height:400px;background:#fafafa;border-radius:6px;"></svg>
+<div id="cpInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用變點偵測？" data-en="When to use change-point detection?">什麼時候用變點偵測？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>基因組 segmentation</strong>——array-CGH / WGS 找 CNV breakpoints；用 PELT 或 CBS。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>ICU / wearable 即時警報</strong>——BOCPD 提供機率不確定性，避免 hard threshold 抖動。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>分布未知 / 非高斯</strong>——E-Divisive 不需任何分布假設。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>趨勢平緩的漸變（非「跳變」）——用 trend filtering、structural break test 更合適。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Genome segmentation</strong> — array-CGH / WGS CNV breakpoints; use PELT or CBS.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>ICU / wearable alarms</strong> — BOCPD's posterior probabilities avoid hard-threshold flicker.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Unknown / non-Gaussian distributions</strong> — E-Divisive is distribution-free.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Smooth gradual drift (not a "jump") — trend filtering or structural break tests fit better.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="變點偵測在生物與醫學" data-en="Change-point Detection in Biology and Medicine">變點偵測在生物與醫學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="CNV breakpoint" data-en="CNV breakpoint">CNV breakpoint</h4>
+<p data-lang="zh">Olshen et al. (2004, Biostatistics) 的 CBS (Circular Binary Segmentation) 是 array-CGH / WGS 拷貝數變異 (CNV) 偵測的金標準——把基因組 log2 ratio 切成 segment，每 segment 對應一個 copy state。已嵌入 DNAcopy R 套件、Sequenza、PennCNV。</p>
+<p data-lang="en">Olshen et al. (2004, Biostatistics) CBS (Circular Binary Segmentation) is the gold standard for array-CGH / WGS copy-number variant detection — splits genome log2-ratio into segments, each a copy state. Built into DNAcopy R, Sequenza, PennCNV.</p></div>
+
+<div class="card"><h4 data-zh="ChIP-seq broad domain" data-en="ChIP-seq broad domain">ChIP-seq broad domain</h4>
+<p data-lang="zh">H3K27me3、H3K9me3 等 broad domain 沒有 narrow peak 結構，需要變點偵測切「啟動子–沉默區」邊界。SICER、RSEG、ChIP-seqcompare 都內建變點偵測模組。</p>
+<p data-lang="en">Broad domains like H3K27me3 lack narrow-peak structure — change-point detection slices "promoter–silenced region" boundaries. SICER, RSEG, ChIP-seqcompare embed change-point modules.</p></div>
+
+<div class="card"><h4 data-zh="DNase-seq peak boundary" data-en="DNase-seq peak boundary">DNase-seq peak boundary</h4>
+<p data-lang="zh">DNase hypersensitive site 邊界是 chromatin accessibility 從「閉合 → 開放」的變點。F-Seq、Hotspot 等工具用變點+核密度估計定 boundary，比固定 window 更準。</p>
+<p data-lang="en">DNase hypersensitive site boundaries are accessibility "closed → open" change-points. F-Seq, Hotspot combine change-point + kernel density for boundary calling — more accurate than fixed windows.</p></div>
+
+<div class="card"><h4 data-zh="疾病進程斷點" data-en="Disease-stage breakpoint">疾病進程斷點</h4>
+<p data-lang="zh">阿茲海默症、帕金森氏症的 cognitive decline 不是連續的——常有「stable → 急遽惡化」的轉折點。Bayesian change-point models (Younes 2014) 從 longitudinal MMSE / lab values 自動找這些轉折，輔助早期介入。</p>
+<p data-lang="en">Alzheimer's / Parkinson's cognitive decline isn't smooth — there's often a "stable → rapid" turning point. Bayesian change-point models (Younes 2014) detect these from longitudinal MMSE / labs, aiding early intervention.</p></div>
+
+<div class="card"><h4 data-zh="ECG arrhythmia onset" data-en="ECG arrhythmia onset">ECG arrhythmia onset</h4>
+<p data-lang="zh">心房顫動 (AFib) 啟動瞬間是 RR interval 變異度的變點。BOCPD 配 Gaussian-Inverse-Gamma likelihood 可實時偵測，已被 Apple Watch / KardiaMobile 類消費醫材採用變種。</p>
+<p data-lang="en">Atrial fibrillation onset is a change-point in RR-interval variability. BOCPD with Gaussian-Inverse-Gamma likelihood enables real-time detection — adopted in variants by Apple Watch / KardiaMobile consumer devices.</p></div>
+
+<div class="card"><h4 data-zh="microbiome longitudinal" data-en="Microbiome longitudinal">microbiome longitudinal</h4>
+<p data-lang="zh">抗生素治療後腸道菌群「dysbiosis → recovery」是分布變點。Mukherjee et al. (2018, Nat Methods) 用 multivariate BOCPD 找菌群組成突變點，預測 C. difficile 感染復發。</p>
+<p data-lang="en">Post-antibiotic gut microbiome "dysbiosis → recovery" is a distribution change-point. Mukherjee et al. (2018, Nat Methods) use multivariate BOCPD on community composition to predict C. difficile recurrence.</p></div>
+
+<div class="card"><h4 data-zh="藥物 onset detection" data-en="Drug onset detection">藥物 onset detection</h4>
+<p data-lang="zh">CGM (連續血糖) 中胰島素注射的 onset、HRV 中 β-blocker 起效時間——用 BOCPD 自動標記反應起點，可量化 PK/PD 個體差異。</p>
+<p data-lang="en">CGM insulin onset, HRV β-blocker onset — BOCPD auto-labels response start, quantifying PK/PD individual variability.</p></div>
+
+<div class="card"><h4 data-zh="細胞狀態轉變" data-en="Cell state transitions">細胞狀態轉變</h4>
+<p data-lang="zh">scRNA pseudotime 沿 trajectory 上的 branching point 本質是分布變點。Saelens et al. (2019, Nat Biotechnol) 的 dynverse benchmark 顯示變點偵測法（如 dyno-cpoint）在某些 dataset 上比 Monocle、Slingshot 更穩。</p>
+<p data-lang="en">Branching points along scRNA pseudotime are distribution change-points. Saelens et al. (2019, Nat Biotechnol) dynverse benchmark shows change-point methods (e.g. dyno-cpoint) can beat Monocle / Slingshot on some datasets.</p></div>
+
+<div class="card"><h4 data-zh="Switching dynamics scRNA" data-en="Switching dynamics scRNA">Switching dynamics scRNA</h4>
+<p data-lang="zh">scVelo dynamics 中 gene "induction → repression" 的 switching time 是內部變點。最近 (2024) DeepCpD-Velo 把變點偵測整合進 RNA velocity 框架，提升 fate decision 時間預測。</p>
+<p data-lang="en">In scVelo dynamics, "induction → repression" switching time is an internal change-point. DeepCpD-Velo (2024) integrates change-point detection into RNA velocity for better fate-decision timing.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="變點偵測的進階主題" data-en="Advanced Topics in Change-point Detection">變點偵測的進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Penalty 選擇：BIC、AIC、SIC、改良型</h3>
+<p>PELT 的 β 直接影響變點數量。常用：BIC β = 2 log T（保守）、AIC β = 2（激進）、SIC β = log T（介於兩者）。Killick et al. (2012) 推薦 BIC；Haynes et al. (2017) 提出 CROPS 一次掃描多個 β，得到完整 Pareto front。</p>
+
+<h3>② Hazard function 與先驗</h3>
+<p>BOCPD 的 hazard H(r) 編碼「我認為變點多久發生一次」。常數 hazard = 幾何分布的 run length。對 ECG 等高頻訊號 H 可能要設小（< 0.001）；對 longitudinal microbiome 可能設大（>0.1）。<strong>實務：</strong>對 hazard 加 hyperprior 並 marginal-likelihood 學它。</p>
+
+<h3>③ Multivariate change-point</h3>
+<p>多變量序列同時找變點的方法：(a) 分別跑 univariate 再 aggregate；(b) Cho & Fryzlewicz (2015) 的 Sparsified Binary Segmentation；(c) Wang & Samworth (2018) 的 inspect 演算法用 sparse projection；(d) Multivariate BOCPD 用 multivariate-normal Wishart conjugate。微生物群、scRNA latent 等都屬於這類問題。</p>
+
+<h3>④ 與 HMM / state-space 的關係</h3>
+<p>HMM (Hidden Markov Model) 是「軟版本」變點偵測——它允許狀態之間反覆切換。當 HMM transition 機率極小（self-transition ≈ 1），HMM 退化成 change-point。對「regimes 確實罕見切換」的問題，change-point 更高效；對「快速 switching」的問題（如 ion channel state），HMM 更合適。</p>
+
+<h3>⑤ False discovery 控制</h3>
+<p>多重檢定問題嚴重——T 個時刻每個都可能是變點。可用 Bonferroni（太保守）、BH FDR、或 Frick et al. (2014) 的 SMUCE (Simultaneous Multiscale Change-point Estimator) 給出 confidence band，控制 family-wise error。</p>
+
+<h3>⑥ Latent / functional / graph change-points</h3>
+<p>不只是 scalar 序列：(a) <strong>Functional CPD</strong>——序列每點是一條曲線（如連續 spectrum），用 Hilbert-space distance；(b) <strong>Graph CPD</strong>——序列每點是一張圖（如 dynamic brain connectome），用 graph kernel / Laplacian spectrum；(c) <strong>Tensor CPD</strong>——序列每點是高維 tensor，用 low-rank approximation 之差。</p>
+
+<h3>⑦ Online 中的 latency 與 false alarm trade-off</h3>
+<p>Online CPD 永遠在「delay」與「false alarm」間權衡。CUSUM 的 ARL₀ (in-control average run length) 與 ARL₁ (out-of-control average run length) 對應這個 trade-off：threshold h 高 → 少 false alarm 但偵測慢，h 低反之。<strong>Lorden (1971)</strong> 的最佳性結果：CUSUM 在 worst-case detection delay 意義下對 known shift 是最佳的。</p>
+
+<h3>⑧ 神經網路方法的興起</h3>
+<p>(a) <strong>KL-CPD</strong> (Chang 2019, ICLR)——用 deep kernel 比較窗口內外的 KL divergence；(b) <strong>TIRE</strong> (De Ryck 2021)——time-invariant representation embedding；(c) <strong>NEUROC</strong>——end-to-end transformer，但需要充分標註資料。優勢在於可處理「mean + variance + 高階矩」同時改變的複雜情境。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Penalty choice: BIC, AIC, SIC, refinements</h3>
+<p>PELT's β directly controls change-point count. Common: BIC β = 2 log T (conservative), AIC β = 2 (aggressive), SIC β = log T (intermediate). Killick et al. (2012) recommend BIC; Haynes et al. (2017) propose CROPS to scan β values for a full Pareto front.</p>
+
+<h3>② Hazard function and prior</h3>
+<p>BOCPD's hazard H(r) encodes "how often changes happen". Constant hazard = geometric run-length prior. For ECG-like high-frequency signals H may be tiny (< 0.001); for longitudinal microbiome larger (> 0.1). <strong>Practice:</strong> place a hyperprior on hazard and learn it by marginal likelihood.</p>
+
+<h3>③ Multivariate change-point</h3>
+<p>Methods for joint change-points across multivariate series: (a) per-variable univariate aggregation; (b) Cho & Fryzlewicz (2015) Sparsified Binary Segmentation; (c) Wang & Samworth (2018) inspect with sparse projection; (d) Multivariate BOCPD with Normal-Wishart conjugate. Useful for microbiome composition, scRNA latent series.</p>
+
+<h3>④ Relation to HMM / state-space</h3>
+<p>HMM is a "soft" change-point detector — states may switch back and forth. When self-transition ≈ 1, HMM degenerates to change-point. For rare regime switches, change-point is more efficient; for fast switching (e.g. ion-channel states), HMM is better.</p>
+
+<h3>⑤ False discovery control</h3>
+<p>Multiple-testing is severe — every time point is a candidate. Use Bonferroni (too conservative), BH FDR, or Frick et al. (2014) SMUCE (Simultaneous Multiscale Change-point Estimator) providing confidence bands with family-wise error control.</p>
+
+<h3>⑥ Latent / functional / graph change-points</h3>
+<p>Beyond scalar series: (a) <strong>Functional CPD</strong> — each time point is a curve (e.g. spectrum); use Hilbert-space distance; (b) <strong>Graph CPD</strong> — each point is a graph (dynamic brain connectome); use graph kernels / Laplacian spectra; (c) <strong>Tensor CPD</strong> — high-dim tensors; use low-rank approximation differences.</p>
+
+<h3>⑦ Latency vs false alarm in online CPD</h3>
+<p>Online CPD always trades delay against false alarms. CUSUM's ARL₀ (in-control) and ARL₁ (out-of-control) correspond to this trade-off: high threshold h → few false alarms but slow detection. <strong>Lorden (1971)</strong> proves CUSUM is optimal in worst-case detection delay for known shifts.</p>
+
+<h3>⑧ Rise of neural methods</h3>
+<p>(a) <strong>KL-CPD</strong> (Chang 2019, ICLR) — deep kernel comparing in/out-window KL; (b) <strong>TIRE</strong> (De Ryck 2021) — time-invariant representation embedding; (c) <strong>NEUROC</strong> — end-to-end transformer, needing labeled data. Strengths: handle joint mean + variance + higher-moment changes.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="變點偵測還能改良哪些任務？" data-en="What Else Could Change-point Detection Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. scRNA-seq trajectory branching auto-detect</h3>
+<p>目前 Monocle、Slingshot 需手動指定 branch 結構或用 graph-based 啟發式。<strong>提案：</strong>把 pseudotime 上的 cell 視為時間序列，multivariate BOCPD 自動定 branching point 與 lineage transition。</p>
+
+<h3>🎯 2. WGS 結構變異 (SV) breakpoint refinement</h3>
+<p>SV caller (Manta, Delly) 給出粗略位置但 base-pair 精度不足。<strong>提案：</strong>在候選區用 ultra-local PELT + read depth + split-read 訊號，精修到 base-pair 級別。</p>
+
+<h3>🎯 3. 連續藥物代謝 PK/PD 個體差異</h3>
+<p>固定劑量下，不同患者的「drug onset / peak / elimination」時間點差異大。<strong>提案：</strong>對個體血藥濃度時間序列做 BOCPD，自動標 onset / peak / clearance，量化個體 PK/PD 異質性。</p>
+
+<h3>🎯 4. ICU 多模態變點融合預警</h3>
+<p>ICU 監護有 HR、BP、SpO₂、temperature、lab values 等多模態。<strong>提案：</strong>multivariate BOCPD 把這些訊號融合，比單通道警報降低 false alarm（已知 ICU alarm fatigue 是大問題）。</p>
+
+<h3>🎯 5. scRNA + ATAC + spatial 跨模態變點對齊</h3>
+<p>同一細胞群在不同 modality 中變化發生的時間點可能不同（如 chromatin 開放 → 表現上升有 lag）。<strong>提案：</strong>跨模態 lag-aware change-point detection 揭示分子事件因果順序。</p>
+
+<h3>🎯 6. Long-COVID 病程斷點刻畫</h3>
+<p>Long-COVID 患者症狀軌跡複雜——可能有「acute → recovery → relapse」多個 phase。<strong>提案：</strong>對 wearable + EHR longitudinal data 做 multimodal BOCPD，自動 stratify 病程亞型。</p>
+
+<h3>🎯 7. AlphaFold ensemble 動態解析</h3>
+<p>AlphaFlow 等模型生成的 conformational ensemble 沿 time/sample 軸是時間序列。<strong>提案：</strong>變點偵測找「conformer cluster 切換」點，揭示 allostery / induced fit 機制。</p>
+
+<h3>🎯 8. 神經元 spike train 模式變化偵測</h3>
+<p>大腦 ensemble recording 中神經元 firing pattern 可能因 task switch / arousal 突變。<strong>提案：</strong>graph CPD 於動態 functional connectivity，追蹤 cognitive state transitions。</p>
+
+<h3>🎯 9. CRISPR screen 響應動力學</h3>
+<p>時序 CRISPR-LOF 篩選看 gene KO 後 phenotype 的時間動態。<strong>提案：</strong>對每個 perturbation 的 readout 時序做 CPD，把 gene 分類為 "early effect" vs "late effect"——比 endpoint 分析資訊更多。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. scRNA-seq trajectory branching auto-detection</h3>
+<p>Monocle / Slingshot need manual branch specification or graph heuristics. <strong>Proposal:</strong> view cells along pseudotime as a series; multivariate BOCPD auto-locates branching points and lineage transitions.</p>
+
+<h3>🎯 2. WGS structural variant breakpoint refinement</h3>
+<p>SV callers (Manta, Delly) give coarse positions but lack bp precision. <strong>Proposal:</strong> ultra-local PELT in candidate regions combining read depth + split-read signal for bp-level refinement.</p>
+
+<h3>🎯 3. PK/PD individual variability detection</h3>
+<p>At fixed dose, "onset / peak / elimination" timings differ greatly across patients. <strong>Proposal:</strong> BOCPD on individual concentration series auto-labels these and quantifies PK/PD heterogeneity.</p>
+
+<h3>🎯 4. ICU multimodal change-point fusion alarm</h3>
+<p>ICU monitoring spans HR, BP, SpO₂, temperature, labs. <strong>Proposal:</strong> multivariate BOCPD fuses these — fewer false alarms than single-channel (alarm fatigue is a known ICU problem).</p>
+
+<h3>🎯 5. Cross-modal scRNA + ATAC + spatial change-point alignment</h3>
+<p>The same cell population may show timing differences across modalities (chromatin opens → expression rises with lag). <strong>Proposal:</strong> lag-aware cross-modal CPD reveals molecular event causal ordering.</p>
+
+<h3>🎯 6. Long-COVID disease-stage characterization</h3>
+<p>Long-COVID trajectories show complex acute → recovery → relapse phases. <strong>Proposal:</strong> multimodal BOCPD on wearable + EHR longitudinal data auto-stratifies disease-course subtypes.</p>
+
+<h3>🎯 7. AlphaFold ensemble dynamics</h3>
+<p>AlphaFlow's conformer ensembles along time/sample axes are series. <strong>Proposal:</strong> CPD finds "conformer cluster switches", revealing allostery / induced-fit mechanisms.</p>
+
+<h3>🎯 8. Neuronal spike-train pattern change detection</h3>
+<p>Ensemble recordings may show sudden firing-pattern shifts at task switches / arousal. <strong>Proposal:</strong> graph CPD on dynamic functional connectivity tracks cognitive state transitions.</p>
+
+<h3>🎯 9. CRISPR screen response dynamics</h3>
+<p>Time-resolved CRISPR-LOF screens show post-KO phenotype dynamics. <strong>Proposal:</strong> CPD on each perturbation's readout classifies genes as "early effect" vs "late effect" — more informative than endpoint analysis.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'rup')">Python / ruptures</button>
+<button class="code-tab-btn" onclick="switchTab(this,'bocpd')">Python / BOCPD</button>
+<button class="code-tab-btn" onclick="switchTab(this,'rcp')">R / changepoint</button>
+</div>
+
+<div class="code-tab-content active" id="rup"><pre><span class="comment"># pip install ruptures</span>
+<span class="keyword">import</span> ruptures <span class="keyword">as</span> rpt
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># Simulate signal with 3 mean shifts</span>
+y = np.concatenate([np.random.randn(<span class="num">100</span>),
+                    np.random.randn(<span class="num">100</span>) + <span class="num">2</span>,
+                    np.random.randn(<span class="num">100</span>),
+                    np.random.randn(<span class="num">100</span>) - <span class="num">1.5</span>])
+
+<span class="comment"># PELT with L2 cost (mean shifts, Gaussian)</span>
+algo = rpt.Pelt(model=<span class="str">"l2"</span>).fit(y)
+pen = <span class="num">2</span> * np.log(len(y))            <span class="comment"># BIC penalty</span>
+cps = algo.predict(pen=pen)            <span class="comment"># [τ_1, τ_2, ..., T]</span>
+<span class="keyword">print</span>(<span class="str">"Detected change-points:"</span>, cps[:-<span class="num">1</span>])
+
+<span class="comment"># Other models</span>
+<span class="comment"># model="rbf"  -> kernel CPD (distribution change)</span>
+<span class="comment"># model="l1"   -> robust to outliers</span>
+<span class="comment"># model="normal" -> joint mean+variance shift</span>
+rpt.display(y, cps); <span class="comment"># quick plot</span></pre></div>
+
+<div class="code-tab-content" id="bocpd"><pre><span class="comment"># pip install bayesian_changepoint_detection</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> bayesian_changepoint_detection.online_changepoint_detection \
+        <span class="keyword">import</span> online_changepoint_detection
+<span class="keyword">from</span> bayesian_changepoint_detection.online_likelihoods \
+        <span class="keyword">import</span> StudentT
+<span class="keyword">from</span> functools <span class="keyword">import</span> partial
+<span class="keyword">from</span> bayesian_changepoint_detection.hazard_functions \
+        <span class="keyword">import</span> constant_hazard
+
+y = np.concatenate([np.random.randn(<span class="num">100</span>),
+                    np.random.randn(<span class="num">100</span>) + <span class="num">2</span>])
+
+hazard = partial(constant_hazard, <span class="num">250</span>)        <span class="comment"># avg run length 250</span>
+R, maxes = online_changepoint_detection(
+    y, hazard,
+    StudentT(alpha=<span class="num">.1</span>, beta=<span class="num">.01</span>, kappa=<span class="num">1</span>, mu=<span class="num">0</span>))
+<span class="comment"># R[r, t] = P(run length = r at time t)</span>
+<span class="comment"># maxes[t] = MAP run length at t (drops to 0 at change-points)</span>
+cps = np.where(np.diff(maxes) &lt; -<span class="num">5</span>)[<span class="num">0</span>]
+<span class="keyword">print</span>(<span class="str">"BOCPD change-points:"</span>, cps)</pre></div>
+
+<div class="code-tab-content" id="rcp"><pre><span class="comment"># install.packages(c("changepoint", "ecp", "bcp"))</span>
+<span class="keyword">library</span>(changepoint)
+
+<span class="comment"># Simulate</span>
+y &lt;- c(rnorm(<span class="num">100</span>), rnorm(<span class="num">100</span>, <span class="num">2</span>),
+       rnorm(<span class="num">100</span>), rnorm(<span class="num">100</span>, -<span class="num">1.5</span>))
+
+<span class="comment"># PELT with BIC penalty</span>
+m &lt;- cpt.mean(y, method=<span class="str">"PELT"</span>, penalty=<span class="str">"BIC"</span>)
+cpts(m)                                <span class="comment"># detected change-points</span>
+plot(m)
+
+<span class="comment"># Joint mean+variance changes</span>
+mv &lt;- cpt.meanvar(y, method=<span class="str">"PELT"</span>)
+
+<span class="comment"># E-Divisive (non-parametric)</span>
+<span class="keyword">library</span>(ecp)
+e &lt;- e.divisive(matrix(y, ncol=<span class="num">1</span>), sig.lvl=<span class="num">.05</span>, R=<span class="num">199</span>)
+e$estimates                            <span class="comment"># non-parametric CPs</span>
+
+<span class="comment"># Bayesian CP (Barry & Hartigan)</span>
+<span class="keyword">library</span>(bcp)
+b &lt;- bcp(y)
+plot(b)                                <span class="comment"># posterior CP probabilities</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">PELT (Killick 2012) 為什麼可以「幾乎線性」找到最佳分段，遠快於 naive dynamic programming？</p><p data-lang="en">Why does PELT (Killick 2012) achieve near-linear time, far faster than naive DP?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 它使用 GPU 平行</span><span data-lang="en">A. It uses GPU parallelism</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 它跳過 DP，改用 greedy 搜尋</span><span data-lang="en">B. It skips DP and uses greedy search</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 它在 DP 中加入剪枝定理——若某起點 τ 的 cost 已超過當前最佳，τ 永遠不會是後續最佳起點，可剪掉</span><span data-lang="en">C. Adds a pruning rule to DP — if τ's cost exceeds the current best, τ can never be the future optimal origin and is pruned</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 它假設變點數量 = 1</span><span data-lang="en">D. It assumes only one change-point</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">BOCPD (Bayesian Online CPD) 的「run length r_t」是什麼意思？</p><p data-lang="en">What does the "run length r_t" in BOCPD represent?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 整個序列的總長度</span><span data-lang="en">A. The total length of the series</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 自上一個變點以來經過的時間（即「目前 segment 已持續多久」）</span><span data-lang="en">B. Time elapsed since the last change-point (how long the current segment has lasted)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 未來變點的位置</span><span data-lang="en">C. The location of the next change-point</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 模型的參數數量</span><span data-lang="en">D. The number of model parameters</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">如果你的時間序列分布未知、可能 heavy-tailed 或多模態，最適合的變點演算法是？</p><p data-lang="en">If your series has unknown, possibly heavy-tailed or multimodal distribution, which CPD method fits best?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. E-Divisive (Matteson & James 2014)——非參數，基於 energy distance</span><span data-lang="en">A. E-Divisive (Matteson & James 2014) — non-parametric, energy distance based</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. CUSUM — 假設常態 mean shift</span><span data-lang="en">B. CUSUM — assumes Gaussian mean shift</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 線性回歸</span><span data-lang="en">C. Linear regression</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. PCA</span><span data-lang="en">D. PCA</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="survival-deepsurv.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 44：Survival / DeepSurv" data-en="Ch 44: Survival / DeepSurv">Ch 44：Survival / DeepSurv</span></a>
+<a href="functional-data.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 46：Functional Data Analysis" data-en="Ch 46: Functional Data Analysis">Ch 46：Functional Data Analysis</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive Change-point Detection =====
+const CPSVG=document.getElementById('cpSvg');
+const Wcp=700,Hcp=400, PAD_L=46, PAD_R=10, PAD_T=20, PAD_B=30;
+const PW=Wcp-PAD_L-PAD_R, PH=Hcp-PAD_T-PAD_B;
+const T_LEN=300;
+const TRUE_CP=[80,160,225];
+const SEG_MU=[0, 2.0, 0.2, -1.4];
+let SERIES=[];
+
+function randn(){const u=Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u+1e-9))*Math.cos(2*Math.PI*v);}
+function genSeries(){
+  const sig=+document.getElementById('sSig').value;
+  SERIES=[];
+  let seg=0;
+  for(let t=0;t<T_LEN;t++){
+    if(seg<TRUE_CP.length && t===TRUE_CP[seg])seg++;
+    SERIES.push(SEG_MU[seg] + sig*randn());
+  }
+}
+
+function detectCP(){
+  // Sliding-window t-statistic: |mean(right) - mean(left)| / pooled_sd * sqrt(w/2)
+  const w=+document.getElementById('sW').value;
+  const thr=+document.getElementById('sThr').value;
+  const stat=new Array(T_LEN).fill(0);
+  for(let t=w;t<T_LEN-w;t++){
+    let mL=0,mR=0;
+    for(let k=0;k<w;k++){mL+=SERIES[t-1-k];mR+=SERIES[t+k];}
+    mL/=w; mR/=w;
+    let sL=0,sR=0;
+    for(let k=0;k<w;k++){sL+=(SERIES[t-1-k]-mL)**2; sR+=(SERIES[t+k]-mR)**2;}
+    const pooled=Math.sqrt((sL+sR)/(2*w-2)+1e-9);
+    stat[t]=Math.abs(mR-mL)/pooled * Math.sqrt(w/2);
+  }
+  // local maxima above threshold
+  const cps=[];
+  for(let t=w+1;t<T_LEN-w-1;t++){
+    if(stat[t]>thr && stat[t]>=stat[t-1] && stat[t]>=stat[t+1]){
+      // dedup: only push if far enough from previous
+      if(cps.length===0 || t-cps[cps.length-1]>=w)cps.push(t);
+    }
+  }
+  return {stat,cps};
+}
+
+function xS(i){return PAD_L + i/(T_LEN-1)*PW;}
+function yS(v,vmin,vmax){return PAD_T + (1 - (v-vmin)/(vmax-vmin))*PH;}
+
+function render(){
+  document.getElementById('vThr').textContent=(+document.getElementById('sThr').value).toFixed(1);
+  document.getElementById('vW').textContent=(+document.getElementById('sW').value).toFixed(0);
+  document.getElementById('vSig').textContent=(+document.getElementById('sSig').value).toFixed(2);
+  const {stat,cps}=detectCP();
+  let vmin=Math.min(...SERIES), vmax=Math.max(...SERIES);
+  const pad=(vmax-vmin)*0.1; vmin-=pad; vmax+=pad;
+  let svg='';
+  // axes
+  svg+=`<line x1="${PAD_L}" y1="${PAD_T+PH}" x2="${PAD_L+PW}" y2="${PAD_T+PH}" stroke="#bbb"/>`;
+  svg+=`<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${PAD_T+PH}" stroke="#bbb"/>`;
+  // y ticks
+  for(let v=-2;v<=3;v++){const yy=yS(v,vmin,vmax);if(yy>PAD_T&&yy<PAD_T+PH){svg+=`<line x1="${PAD_L-3}" y1="${yy}" x2="${PAD_L}" y2="${yy}" stroke="#999"/><text x="${PAD_L-6}" y="${yy+3}" font-size="10" text-anchor="end" fill="#666">${v}</text>`;}}
+  // True CPs (red dashed)
+  TRUE_CP.forEach(t=>{const x=xS(t);svg+=`<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+PH}" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.7"/>`;});
+  // Detected CPs (green solid)
+  cps.forEach(t=>{const x=xS(t);svg+=`<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+PH}" stroke="#27ae60" stroke-width="2" opacity="0.85"/>`;});
+  // Series
+  let path='';
+  for(let i=0;i<T_LEN;i++){path+=(i===0?'M ':'L ')+xS(i)+','+yS(SERIES[i],vmin,vmax)+' ';}
+  svg+=`<path d="${path}" fill="none" stroke="#2563a8" stroke-width="1.1"/>`;
+  // Statistic overlay (small inset)
+  const Ih=70, Iy=Hcp-Ih-2;
+  let smax=Math.max(...stat,1);
+  let p2='';
+  for(let i=0;i<T_LEN;i++){p2+=(i===0?'M ':'L ')+xS(i)+','+(Iy + (1-stat[i]/smax)*Ih)+' ';}
+  svg+=`<rect x="${PAD_L}" y="${Iy}" width="${PW}" height="${Ih}" fill="#fff" stroke="#ccc" stroke-width="0.6"/>`;
+  // threshold line on inset
+  const thr=+document.getElementById('sThr').value;
+  const thrY=Iy + (1-Math.min(thr,smax)/smax)*Ih;
+  svg+=`<line x1="${PAD_L}" y1="${thrY}" x2="${PAD_L+PW}" y2="${thrY}" stroke="#e67e22" stroke-width="1.4" stroke-dasharray="4 3"/>`;
+  svg+=`<text x="${PAD_L+PW-4}" y="${thrY-3}" font-size="10" text-anchor="end" fill="#e67e22">threshold</text>`;
+  svg+=`<path d="${p2}" fill="none" stroke="#8e44ad" stroke-width="1.1"/>`;
+  // Labels
+  svg+=`<text x="${PAD_L+4}" y="${PAD_T+12}" font-size="11" fill="#2563a8" font-weight="600">y(t)</text>`;
+  svg+=`<text x="${PAD_L+4}" y="${Iy+12}" font-size="10" fill="#8e44ad" font-weight="600">|t-stat|</text>`;
+  // Legend
+  svg+=`<g transform="translate(${PAD_L+PW-220},${PAD_T+2})">
+    <line x1="0" y1="6" x2="22" y2="6" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6 4"/>
+    <text x="26" y="9" font-size="10" fill="#444">true CP</text>
+    <line x1="92" y1="6" x2="114" y2="6" stroke="#27ae60" stroke-width="2"/>
+    <text x="118" y="9" font-size="10" fill="#444">detected</text>
+  </g>`;
+  CPSVG.innerHTML=svg;
+  // Score evaluation
+  const tol=10;
+  let tp=0,fp=0;
+  const matched=new Array(TRUE_CP.length).fill(false);
+  cps.forEach(c=>{
+    let m=-1;
+    TRUE_CP.forEach((tc,i)=>{if(!matched[i] && Math.abs(c-tc)<=tol)m=i;});
+    if(m>=0){tp++;matched[m]=true;}else{fp++;}
+  });
+  const fn=TRUE_CP.length-tp;
+  const L=I18n.get();
+  document.getElementById('cpInfo').innerHTML=L==='zh'?
+    `偵測到 <strong>${cps.length}</strong> 個變點（真實 3 個）。<br>✅ True Positive = <strong>${tp}</strong>（±${tol} step 內匹配） | ⚠️ False Positive = <strong>${fp}</strong> | ❌ False Negative = <strong>${fn}</strong>。<br>降低 threshold → 更多偵測 → 更多 false positive。提高 threshold → 漏抓 → false negative。實務上用 cross-validation 或 BIC penalty 自動選 threshold。`
+    :
+    `Detected <strong>${cps.length}</strong> change-points (true count: 3).<br>✅ True Positive = <strong>${tp}</strong> (matched within ±${tol} steps) | ⚠️ False Positive = <strong>${fp}</strong> | ❌ False Negative = <strong>${fn}</strong>.<br>Lower threshold → more detections but more false positives. Higher threshold → misses (FN). In practice, use CV or BIC penalty to choose automatically.`;
+}
+
+document.getElementById('sThr').addEventListener('input',render);
+document.getElementById('sW').addEventListener('input',render);
+document.getElementById('sSig').addEventListener('input',()=>{genSeries();render();});
+document.getElementById('btnReshuffle').addEventListener('click',()=>{genSeries();render();});
+document.addEventListener('langchange',render);
+genSeries();render();
+
+window._QF={zh:{
+  q1_y:'答對！PELT 的剪枝定理是它能在實際資料上達到近線性時間的關鍵。',
+  q1_n:'答案是 C。PELT 的關鍵是剪枝定理 — 不可能成為後續最佳起點的 τ 被剪掉，避免 naive DP 的 O(T²)。',
+  q2_y:'答對！r_t 就是「目前 segment 已持續的長度」，每次變點時 r_t 重置為 0。',
+  q2_n:'答案是 B。Run length r_t 是自上次變點以來經過的時間，變點發生時跳回 0。',
+  q3_y:'答對！E-Divisive 用 energy distance，不假設分布族，非常適合 heavy-tailed 或 multimodal 資料。',
+  q3_n:'答案是 A。E-Divisive 是非參數變點偵測，基於 energy distance，不需要任何分布假設。'
+},en:{
+  q1_y:'Correct! PELT pruning is the key to near-linear runtime in practice.',
+  q1_n:'Answer is C. PELT prunes points that can never be the future best origin, avoiding naive DP\'s O(T²).',
+  q2_y:'Correct! r_t is "how long the current segment has lasted" — it resets to 0 at change-points.',
+  q2_n:'Answer is B. Run length r_t = time since last change-point, reset to 0 when a change occurs.',
+  q3_y:'Correct! E-Divisive uses energy distance, makes no distributional assumptions, ideal for heavy-tailed/multimodal data.',
+  q3_n:'Answer is A. E-Divisive is non-parametric, based on energy distance, requires no distributional assumption.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,391 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Mutual Information — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html" class="active">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 3 / 14</div><h1 data-zh="互資訊估計 (Mutual Information)" data-en="Mutual Information Estimation">互資訊估計 (Mutual Information)</h1>
+<p class="subtitle" data-lang="zh">資訊論的「相關」——衡量知道 X 後對 Y 不確定性的減少。從 k-NN (KSG) 到神經網路 (MINE)，是 GRN 推論的核心工具。</p>
+<p class="subtitle" data-lang="en">Information-theoretic "correlation" — quantifies the reduction in Y's uncertainty given X. From k-NN (KSG) to neural networks (MINE), MI is the workhorse of GRN inference.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="互資訊的定義" data-en="What Is Mutual Information?">互資訊的定義</h2>
+<div data-lang="zh">
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.1rem;">I(X; Y) = H(X) + H(Y) − H(X, Y) = ∫∫ p(x,y) log[p(x,y) / (p(x)p(y))] dx dy</p>
+<p>I(X;Y) ≥ 0，等號 ⇔ X 與 Y 獨立。它是「兩變數共享多少資訊」的最一般化測度——能捕捉任何形式的依賴，包含非線性與非單調。單位是 bit (log₂) 或 nat (ln)。</p>
+</div>
+<div data-lang="en">
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.1rem;">I(X; Y) = H(X) + H(Y) − H(X, Y) = ∫∫ p(x,y) log[p(x,y) / (p(x)p(y))] dx dy</p>
+<p>I(X;Y) ≥ 0, with equality iff X ⫫ Y. It's the most general measure of "shared information" — capturing any form of dependence, including non-linear and non-monotonic. Units: bits (log₂) or nats (ln).</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🎲</div><h4 data-zh="完全一般" data-en="Most general">完全一般</h4><p data-lang="zh">捕捉任何依賴形式，是「相關性」的母概念。</p><p data-lang="en">Captures any dependence — the mother of all correlation measures.</p></div>
+<div class="card"><div class="card-icon">🔢</div><h4 data-zh="估計難" data-en="Hard to estimate">估計難</h4><p data-lang="zh">在連續高維下估計很困難——需要特殊方法 (KSG, MINE)。</p><p data-lang="en">Estimation is hard in continuous high-dim — requires special methods (KSG, MINE).</p></div>
+<div class="card"><div class="card-icon">🧬</div><h4 data-zh="GRN 基礎" data-en="GRN backbone">GRN 基礎</h4><p data-lang="zh">ARACNE、CLR、PIDC 等經典 GRN 方法都建立在 MI 上。</p><p data-lang="en">Classic GRN methods (ARACNE, CLR, PIDC) all build on MI.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="估計方法" data-en="ESTIMATORS">估計方法</h2>
+<h2 data-zh="三派 MI 估計器" data-en="Three Families of MI Estimators">三派 MI 估計器</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="① Binning（直方圖）" data-en="① Binning (Histogram)">① Binning（直方圖）</h4>
+<p data-lang="zh">把 X、Y 各自分箱、估計 p(x,y)。優點：簡單。缺點：bin 數選擇困難，高維 curse of dimensionality 嚴重。適合離散或低維。</p>
+<p data-lang="en">Bin X and Y; estimate p(x,y) from counts. Pros: simple. Cons: bin choice is hard; curse of dimensionality. Best for discrete or low-dim.</p></div>
+
+<div class="card"><h4 data-zh="② KSG (k-NN)" data-en="② KSG (k-NN)">② KSG (k-NN)</h4>
+<p data-lang="zh">Kraskov-Stögbauer-Grassberger (2004)：用 k-近鄰距離估計密度，不需要 bin。理論偏差小，是連續變數的金標準。</p>
+<p data-lang="en">Kraskov-Stögbauer-Grassberger (2004): estimates densities via k-NN distances — no binning. Low theoretical bias; gold standard for continuous variables.</p></div>
+
+<div class="card"><h4 data-zh="③ MINE (神經網路)" data-en="③ MINE (Neural)">③ MINE (神經網路)</h4>
+<p data-lang="zh">Belghazi et al. 2018：用神經網路最佳化 Donsker-Varadhan 下界。可擴展到高維與深度學習流程，但需訓練。</p>
+<p data-lang="en">Belghazi et al. 2018: optimize the Donsker-Varadhan lower bound with a neural net. Scales to high dimensions and integrates with deep learning, but needs training.</p></div>
+
+<div class="card"><h4 data-zh="④ PIDC (偏資訊分解)" data-en="④ PIDC (Partial Info)">④ PIDC (偏資訊分解)</h4>
+<p data-lang="zh">Chan et al. 2017：scRNA-seq 專用，把三變數 MI 拆成 unique / redundant / synergistic 訊息，回推 GRN 拓撲。</p>
+<p data-lang="en">Chan et al. 2017: scRNA-seq-specific. Decomposes three-variable MI into unique / redundant / synergistic info to recover GRN topology.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="兩變數 MI 計算（binning 法）" data-en="2D MI via Binning">兩變數 MI 計算（binning 法）</h2>
+<div data-lang="zh"><p>調整關係與噪音，看 MI（binning 估計）的變化。注意純噪音時 MI 也可能因 finite-sample bias 略大於 0——這是估計上的著名問題。</p></div>
+<div data-lang="en"><p>Adjust relationship and noise; watch MI (binning estimator). Note: even pure noise yields MI > 0 due to finite-sample bias — a notorious issue.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="關係" data-en="Relationship">關係</label>
+  <select id="r3" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);">
+    <option value="lin" selected>Linear / 線性</option>
+    <option value="quad">Quadratic / 二次</option>
+    <option value="sin">Sine / 正弦</option>
+    <option value="indep">Independent / 獨立</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="噪音" data-en="Noise">噪音 <span id="vN">0.3</span></label><input type="range" id="sN" min="0" max="1" value="0.3" step="0.05"></div>
+<div class="slider-group"><label data-zh="Bin 數" data-en="Bins">Bin 數 <span id="vB">15</span></label><input type="range" id="sB" min="5" max="30" value="15" step="1"></div>
+<div class="chart-container" style="height:240px;"><canvas id="ch3"></canvas></div>
+<div class="card-grid cols-2" style="margin-top:14px;">
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>MI (bits)</h4><p style="font-size:1.5rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="mi3">—</p></div>
+  <div class="card"><h4>Pearson r</h4><p style="font-size:1.5rem;font-weight:700;margin:0;" id="pe3">—</p></div>
+</div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="MI 在生物資訊的角色" data-en="MI in Bioinformatics">MI 在生物資訊的角色</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="ARACNE / CLR" data-en="ARACNE / CLR">ARACNE / CLR</h4><p data-lang="zh">經典 GRN 方法：先算所有基因對的 MI，再用 Data Processing Inequality 刪除間接邊（ARACNE），或標準化 MI 為 z-score（CLR）。</p><p data-lang="en">Classic GRN methods: compute MI for all gene pairs, then prune indirect edges via Data Processing Inequality (ARACNE) or normalize MI as z-scores (CLR).</p></div>
+<div class="card"><h4 data-zh="PIDC（scRNA-seq）" data-en="PIDC (scRNA-seq)">PIDC（scRNA-seq）</h4><p data-lang="zh">把三基因的 MI 拆解，找出「協同」與「冗餘」訊息——比 pairwise 更能還原真實 GRN 拓撲，並對 dropout 較穩健。</p><p data-lang="en">Decomposes three-gene MI into synergistic and redundant components — better recovers true GRN topology and is more robust to dropouts than pairwise.</p></div>
+<div class="card"><h4 data-zh="特徵選擇" data-en="Feature selection">特徵選擇</h4><p data-lang="zh">mRMR (max-Relevance Min-Redundancy)：選與標籤 MI 大、但彼此 MI 小的基因子集，常用於 marker 篩選。</p><p data-lang="en">mRMR (max-Relevance Min-Redundancy): pick genes with high MI to labels but low MI to each other — useful for marker selection.</p></div>
+<div class="card"><h4 data-zh="表徵學習評估" data-en="Representation evaluation">表徵學習評估</h4><p data-lang="zh">InfoNCE、Deep InfoMax 等對比學習透過 MI 下界訓練表徵——scLLM 預訓練的理論基礎之一。</p><p data-lang="en">Contrastive learning (InfoNCE, Deep InfoMax) trains representations via MI lower bounds — part of the theoretical basis for scLLM pretraining.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="MI 估計的進階主題" data-en="Advanced Topics in MI Estimation">MI 估計的進階主題</h2>
+
+<div data-lang="zh">
+<h3>① KSG 估計器的細節</h3>
+<p>KSG (Kraskov-Stögbauer-Grassberger 2004) 的核心想法：給定 k = 第 k 近鄰，定義 ε<sub>i</sub> 為樣本 i 到其第 k 近鄰的 max-norm 距離（聯合空間 (X, Y) 上），然後計數 n_x(i) = X 軸上距離 i 小於 ε<sub>i</sub>/2 的樣本數，同理 n_y(i)。MI 估計為：</p>
+<p style="text-align:center;font-family:Georgia,serif;">Î = ψ(k) − ⟨ψ(n_x+1) + ψ(n_y+1)⟩ + ψ(n)</p>
+<p>其中 ψ 是 digamma function。<strong>關鍵 trade-off：</strong>k 太小 → 變異大；k 太大 → 偏差大。經驗值 k = 3–6 通常適中。對 dropout 嚴重的 scRNA-seq，建議用 k = 5–10 換取較穩定估計。</p>
+
+<h3>② Mixed continuous-discrete MI</h3>
+<p>scRNA-seq 經常面對「count（離散） vs label（離散）」、「expression（近連續） vs cell type（離散）」這類混合型態。Ross (2014) 與 Gao et al. (2017) 提出針對混合資料的 KSG 變體；Python 的 <code>npeet</code> 套件提供 <code>mi(x, y)</code> 自動處理混合型態。</p>
+
+<h3>③ MINE：神經估計與其陷阱</h3>
+<p>MINE (Belghazi 2018) 把 MI 寫成 Donsker-Varadhan (DV) 對偶形式：</p>
+<p style="text-align:center;font-family:Georgia,serif;">I(X;Y) = sup<sub>T</sub> E<sub>p(x,y)</sub>[T(x,y)] − log E<sub>p(x)p(y)</sub>[e<sup>T(x,y)</sup>]</p>
+<p>用神經網路 T<sub>θ</sub> 來最佳化下界。<strong>陷阱：</strong>(a) MINE 的下界是 biased estimator，可能高估真實 MI；(b) 訓練不穩定，因為 e<sup>T</sup> 的 exponential 容易爆炸——常見補救：clip T 的範圍、用 SMILE (Song & Ermon 2019) 等改良版下界。</p>
+
+<h3>④ MI 變體大全</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.88rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">變體</th><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">意義</th><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">用途</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">標準互資訊</td><td style="padding:6px;border:1px solid #e0dcd0;">pairwise 依賴</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y|Z)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">條件互資訊</td><td style="padding:6px;border:1px solid #e0dcd0;">控制 confounder</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y;Z)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">三變量互動 (interaction information)</td><td style="padding:6px;border:1px solid #e0dcd0;">可正可負；負值表示 redundancy，正值表示 synergy</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>PID</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Partial Information Decomposition</td><td style="padding:6px;border:1px solid #e0dcd0;">把 I(X<sub>1</sub>,X<sub>2</sub>;Y) 拆成 unique/redundant/synergistic</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>TC</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Total Correlation</td><td style="padding:6px;border:1px solid #e0dcd0;">多變量「整體依賴」量</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>DCMI</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Directed Conditional MI</td><td style="padding:6px;border:1px solid #e0dcd0;">有方向版本，可用於因果</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>InfoNCE / MINE</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">神經 MI 下界</td><td style="padding:6px;border:1px solid #e0dcd0;">深度表徵學習</td></tr>
+</tbody></table>
+
+<h3>⑤ MI 與其他統計量的關係</h3>
+<p>對二維高斯：I(X;Y) = −½ log(1 − ρ²)，這就是 Pearson r 與 MI 在線性高斯下的精確關係。對非高斯：MI 仍捕捉所有依賴而 r 不行。</p>
+<p>對離散變量：I 直接從 contingency table 算，這是 chi-squared test、log-likelihood ratio test 的基礎。</p>
+
+<h3>⑥ Data Processing Inequality (DPI) — GRN 推論的關鍵</h3>
+<p>DPI：若 X → Y → Z 形成馬可夫鏈，則 I(X;Z) ≤ min(I(X;Y), I(Y;Z))。ARACNE 用這個性質「剪枝」：若三角形 (A, B, C) 中 I(A,B) 最小，則 (A, B) 邊是 indirect（透過 C），可刪除。這是經典 GRN 推論的核心。<strong>限制：</strong>DPI 假設真實 GRN 沒有 feedback loop，這在現實生物學中常不成立。</p>
+
+<h3>⑦ Bias-variance trade-off 與最佳實踐</h3>
+<p>所有 MI 估計子都有 <strong>finite-sample bias</strong>——獨立變數的估計 MI 不會嚴格為 0。實務上建議：</p>
+<ul>
+<li>用 <strong>shuffle correction</strong>：對每對 (X, Y) 計算 I(X, π(Y)) 多次取平均當 null bias，扣除。</li>
+<li>用 <strong>z-score normalization</strong>：(I − μ_null) / σ_null，這是 CLR 的核心。</li>
+<li>計算 MI 對 sample size 的 saturation curve，確認是否已 plateau。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① KSG estimator details</h3>
+<p>KSG (Kraskov-Stögbauer-Grassberger 2004): given k = the k-th nearest neighbor, ε<sub>i</sub> = max-norm distance from sample i to its k-th NN in joint (X,Y) space. Count n_x(i), n_y(i) within ε<sub>i</sub>/2 on each axis. MI estimate:</p>
+<p style="text-align:center;font-family:Georgia,serif;">Î = ψ(k) − ⟨ψ(n_x+1) + ψ(n_y+1)⟩ + ψ(n)</p>
+<p>where ψ is the digamma. <strong>Trade-off:</strong> small k → high variance; large k → bias. k = 3–6 typical. For dropout-heavy scRNA-seq, k = 5–10 for stability.</p>
+
+<h3>② Mixed continuous-discrete MI</h3>
+<p>Common in scRNA-seq (counts vs labels, expression vs cell type). Ross (2014), Gao et al. (2017) extend KSG. Python <code>npeet</code> handles mixed types automatically.</p>
+
+<h3>③ MINE: neural estimation and its pitfalls</h3>
+<p>MINE writes MI via Donsker-Varadhan dual:</p>
+<p style="text-align:center;font-family:Georgia,serif;">I(X;Y) = sup<sub>T</sub> E<sub>p(x,y)</sub>[T(x,y)] − log E<sub>p(x)p(y)</sub>[e<sup>T(x,y)</sup>]</p>
+<p>and optimizes a lower bound with a neural net T<sub>θ</sub>. <strong>Pitfalls:</strong> (a) the bound is biased and may over-estimate; (b) training is unstable due to exp(T) blow-up — common fixes: clip T, use SMILE (Song & Ermon 2019) variants.</p>
+
+<h3>④ MI variants taxonomy</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.88rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">Variant</th><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">Meaning</th><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">Use</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Standard MI</td><td style="padding:6px;border:1px solid #e0dcd0;">Pairwise dependence</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y|Z)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Conditional MI</td><td style="padding:6px;border:1px solid #e0dcd0;">Confounder control</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>I(X;Y;Z)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Interaction info</td><td style="padding:6px;border:1px solid #e0dcd0;">±; negative = redundancy, positive = synergy</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>PID</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Partial Info Decomp.</td><td style="padding:6px;border:1px solid #e0dcd0;">Split I(X₁,X₂;Y) into unique/redundant/synergistic</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>TC</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Total Correlation</td><td style="padding:6px;border:1px solid #e0dcd0;">Multi-variate joint dependence</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>DCMI</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Directed Conditional MI</td><td style="padding:6px;border:1px solid #e0dcd0;">Directed; usable for causality</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>InfoNCE / MINE</strong></td><td style="padding:6px;border:1px solid #e0dcd0;">Neural lower bounds</td><td style="padding:6px;border:1px solid #e0dcd0;">Representation learning</td></tr>
+</tbody></table>
+
+<h3>⑤ Relation to other statistics</h3>
+<p>For 2D Gaussians: I(X;Y) = −½ log(1 − ρ²) — the exact linear-Gaussian relationship between Pearson r and MI. For non-Gaussian: MI still captures all dependence; r doesn't.</p>
+<p>For discrete: MI = chi-square / log-likelihood-ratio style statistic.</p>
+
+<h3>⑥ Data Processing Inequality (DPI) — key to GRN inference</h3>
+<p>DPI: if X → Y → Z is a Markov chain, I(X;Z) ≤ min(I(X;Y), I(Y;Z)). ARACNE uses this for pruning: if MI(A,B) is the minimum in triangle (A,B,C), the (A,B) edge is indirect (through C) — prune it. <strong>Limitation:</strong> assumes no feedback loops, often violated in real biology.</p>
+
+<h3>⑦ Bias-variance and best practices</h3>
+<p>All MI estimators have <strong>finite-sample bias</strong> — independent variables don't give exactly 0. Best practices:</p>
+<ul>
+<li><strong>Shuffle correction:</strong> compute I(X, π(Y)) many times, subtract the average.</li>
+<li><strong>Z-score normalization:</strong> (I − μ_null) / σ_null — CLR's core idea.</li>
+<li><strong>Saturation curve:</strong> plot MI vs sample size, ensure plateau.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="MI 在生物資訊的具體應用" data-en="Concrete MI Applications">具體應用案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：ARACNE 系列（Margolin 2006-2024）</h3>
+<p>ARACNE 是史上最廣為使用的 MI-based GRN 推論方法。在 cancer biology 領域有上千篇引用：</p>
+<ul>
+<li><strong>原始 ARACNE：</strong>Margolin et al. 2006, BMC Bioinformatics — 第一篇真正能擴展到全基因組的 MI GRN 方法。</li>
+<li><strong>ARACNE-AP：</strong>Lachmann 2016 — adaptive partitioning 估計 MI，速度提升 200×。</li>
+<li><strong>SJARACNe：</strong>Khatamian 2019 — 平行化版本，可處理 100K+ 細胞。</li>
+<li><strong>使用案例：</strong>找出 b cell lymphoma 的 master regulator (MR) → 進入臨床試驗驗證。Califano lab 的 VIPER algorithm 用 ARACNE GRN 推估每個樣本的 TF activity。</li>
+</ul>
+
+<h3>🧬 案例 2：PIDC（Chan 2017, Cell Systems）— scRNA-seq 專用</h3>
+<p>PIDC 把 partial information decomposition 用於 GRN 推論。每三個基因 (A, B, C) 之間：</p>
+<ul>
+<li>unique(A→C)：只有 A 提供的關於 C 的訊息</li>
+<li>unique(B→C)：只有 B 提供的</li>
+<li>redundant(A, B→C)：A 和 B 同時告訴你關於 C 的部分</li>
+<li>synergistic(A, B→C)：只有 A 和 B 一起才能告訴你的</li>
+</ul>
+<p>PIDC 用這四個量重新加權每對基因的 edge，比簡單 MI 更能恢復真實 GRN 拓撲，並對 dropout 與 zero-inflation 較穩健。在 BEELINE benchmark 上是 top performer 之一。</p>
+
+<h3>🧬 案例 3：SCENIC（Aibar 2017, Nature Methods）</h3>
+<p>SCENIC 用 GENIE3（tree-based MI proxy）找 TF-target 共表達，再用 cis-regulatory motif 篩選出真實調控對，產生「regulon」。已成為 scRNA-seq TF activity 推論的事實標準。在 mouse embryonic atlas、cancer atlas、neuro atlas 等大型計畫中廣泛使用。</p>
+
+<h3>🧬 案例 4：CLR 與 MRNET</h3>
+<p>CLR (Faith 2007) 對每個 MI 做 z-score normalization（相對於該基因的所有 partner MI 的分布），消除「hub gene」的偏差。MRNET 用 mRMR 概念逐個選擇調控者。兩者在 DREAM5 challenge benchmark 上表現穩定。</p>
+
+<h3>🧬 案例 5：deep learning 中的 MI — Deep InfoMax</h3>
+<p>Hjelm et al. (2019, ICLR)：用 MI 最大化作為自我監督學習目標——讓 latent representation 與 input 的 MI 最大化。後續 InfoNCE 成為 SimCLR、MoCo 等對比學習的核心，最終影響到 scGPT 等 scLLM 的預訓練設計。</p>
+
+<h3>🧬 案例 6：spike-train MI（神經科學）</h3>
+<p>在 calcium imaging / electrophysiology 中，MI(stimulus, neural response) 量化神經元編碼了多少刺激訊息。Kreuz 與其他學者的方法在系統神經科學是經典。對應到單細胞：MI(perturbation, cell response) 量化擾動編碼。</p>
+
+<h3>🧬 案例 7：Hi-C 染色質互動分析</h3>
+<p>3C/Hi-C 資料找 TAD (topologically associating domain) 邊界時，I(left_window, right_window) 高表示兩側互動弱（domain 邊界）。比 directionality index 對小 TAD 更敏感。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: The ARACNE family (Margolin 2006-2024)</h3>
+<p>The most widely used MI-based GRN method. Thousands of citations in cancer biology:</p>
+<ul>
+<li><strong>Original ARACNE:</strong> Margolin et al. 2006, BMC Bioinformatics — first genome-scale MI GRN.</li>
+<li><strong>ARACNE-AP:</strong> Lachmann 2016 — adaptive partitioning, 200× speedup.</li>
+<li><strong>SJARACNe:</strong> Khatamian 2019 — parallelized for 100K+ cells.</li>
+<li><strong>Impact:</strong> identified master regulators in B-cell lymphoma → clinical trials. Califano lab's VIPER uses ARACNE GRNs for per-sample TF activity.</li>
+</ul>
+
+<h3>🧬 Case 2: PIDC (Chan 2017, Cell Systems) — scRNA-seq specific</h3>
+<p>Applies partial information decomposition to GRN inference. For every triple (A, B, C) compute unique / redundant / synergistic info, re-weight edges. Beats simple MI on BEELINE benchmark and is robust to dropouts.</p>
+
+<h3>🧬 Case 3: SCENIC (Aibar 2017, Nature Methods)</h3>
+<p>Uses GENIE3 (tree-based MI proxy) for TF-target co-expression, plus motif filtering to define "regulons." Standard tool for scRNA-seq TF activity in mouse atlas, cancer atlas, neuro atlas projects.</p>
+
+<h3>🧬 Case 4: CLR and MRNET</h3>
+<p>CLR (Faith 2007) z-score-normalizes each MI vs its row distribution — removes hub gene bias. MRNET uses mRMR. Stable performers on DREAM5.</p>
+
+<h3>🧬 Case 5: Deep InfoMax — MI in deep learning</h3>
+<p>Hjelm et al. (2019, ICLR): maximize MI between latent rep and input as self-supervision. InfoNCE became the foundation of SimCLR, MoCo and influenced scLLM pretraining design.</p>
+
+<h3>🧬 Case 6: Spike-train MI (neuroscience)</h3>
+<p>In calcium imaging / electrophysiology, MI(stimulus, response) quantifies neural information coding — classical in systems neuroscience. Single-cell analogy: MI(perturbation, response).</p>
+
+<h3>🧬 Case 7: Hi-C chromatin interactions</h3>
+<p>For TAD-boundary detection, MI(left window, right window) is high where the two sides interact little — more sensitive than directionality index for small TADs.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="MI 還能改良哪些任務？" data-en="What else could MI improve?">MI 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. dropout-aware MI estimator</h3>
+<p>scRNA-seq 的 zero 大多不是真實 zero（technical dropout）。一個 zero-inflation aware 的 KSG 變體——把 zero 視為「censored value」——可顯著改進 GRN 推論。<strong>提案：</strong>結合 Bayesian dropout model + KSG 的混合 MI 估計子。</p>
+
+<h3>🎯 2. spatial-conditioned MI</h3>
+<p>I(gene_A, gene_B | spatial_location) 找在「同一空間 niche 內」依然共表達的基因——區分「真正共調控」vs「同空間 niche 因此都被某 niche 因子影響」。<strong>提案：</strong>取代 cell2location 的 colocalization 分析。</p>
+
+<h3>🎯 3. 動態 MI：沿 pseudotime 變化的依賴</h3>
+<p>傳統 GRN 給「平均」依賴。但很多 TF-target 關係只在特定發育階段啟動。<strong>提案：</strong>滑動 window MI(gene_A, gene_B) 沿 pseudotime，呈現「動態 GRN」——可揭示「分化開關」基因。</p>
+
+<h3>🎯 4. 多模態 MI：跨 omics 的整合訊號</h3>
+<p>I(RNA_gene, ATAC_peak | celltype) 找與基因表現「條件式關聯」的染色質區域。比 Cicero、ArchR 的 Pearson-based linking 更敏感於 enhancer-gene 的非線性對應。</p>
+
+<h3>🎯 5. PID 用於三方訊號：藥物 × 細胞型別 × 基因</h3>
+<p>「這個藥物的效應對哪些細胞型別有 unique 反應？對哪些 cell types 是 redundant?」 PID 可直接分解。<strong>提案：</strong>藥物精準醫療中的「哪個 cohort 需要這個藥」決策工具。</p>
+
+<h3>🎯 6. MI 評估 scLLM 預訓練品質</h3>
+<p>scGPT/Geneformer 訓練好後，I(input_gene, latent_representation) 應該大於 baseline。如果不夠大，代表 latent 沒抓到該基因的訊息。<strong>提案：</strong>系統性 audit scLLM 的「漏掉哪些基因」。</p>
+
+<h3>🎯 7. CRISPR screen 中的 synergistic perturbation 偵測</h3>
+<p>PIDC 思路：對 (gene_KO_A, gene_KO_B, phenotype)，計算 synergistic info — 找「單獨敲除無效，雙敲有效」的合成致死 (synthetic lethality) 對。比 Bliss/Loewe synergy score 更敏感於非線性協同。</p>
+
+<h3>🎯 8. 細胞–細胞通訊的資訊瓶頸 (information bottleneck)</h3>
+<p>細胞 A 透過 ligand L 對細胞 B 傳遞多少 bit 訊息？I(A_state, B_response | L) 量化。<strong>提案：</strong>新的 cell-cell communication 強度單位（bits）。</p>
+
+<h3>🎯 9. Lineage tracing 與 MI</h3>
+<p>LARRY / CellTagging 給每個細胞 lineage barcode。I(barcode, final_celltype) 量化「lineage 決定 fate 的程度」（=「lineage 限制度」）。若這個 MI 高，代表分化早就決定；若低，代表「終態靠隨機波動」。</p>
+
+<h3>🎯 10. MI for benchmark scoring</h3>
+<p>整合 benchmark（Luecken 2022）目前用多個指標（ARI、NMI、ASW 等）。一個基於 MI 的綜合指標 I(integrated_embedding, biological_label | batch) 可作為單一可解釋分數。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Dropout-aware MI estimator</h3>
+<p>Most zeros in scRNA-seq are dropouts, not biological. A zero-inflation-aware KSG variant treating zeros as censored could significantly improve GRN inference. <strong>Proposal:</strong> Bayesian dropout model + KSG hybrid.</p>
+
+<h3>🎯 2. Spatial-conditioned MI</h3>
+<p>I(gene_A, gene_B | spatial_location) finds genes co-expressed within the same spatial niche — separating true co-regulation from niche-factor-driven covariation. <strong>Proposal:</strong> replace cell2location's colocalization analysis.</p>
+
+<h3>🎯 3. Dynamic MI: dependence along pseudotime</h3>
+<p>Standard GRN gives "average" dependence. Many TF-target relations activate only at specific stages. <strong>Proposal:</strong> sliding-window MI along pseudotime to reveal "dynamic GRN" and developmental switch genes.</p>
+
+<h3>🎯 4. Multi-modal MI for cross-omics integration</h3>
+<p>I(RNA_gene, ATAC_peak | celltype) finds chromatin regions with conditional association to genes — more sensitive than Pearson-based linking in Cicero, ArchR.</p>
+
+<h3>🎯 5. PID for three-way drug × cell-type × gene signals</h3>
+<p>Which cell types respond uniquely vs redundantly to a drug? PID decomposes directly. <strong>Proposal:</strong> precision medicine cohort-selection tool.</p>
+
+<h3>🎯 6. MI to audit scLLM pretraining quality</h3>
+<p>After training scGPT/Geneformer, I(input_gene, latent) should exceed baseline. If not, the latent missed that gene. <strong>Proposal:</strong> systematically audit which genes scLLMs miss.</p>
+
+<h3>🎯 7. Synergistic perturbation in CRISPR screens</h3>
+<p>For (KO_A, KO_B, phenotype), compute synergistic info to find synthetic lethal pairs — more sensitive than Bliss/Loewe synergy scores.</p>
+
+<h3>🎯 8. Information bottleneck for cell-cell communication</h3>
+<p>How many bits does cell A signal to B via ligand L? I(A_state, B_response | L) quantifies. <strong>Proposal:</strong> bits as a new unit for communication strength.</p>
+
+<h3>🎯 9. Lineage tracing + MI</h3>
+<p>I(lineage_barcode, final_celltype) quantifies fate determination by lineage. High MI = decided early; low MI = terminal state by stochastic noise.</p>
+
+<h3>🎯 10. MI as benchmark score</h3>
+<p>Integration benchmarks (Luecken 2022) use multiple metrics (ARI, NMI, ASW). I(integrated_embedding, biological_label | batch) gives a single interpretable score.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'r3c')">R</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3c')">Python (KSG)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'mine')">MINE (PyTorch)</button>
+</div>
+<div class="code-tab-content active" id="r3c"><pre><span class="comment"># install.packages(c("minet","infotheo","NetworkInference"))</span>
+<span class="keyword">library</span>(minet)
+
+mi_mat &lt;- build.mim(expr_mat, estimator = <span class="str">"spearman"</span>)
+grn   &lt;- aracne(mi_mat)        <span class="comment"># ARACNE pruning</span>
+grn_clr &lt;- clr(mi_mat)         <span class="comment"># CLR normalization</span></pre></div>
+<div class="code-tab-content" id="py3c"><pre><span class="keyword">from</span> sklearn.feature_selection <span class="keyword">import</span> mutual_info_regression
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># KSG-style estimator (sklearn uses k-NN approach)</span>
+mi = mutual_info_regression(X, y, n_neighbors=<span class="num">3</span>)
+print(mi)
+
+<span class="comment"># Pairwise gene-gene MI</span>
+n_genes = adata.shape[<span class="num">1</span>]
+mi_mat = np.zeros((n_genes, n_genes))
+<span class="keyword">for</span> i <span class="keyword">in</span> range(n_genes):
+    mi_mat[i] = mutual_info_regression(adata.X, adata.X[:, i])</pre></div>
+<div class="code-tab-content" id="mine"><pre><span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> StatNet(nn.Module):
+    <span class="keyword">def</span> __init__(self, dim):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(dim, <span class="num">64</span>), nn.ReLU(), nn.Linear(<span class="num">64</span>, <span class="num">1</span>))
+    <span class="keyword">def</span> forward(self, x, y):
+        <span class="keyword">return</span> self.net(torch.cat([x, y], dim=-<span class="num">1</span>))
+
+<span class="comment"># Donsker-Varadhan lower bound</span>
+<span class="keyword">def</span> mine_loss(T_joint, T_marg):
+    <span class="keyword">return</span> -(T_joint.mean() - torch.log(torch.exp(T_marg).mean() + <span class="num">1e-8</span>))</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="0"><p data-lang="zh">下列哪個敘述對互資訊正確？</p><p data-lang="en">Which is true about MI?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. I(X;Y) = 0 ⇔ X 與 Y 獨立</span><span data-lang="en">A. I(X;Y) = 0 ⇔ X ⫫ Y</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. MI 只能在 X、Y 都是常態下計算</span><span data-lang="en">B. MI is defined only for Gaussian X, Y</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. MI 等於 Pearson r²</span><span data-lang="en">C. MI equals Pearson r²</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. MI 一定為負</span><span data-lang="en">D. MI is always negative</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼 binning 估計器在高維下表現不佳？</p><p data-lang="en">Why does binning fail in high dimensions?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. R 不支援</span><span data-lang="en">A. R doesn't support it</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 每個 bin 樣本太少，估計變異很大（維度災難）</span><span data-lang="en">B. Too few samples per bin — high variance (curse of dimensionality)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. binning 本來就高效</span><span data-lang="en">C. Binning is actually efficient</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. binning 只能算 Pearson</span><span data-lang="en">D. Binning only computes Pearson</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="hsic-dcor.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 2：HSIC/dCor</span></a>
+<a href="optimal-transport.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 4：最佳傳輸" data-en="Ch 4: Optimal Transport">Ch 4：最佳傳輸</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+function pearson(x,y){const n=x.length;const mx=x.reduce((a,b)=>a+b,0)/n,my=y.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){const a=x[i]-mx,b=y[i]-my;num+=a*b;dx+=a*a;dy+=b*b;}return num/Math.sqrt(dx*dy);}
+function miBin(x,y,B){const n=x.length;const xMin=Math.min(...x),xMax=Math.max(...x),yMin=Math.min(...y),yMax=Math.max(...y);const grid=Array.from({length:B},()=>new Array(B).fill(0));const px=new Array(B).fill(0),py=new Array(B).fill(0);for(let i=0;i<n;i++){let bi=Math.floor((x[i]-xMin)/(xMax-xMin+1e-9)*B);let bj=Math.floor((y[i]-yMin)/(yMax-yMin+1e-9)*B);bi=Math.min(B-1,Math.max(0,bi));bj=Math.min(B-1,Math.max(0,bj));grid[bi][bj]++;px[bi]++;py[bj]++;}let mi=0;for(let i=0;i<B;i++)for(let j=0;j<B;j++){if(grid[i][j]>0){const pxy=grid[i][j]/n,pxv=px[i]/n,pyv=py[j]/n;mi+=pxy*Math.log2(pxy/(pxv*pyv+1e-12));}}return Math.max(0,mi);}
+
+function gen3(t,noise){const n=300,x=[],y=[];for(let i=0;i<n;i++){const xi=(i/(n-1))*2-1;let yi;switch(t){case'lin':yi=xi;break;case'quad':yi=xi*xi;break;case'sin':yi=Math.sin(xi*Math.PI*2);break;case'indep':yi=Math.random()*2-1;break;}x.push(xi+(Math.random()-0.5)*0.05);y.push(yi+(Math.random()-0.5)*noise*2);}return{x,y};}
+
+const ch3=new Chart(document.getElementById('ch3'),{type:'scatter',data:{datasets:[{data:[],backgroundColor:'rgba(26,107,90,0.55)',pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'X'}},y:{title:{display:true,text:'Y'}}}}});
+function u3(){const t=document.getElementById('r3').value;const noise=+document.getElementById('sN').value;const B=+document.getElementById('sB').value;document.getElementById('vN').textContent=noise.toFixed(2);document.getElementById('vB').textContent=B;const {x,y}=gen3(t,noise);ch3.data.datasets[0].data=x.map((xv,i)=>({x:xv,y:y[i]}));ch3.update('none');const mi=miBin(x,y,B);const p=pearson(x,y);document.getElementById('mi3').textContent=mi.toFixed(3);document.getElementById('pe3').textContent=p.toFixed(3);}
+document.getElementById('r3').addEventListener('change',u3);document.getElementById('sN').addEventListener('input',u3);document.getElementById('sB').addEventListener('input',u3);u3();
+
+window._QF={zh:{q1_y:'答對！MI 的零值刻畫了完全獨立。',q1_n:'答案是 A。MI = 0 ⇔ X ⫫ Y。',q2_y:'答對！維度災難讓 binning 在高維崩潰。',q2_n:'答案是 B。每個 bin 樣本不足，估計變異爆炸。'},en:{q1_y:'Correct! MI = 0 characterizes full independence.',q1_n:'Answer is A. MI = 0 ⇔ X ⫫ Y.',q2_y:'Correct! Curse of dimensionality.',q2_n:'Answer is B. Too few samples per bin in high dim.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

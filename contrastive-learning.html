@@ -1,0 +1,500 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Contrastive Learning — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html" class="active">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 23 / 26</div><h1 data-zh="自監督對比學習 (Contrastive Learning)" data-en="Self-supervised Contrastive Learning">自監督對比學習 (Contrastive Learning)</h1>
+<p class="subtitle" data-lang="zh">不需要 label 就能學表徵——同一物的不同 view 拉近、不同物推遠。SimCLR / MoCo / BYOL / CLIP 等方法在影像、文字、語音都已稱霸；今天它也是 scGPT、scCLIP、Concerto 等單細胞 foundation model 的核心模組。</p>
+<p class="subtitle" data-lang="en">Learn representations without labels — pull together different views of the same instance, push apart views of different instances. SimCLR / MoCo / BYOL / CLIP dominate vision, text, and audio; today they are also the core of scGPT, scCLIP, Concerto, and other single-cell foundation models.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="不用 label 怎麼學？" data-en="How to Learn Without Labels?">不用 label 怎麼學？</h2>
+<div data-lang="zh">
+<p>對比學習 (Contrastive Learning, CL) 的核心想法：對每筆資料 x 做兩種隨機 augmentation 得到 x⁺ 和 x'⁺——把它們視為「同一語意」的兩個 view，希望嵌入後彼此靠近；而 batch 中其他樣本 (negatives) 應該遠離。</p>
+<p>InfoNCE loss (Oord et al. 2018) 形式化此目標：</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">L<sub>NCE</sub> = −E [ log ( exp(sim(z, z⁺)/τ) / Σ<sub>k</sub> exp(sim(z, z<sub>k</sub>)/τ) ) ]</p>
+<p>其中 sim 通常是 cosine、τ 是 temperature。可證明 L<sub>NCE</sub> 是 mutual information I(z; z⁺) 的下界——所以對比學習本質上是 MI maximization。</p>
+<p>單細胞語境下「同一物的 view」可以是：同一細胞在 RNA + ATAC modality；同一細胞兩次 dropout augmentation；同一 patient 在不同時間點；同一基因在多個細胞——design 不同 view 就 design 了不同 self-supervised pretext task。</p>
+</div>
+<div data-lang="en">
+<p>Contrastive Learning (CL) core idea: for each x, sample two random augmentations x⁺, x'⁺ — treat them as two views of the same semantic content. Embed them close together; push other samples (negatives) far apart.</p>
+<p>InfoNCE loss (Oord et al. 2018) formalizes this:</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">L<sub>NCE</sub> = −E [ log ( exp(sim(z, z⁺)/τ) / Σ<sub>k</sub> exp(sim(z, z<sub>k</sub>)/τ) ) ]</p>
+<p>where sim is usually cosine and τ is temperature. L<sub>NCE</sub> is a lower bound on mutual information I(z; z⁺) — CL is essentially MI maximization.</p>
+<p>In single-cell, "two views of one instance" can be: same cell in RNA + ATAC; same cell with two random dropouts; same patient at different times; same gene across multiple cells. Choosing views = choosing the self-supervised pretext task.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🧲</div><h4 data-zh="拉近+推遠" data-en="Pull and push">拉近 + 推遠</h4><p data-lang="zh">positive pair 在 latent 中靠近、negative pair 遠離——簡單但異常強大。</p><p data-lang="en">Positive pairs close, negatives far — simple but remarkably powerful.</p></div>
+<div class="card"><div class="card-icon">🔥</div><h4 data-zh="τ 的作用" data-en="Role of τ">temperature τ</h4><p data-lang="zh">τ 控制「困難 negative」的權重。τ 小 → 對最近的 negative 過度敏感；τ 大 → 所有 negative 一樣重要。</p><p data-lang="en">τ controls hard-negative weight. Small τ → over-sensitive to nearest negatives; large τ → uniform weighting.</p></div>
+<div class="card"><div class="card-icon">🎯</div><h4 data-zh="無需 label" data-en="No labels">無需 label</h4><p data-lang="zh">適合 scRNA-seq 這種「樣本多、label 少」場景——用 augmentation 取代手動標註。</p><p data-lang="en">Perfect for scRNA-seq's "many samples, few labels" regime — augmentation replaces manual annotation.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法家族</div>
+<h2 data-zh="從 SimCLR 到 BYOL 到 VICReg" data-en="From SimCLR to BYOL to VICReg">從 SimCLR 到 BYOL 到 VICReg</h2>
+<div data-lang="zh">
+<h3>① SimCLR (Chen et al. 2020, ICML)</h3>
+<p>最直接的 InfoNCE 實作：每個 batch 對所有 sample 做兩次 augmentation，得到 2N 個 view。每個 view 把同 sample 的 view 視為 positive、其他 2N−2 個視為 negative。用 NT-Xent loss (normalized temperature-scaled cross-entropy)。需要大 batch（4096+）。</p>
+
+<h3>② MoCo (He et al. 2020, CVPR)</h3>
+<p>解決「大 batch 才有足夠 negative」的問題：用 momentum encoder 維護「dictionary queue」累積 65k+ 過去的 negative key。小 batch (256) 也能得到大量 negative。後續 MoCo-v3 (Chen 2021) 加 prediction head + ViT，效能再升。</p>
+
+<h3>③ BYOL (Grill et al. 2020, NeurIPS)</h3>
+<p>顛覆「需要 negative」的傳統信念：只用兩 view 的 prediction loss，搭配 momentum target network 與 prediction head——避免 collapse。理論上有些謎，但 empirically 強到爆。</p>
+
+<h3>④ VICReg (Bardes et al. 2022, ICLR) / Barlow Twins</h3>
+<p>用 variance + invariance + covariance regularization 直接約束 latent statistics——強制 latent dimensions 之間 decorrelated。不需 negative 也不需 momentum，理論最透明。Barlow Twins (Zbontar 2021) 是其 spiritual cousin。</p>
+
+<h3>⑤ CLIP (Radford et al. 2021, ICML)</h3>
+<p>Cross-modal contrastive：「image, text」配對為 positive、batch 中其他配對為 negative。學「跨模態對齊」的 joint embedding。<strong>scCLIP、scGPT-CLIP 都是這個架構在單細胞的版本——配對「同細胞的 RNA + image / RNA + ATAC」。</strong></p>
+
+<h3>⑥ Supervised CL (Khosla 2020)</h3>
+<p>有 label 時，把同 class 都視為 positive（不只 augmentation pair）——把 CL 推廣到有部分監督的情境。對「半監督 cell type 整合」非常實用。</p>
+</div>
+<div data-lang="en">
+<h3>① SimCLR (Chen et al. 2020, ICML)</h3>
+<p>Most direct InfoNCE: augment each sample in a batch twice → 2N views. For each view, the same-sample view is positive; the other 2N−2 are negatives. Uses NT-Xent loss. Needs big batches (4096+).</p>
+
+<h3>② MoCo (He et al. 2020, CVPR)</h3>
+<p>Solves "need big batch for enough negatives" via a momentum encoder maintaining a dictionary queue of 65k+ past negatives. Small batches (256) work fine. MoCo-v3 (Chen 2021) adds a prediction head + ViT for further gains.</p>
+
+<h3>③ BYOL (Grill et al. 2020, NeurIPS)</h3>
+<p>Overturns the "negatives are necessary" dogma: only two views, prediction loss, momentum target network + prediction head avoid collapse. Theoretically puzzling but empirically very strong.</p>
+
+<h3>④ VICReg (Bardes et al. 2022, ICLR) / Barlow Twins</h3>
+<p>Variance + invariance + covariance regularization directly constrains latent statistics — decorrelates dimensions. No negatives, no momentum. Theoretically transparent. Barlow Twins (Zbontar 2021) is a spiritual cousin.</p>
+
+<h3>⑤ CLIP (Radford et al. 2021, ICML)</h3>
+<p>Cross-modal contrastive: "image, text" pairs are positive; other batch pairs are negative. Learns a cross-modal joint embedding. <strong>scCLIP, scGPT-CLIP apply this to single-cell — pairing "same-cell RNA + image" or "same-cell RNA + ATAC."</strong></p>
+
+<h3>⑥ Supervised CL (Khosla 2020)</h3>
+<p>With labels, treat same-class samples as positive (not just augmentation pairs) — extends CL to semi-supervised regimes. Very useful for "semi-supervised cell-type integration."</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>關鍵：augmentation 設計</strong>。對 image 是 crop、color jitter 等；對 scRNA-seq 是 stochastic dropout、gene masking、count perturbation；對 scATAC 是 peak subsampling。<strong>augmentation 太弱 → trivial solution；太強 → 破壞語意</strong>。設計 augmentation 是 single-cell CL 的最大藝術。</div>
+<div data-lang="en"><strong>Key: augmentation design.</strong> For images: crop, color jitter. For scRNA-seq: stochastic dropout, gene masking, count perturbation. For scATAC: peak subsampling. <strong>Too weak → trivial solutions; too strong → destroys semantics</strong>. Designing augmentations is the art of single-cell CL.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Embedding 空間：anchor + positive + negatives 隨 τ 變化" data-en="Embedding Space: Anchor + Positive + Negatives vs τ">Embedding 空間：anchor + positive + negatives 隨 τ 變化</h2>
+<div data-lang="zh"><p>下方視覺化 2D embedding 空間：紅色為 anchor (z)、綠色為 positive (z⁺)、灰色為 negative。InfoNCE 把對應 softmax 的「機率重心」推往 positive。拖動 τ：τ 小 → softmax 銳化，只關注 anchor 最近的 negative（hard negative mining）；τ 大 → softmax 鈍化，所有 negative 一樣重要。下方環形圖顯示每個 negative 對 loss 的「貢獻」百分比。</p></div>
+<div data-lang="en"><p>Below: a 2D embedding space. Red = anchor (z); green = positive (z⁺); grey = negatives. InfoNCE softmax distributes gradient towards the positive. Drag τ: small τ → sharp softmax, focuses on the nearest negative (hard-negative mining); large τ → flat softmax, all negatives equally important. The ring chart shows each negative's percent contribution to the loss.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label>τ (temperature) <span id="vTau">0.1</span></label><input type="range" id="sTau" min="0.02" max="2" value="0.1" step="0.01"></div>
+<svg id="clSvg" viewBox="0 0 700 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div class="card-grid cols-3" style="margin-top:14px;">
+<div class="card"><h4 data-zh="positive 機率" data-en="P(positive)">P(positive)</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vPpos">—</p><p data-lang="zh" style="font-size:.8rem;">softmax 分配給 z⁺</p><p data-lang="en" style="font-size:.8rem;">softmax mass on z⁺</p></div>
+<div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4 data-zh="InfoNCE loss" data-en="InfoNCE loss">InfoNCE</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="vLoss">—</p><p data-lang="zh" style="font-size:.8rem;">−log P(positive)</p><p data-lang="en" style="font-size:.8rem;">−log P(positive)</p></div>
+<div class="card"><h4 data-zh="最難 negative 權重" data-en="Hardest neg weight">最難 neg weight</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vHard">—</p><p data-lang="zh" style="font-size:.8rem;">最近 negative 的 softmax</p><p data-lang="en" style="font-size:.8rem;">softmax on nearest neg</p></div>
+</div>
+<div id="clInterp" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="如何在單細胞挑 CL 演算法？" data-en="Picking a CL algorithm for single-cell">如何在單細胞挑 CL 演算法？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">資料大:</span><div>cells &gt; 10⁵ → SimCLR/MoCo + 大量 augmentation。</div></div>
+<div class="dt-node"><span class="dt-q">資料小:</span><div>cells &lt; 10⁴ → BYOL 或 VICReg（不需大 negative pool）。</div></div>
+<div class="dt-node"><span class="dt-q">跨模態:</span><div>有配對 RNA-ATAC / RNA-protein → scCLIP 風格。</div></div>
+<div class="dt-node"><span class="dt-q">有部分標註:</span><div>Supervised CL (Khosla 2020) 把同 class 設為 positive。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Big:</span><div>cells &gt; 10⁵ → SimCLR/MoCo + heavy augmentation.</div></div>
+<div class="dt-node"><span class="dt-q">Small:</span><div>cells &lt; 10⁴ → BYOL or VICReg (no large negative pool needed).</div></div>
+<div class="dt-node"><span class="dt-q">Cross-modal:</span><div>paired RNA-ATAC / RNA-protein → scCLIP-style.</div></div>
+<div class="dt-node"><span class="dt-q">Semi-supervised:</span><div>Supervised CL (Khosla 2020), same-class samples as positives.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="對比學習在單細胞與多體學的應用" data-en="CL in Single-cell and Multi-omics">對比學習在單細胞與多體學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Concerto (Yang 2022)" data-en="Concerto (Yang 2022)">Concerto</h4>
+<p data-lang="zh">Yang et al. (2022, Nature Communications)：第一個 large-scale 單細胞對比學習框架。用 stochastic gene masking 作 augmentation，學「不論 dropout 都不變」的細胞表徵。在 cell type annotation、batch correction、reference mapping 上都接近或勝過 scVI。</p>
+<p data-lang="en">Yang et al. (2022, Nat Comm): the first large-scale single-cell CL framework. Stochastic gene masking as augmentation, learning representations invariant to dropouts. Matches or beats scVI on annotation, batch correction, reference mapping.</p></div>
+
+<div class="card"><h4 data-zh="scCLIP / OmiCLIP" data-en="scCLIP / OmiCLIP">scCLIP / OmiCLIP</h4>
+<p data-lang="zh">把 CLIP 跨模態對比學習用於配對的 (scRNA, scATAC) 或 (scRNA, image)。建構「跨模態語意空間」，能用 RNA query atlas、用 image 找對應 expression。也是 SpatialCLIP (2024) 對齊 spatial + histology 的基礎。</p>
+<p data-lang="en">CLIP-style cross-modal CL for paired (scRNA, scATAC) or (scRNA, image). Builds a cross-modal semantic space — query atlas by RNA, find expression by image. Basis of SpatialCLIP (2024) aligning spatial + histology.</p></div>
+
+<div class="card"><h4 data-zh="scBERT / scGPT 對比 head" data-en="scBERT / scGPT contrastive head">scBERT / scGPT 對比 head</h4>
+<p data-lang="zh">Yang et al. (2022, NMI) 的 scBERT、Cui et al. (2024) 的 scGPT 在 mask-and-predict pretext 之外，都加入對比 head 強化「同細胞跨 view 一致性」。對下游 fine-tuning 提升明顯。</p>
+<p data-lang="en">Yang et al. (2022, NMI) scBERT and Cui et al. (2024) scGPT add a contrastive head on top of mask-and-predict pretext — improving downstream fine-tuning.</p></div>
+
+<div class="card"><h4 data-zh="SimCSE for 蛋白質序列" data-en="SimCSE for protein sequences">SimCSE for proteins</h4>
+<p data-lang="zh">借用 NLP 的 SimCSE (Gao 2021)：對 protein sequence 做兩次 random dropout，positive pair 是同蛋白質、negative 是 batch 其他蛋白。學「functional embedding」可用於 protein-protein interaction prediction、functional annotation。</p>
+<p data-lang="en">Borrowed from NLP's SimCSE (Gao 2021): two random dropouts of a protein sequence form a positive pair; other proteins are negatives. Learns functional embeddings useful for PPI prediction and annotation.</p></div>
+
+<div class="card"><h4 data-zh="ContrasCell — patient embedding" data-en="ContrasCell — patient embedding">ContrasCell</h4>
+<p data-lang="zh">把同一病人的多 sample 視為 positive、跨病人為 negative，學「patient-level signature」——對 longitudinal cohort 跨時間追蹤特別有用。可作為「臨床預測 model」的輸入特徵。</p>
+<p data-lang="en">Same-patient samples are positives, cross-patient pairs are negatives — learn patient-level signatures. Useful for longitudinal cohort tracking and as features for clinical prediction.</p></div>
+
+<div class="card"><h4 data-zh="chromBERT (對比 chromatin)" data-en="chromBERT (chromatin CL)">chromBERT (對比 chromatin)</h4>
+<p data-lang="zh">把同一基因的 chromatin state vector 與 cell type label 配對為 positive，學「染色質 → 表現潛能」的可遷移表徵。可用於 enhancer-gene linking、TF binding prediction。</p>
+<p data-lang="en">Pair a gene's chromatin state with its cell-type label as positive — learn transferable "chromatin → expression potential" representations. Useful for enhancer-gene linking and TF binding prediction.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="陷阱、原理與最新進展" data-en="Pitfalls, Theory, Recent Advances">陷阱、原理與最新進展</h2>
+
+<div data-lang="zh">
+<h3>① InfoNCE = MI 下界的數學</h3>
+<p>Poole et al. (2019) 證明：對 K 個 negative，InfoNCE 是 I(z; z⁺) 的下界，且 bound 為 log K − L<sub>NCE</sub>。所以「越多 negative」bound 越緊——這正是為何 SimCLR 需要大 batch、MoCo 維護 queue。實作 trick：對 K &gt; 1000，bound 已非常接近真實 MI。</p>
+
+<h3>② Alignment + Uniformity 解釋</h3>
+<p>Wang &amp; Isola (2020, ICML) 證明：InfoNCE 在 hypersphere 極限下分解為兩項：(1) alignment——positive pair 距離（要小）；(2) uniformity——所有 sample 在球面上的均勻度（要大）。這給對比學習「為何 work」一個幾何直觀。</p>
+
+<h3>③ Negative collapse / false negatives</h3>
+<p>單細胞 CL 的最大 pitfall：同 cell type 的「不同細胞」被當成 negative，但其實它們語意相同 → 強迫推遠它們會破壞 cell type 結構。解法：(a) Supervised CL 用 cell type label；(b) NN-CL (Dwibedi 2021) 把 nearest neighbor 也視為 positive；(c) Debiased CL (Chuang 2020) 修正 sampling bias。</p>
+
+<h3>④ Temperature τ 的精細調整</h3>
+<p>Wang &amp; Liu (2021) 證明 τ 控制「hard negative mining」強度：τ→0 等價於只挑最近的 negative；τ→∞ 變成 uniform。實務上 τ ∈ [0.05, 0.5]，單細胞通常 0.1–0.2。Adaptive τ（隨訓練調整）是 2023 後的新方向。</p>
+
+<h3>⑤ BYOL 不用 negative 為何不 collapse？</h3>
+<p>Tian et al. (2021) 用 dynamical system 分析：predictor + target network 的 momentum update 等價於「對 representation 的 implicit ridge regularization」——防止 latent 萎縮到單點。沒有 negative 也能保持 diversity。</p>
+
+<h3>⑥ Multi-view 擴展與 augmentation 的選擇性</h3>
+<p>對單細胞，「好的」augmentation 是什麼？Tian et al. (2020) 的 InfoMin 原則：augmentation 應「最小化 view 間共享的 nuisance info、最大化 task-relevant info」。實務上：dropout augmentation 模擬 technical noise；gene masking 強迫學 global gene-gene 結構；count perturbation 模擬 capture efficiency。</p>
+
+<h3>⑦ Dimensional collapse</h3>
+<p>即使有 negative，CL 仍可能讓 latent 維度坍塌（部分 dim 失活）。Jing et al. (2022) 證明 BatchNorm + projection head 是緩解 key。實務檢查方法：latent 的 covariance matrix singular values 應均勻分布。</p>
+
+<h3>⑧ Spectral / EigenGame 理論</h3>
+<p>Balestriero &amp; LeCun (2022) 證明：所有 CL 算法（SimCLR、BYOL、VICReg、Barlow Twins）在 limit 下都收斂到 spectral embedding ——某種 graph Laplacian eigenmaps。提供統一視角。</p>
+</div>
+
+<div data-lang="en">
+<h3>① InfoNCE = MI lower bound mathematics</h3>
+<p>Poole et al. (2019) proved: with K negatives, InfoNCE lower-bounds I(z; z⁺) by log K − L<sub>NCE</sub>. So "more negatives" tighten the bound — hence SimCLR's huge batches, MoCo's queue. For K &gt; 1000 the bound is already close to true MI.</p>
+
+<h3>② Alignment + uniformity interpretation</h3>
+<p>Wang &amp; Isola (2020, ICML): InfoNCE on the hypersphere decomposes into alignment (positive pair distance, small) + uniformity (spread of all samples on sphere, large) — a geometric intuition for why CL works.</p>
+
+<h3>③ Negative collapse / false negatives</h3>
+<p>The biggest pitfall in single-cell CL: cells of the same type are treated as negatives though semantically identical → forcing them apart destroys structure. Fixes: (a) Supervised CL with cell-type labels; (b) NN-CL (Dwibedi 2021) treats nearest neighbours as positives; (c) Debiased CL (Chuang 2020) corrects sampling bias.</p>
+
+<h3>④ Fine-tuning temperature τ</h3>
+<p>Wang &amp; Liu (2021): τ controls hard-negative mining intensity. τ→0 = pick the closest negative; τ→∞ = uniform. Typical τ ∈ [0.05, 0.5]; single-cell uses 0.1–0.2. Adaptive τ is a post-2023 trend.</p>
+
+<h3>⑤ Why doesn't BYOL collapse without negatives?</h3>
+<p>Tian et al. (2021) used dynamical systems analysis: predictor + target network momentum = implicit ridge regularization on the representation — prevents latent collapse without explicit negatives.</p>
+
+<h3>⑥ Multi-view extension and augmentation selection</h3>
+<p>What's a "good" augmentation for single-cell? Tian et al. (2020) InfoMin: augmentation should minimize nuisance shared info between views and maximize task-relevant info. In practice: dropout mimics technical noise; gene masking forces global gene-gene structure learning; count perturbation mimics capture efficiency variation.</p>
+
+<h3>⑦ Dimensional collapse</h3>
+<p>Even with negatives, CL can have dimensional collapse (dead dimensions). Jing et al. (2022): BatchNorm + projection head are key mitigators. Diagnostic: latent covariance singular values should be roughly uniform.</p>
+
+<h3>⑧ Spectral / EigenGame theory</h3>
+<p>Balestriero &amp; LeCun (2022): all CL methods (SimCLR, BYOL, VICReg, Barlow Twins) converge in some limit to spectral embeddings — a graph Laplacian eigenmap. Unifying view.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="對比學習還能改良哪些生物資訊任務？" data-en="Where else could CL improve biology?">對比學習還能改良哪些生物資訊任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Cross-species cell contrastive</h3>
+<p>把「同 cell type 的人 vs 鼠細胞」設為 positive、跨 cell type 為 negative，學「物種無關的細胞型別表徵」。比經典 ortholog mapping 更語意化，預期能跨物種轉移細胞型別 label。</p>
+
+<h3>🎯 2. Patient-vs-patient atlas embedding</h3>
+<p>建構「patient-level」對比學習：把同病人 cells 視為 positive、跨病人為 negative → 學「個人化 disease signature」。可作為臨床 trial stratification 的特徵。</p>
+
+<h3>🎯 3. Perturbation contrastive (treated vs untreated)</h3>
+<p>把「同 perturbation 的細胞 pair」設為 positive、不同 perturbation 為 negative，學「擾動指紋」latent。預期可預測「未見過 perturbation 的反應」（zero-shot perturbation prediction）。</p>
+
+<h3>🎯 4. 多模態 spatial alignment</h3>
+<p>對 spatial transcriptomics + histology image，用 CLIP-style 把「同位置的 RNA + image patch」配對。預期得到「跨模態 niche representation」，比 PASTE 等 OT-only 方法更語意化。</p>
+
+<h3>🎯 5. 對比學習 + 因果結構先驗</h3>
+<p>InfoNCE 學 「invariant under augmentation」，但 augmentation 應反映真實 causal structure。提案：用 do-calculus 設計 augmentation（do(batch=k) 模擬 batch effect），讓 CL 學「對 batch 不變、對 phenotype 敏感」的因果表徵。</p>
+
+<h3>🎯 6. Time-aware CL</h3>
+<p>把「同細胞但不同 timepoint」設為 ordered positive（temporally weighted），學「沿軌跡平滑」的細胞表徵。可作為 trajectory inference 的新 backbone（取代 PCA + UMAP）。</p>
+
+<h3>🎯 7. Hierarchical CL for cell type taxonomy</h3>
+<p>對 cell type 分層 (T cell → CD4 T → Th1)：較細的「同 subtype」positive 強、粗的「同 lineage」positive 弱。學樹狀 hierarchical embedding。對 cell ontology 整合很有用。</p>
+
+<h3>🎯 8. CL on lineage tracing</h3>
+<p>有 barcode 的 lineage tracing 資料：同 clonal family 細胞為 positive、跨 clone 為 negative。學「lineage-aware embedding」，補強純基因表現的 trajectory inference。</p>
+
+<h3>🎯 9. Multi-task CL pretraining</h3>
+<p>同時定義多種 view-pair：(dropout)(mask)(modality)(time)，每對都有獨立 InfoNCE。學「universal cell embedding」，跨 atlas / 跨 task 都好用。預期是下一代 scLLM pretrain 範式。</p>
+
+<h3>🎯 10. CL for drug response prediction</h3>
+<p>把「同藥物作用的細胞」設為 positive，學「mechanism-of-action embedding」。可用於 drug repurposing（找相似 MoA 的新藥）與 combinatorial drug screening。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Cross-species cell contrastive</h3>
+<p>Same cell-type human/mouse cells = positive; different cell types = negative. Learns species-agnostic cell-type representations — more semantic than ortholog mapping, supports cross-species label transfer.</p>
+
+<h3>🎯 2. Patient-vs-patient atlas embedding</h3>
+<p>Patient-level CL: same-patient cells positive, cross-patient negative → learn personalised disease signatures. Useful as features for clinical trial stratification.</p>
+
+<h3>🎯 3. Perturbation contrastive (treated vs untreated)</h3>
+<p>Same-perturbation cells positive, different-perturbation negative — learns perturbation fingerprints. Could enable zero-shot perturbation prediction.</p>
+
+<h3>🎯 4. Multi-modal spatial alignment</h3>
+<p>CLIP-style pairing "same-location RNA + image patch" for spatial transcriptomics + histology. Learns cross-modal niche representations, more semantic than OT-only methods like PASTE.</p>
+
+<h3>🎯 5. CL + causal-structure priors</h3>
+<p>InfoNCE learns invariance under augmentation, but augmentation should reflect real causal structure. Use do-calculus to design augmentation (do(batch=k) simulating batch effects) → CL learns "batch-invariant, phenotype-sensitive" causal representations.</p>
+
+<h3>🎯 6. Time-aware CL</h3>
+<p>"Same cell, different timepoints" → temporally weighted positive. Learns smooth-along-trajectory representations. A new backbone for trajectory inference (replacing PCA + UMAP).</p>
+
+<h3>🎯 7. Hierarchical CL for cell type taxonomy</h3>
+<p>For nested cell types (T → CD4 → Th1): fine-subtype positive strong, coarse-lineage positive weak. Learns tree-structured hierarchical embeddings — useful for cell ontology integration.</p>
+
+<h3>🎯 8. CL on lineage tracing</h3>
+<p>For barcode lineage tracing: same clonal family = positive. Learn lineage-aware embeddings, complementing pure expression trajectory inference.</p>
+
+<h3>🎯 9. Multi-task CL pretraining</h3>
+<p>Define multiple view-pair tasks (dropout, mask, modality, time) with independent InfoNCEs. Learn a universal cell embedding usable across atlases and tasks. A likely next-gen scLLM pretraining paradigm.</p>
+
+<h3>🎯 10. CL for drug response prediction</h3>
+<p>Same-drug cells = positive → learn mechanism-of-action embeddings. Useful for drug repurposing (find similar MoA new drugs) and combinatorial screening.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'lightly')">Python / lightly</button>
+<button class="code-tab-btn" onclick="switchTab(this,'ptl')">PyTorch Lightning SimCLR</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scl')">scratch InfoNCE</button>
+</div>
+<div class="code-tab-content active" id="lightly"><pre><span class="comment"># pip install lightly</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> lightly.loss <span class="keyword">import</span> NTXentLoss
+<span class="keyword">from</span> lightly.models.modules <span class="keyword">import</span> SimCLRProjectionHead
+
+<span class="keyword">class</span> SCLR(torch.nn.Module):
+    <span class="keyword">def</span> __init__(self, d_in, d_hidden=<span class="num">256</span>, d_z=<span class="num">128</span>):
+        super().__init__()
+        self.backbone = torch.nn.Sequential(
+            torch.nn.Linear(d_in, <span class="num">512</span>), torch.nn.ReLU(),
+            torch.nn.Linear(<span class="num">512</span>, d_hidden))
+        self.proj = SimCLRProjectionHead(d_hidden, d_hidden, d_z)
+    <span class="keyword">def</span> forward(self, x):
+        <span class="keyword">return</span> self.proj(self.backbone(x))
+
+criterion = NTXentLoss(temperature=<span class="num">0.1</span>)
+
+<span class="keyword">def</span> aug(x, p=<span class="num">0.4</span>):  <span class="comment"># gene dropout augmentation</span>
+    mask = (torch.rand_like(x) &gt; p).float()
+    <span class="keyword">return</span> x * mask</pre></div>
+
+<div class="code-tab-content" id="ptl"><pre><span class="keyword">import</span> pytorch_lightning <span class="keyword">as</span> pl
+<span class="keyword">import</span> torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">class</span> SCContrastive(pl.LightningModule):
+    <span class="keyword">def</span> __init__(self, model, tau=<span class="num">0.1</span>):
+        super().__init__(); self.m = model; self.tau = tau
+    <span class="keyword">def</span> training_step(self, batch, _):
+        x = batch[<span class="str">"expression"</span>]
+        z1 = F.normalize(self.m(aug(x)), dim=-<span class="num">1</span>)
+        z2 = F.normalize(self.m(aug(x)), dim=-<span class="num">1</span>)
+        N = x.size(<span class="num">0</span>)
+        z = torch.cat([z1, z2], dim=<span class="num">0</span>)         <span class="comment"># 2N</span>
+        sim = z @ z.T / self.tau                <span class="comment"># 2N x 2N</span>
+        labels = torch.arange(N, device=z.device)
+        labels = torch.cat([labels + N, labels])
+        sim.fill_diagonal_(-<span class="num">1e9</span>)
+        loss = F.cross_entropy(sim, labels)
+        <span class="keyword">return</span> loss</pre></div>
+
+<div class="code-tab-content" id="scl"><pre><span class="keyword">import</span> torch, torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">def</span> info_nce(z1, z2, tau=<span class="num">0.1</span>):
+    <span class="str">"""Symmetric InfoNCE for paired views z1, z2 (both [N, D])."""</span>
+    z1 = F.normalize(z1, dim=-<span class="num">1</span>); z2 = F.normalize(z2, dim=-<span class="num">1</span>)
+    N = z1.size(<span class="num">0</span>)
+    logits = z1 @ z2.T / tau                  <span class="comment"># [N, N]</span>
+    labels = torch.arange(N, device=z1.device)
+    l_a = F.cross_entropy(logits, labels)
+    l_b = F.cross_entropy(logits.T, labels)
+    <span class="keyword">return</span> (l_a + l_b) / <span class="num">2</span>
+
+<span class="comment"># Example: dropout-based augmentation</span>
+<span class="keyword">def</span> dropout_aug(x, p=<span class="num">0.3</span>):
+    m = (torch.rand_like(x) &gt; p).float()
+    <span class="keyword">return</span> x * m / (<span class="num">1</span> - p)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">InfoNCE loss 與 mutual information 的關係為何？</p><p data-lang="en">What's the relationship between InfoNCE and mutual information?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. InfoNCE 等於 KL 散度</span><span data-lang="en">A. InfoNCE equals KL divergence</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 兩者完全無關</span><span data-lang="en">B. Unrelated</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. InfoNCE 是 I(z;z⁺) 的下界；越多 negative bound 越緊</span><span data-lang="en">C. InfoNCE lower-bounds I(z;z⁺); more negatives → tighter bound</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. InfoNCE 上界 cross-entropy</span><span data-lang="en">D. InfoNCE upper-bounds cross-entropy</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">BYOL (Grill 2020) 的關鍵特色是？</p><p data-lang="en">What's the key feature of BYOL (Grill 2020)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 比 SimCLR 用更多 negative</span><span data-lang="en">A. Uses more negatives than SimCLR</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需 negative pair，靠 momentum target + prediction head 避免 collapse</span><span data-lang="en">B. No negatives — momentum target + prediction head prevent collapse</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只能用於影像</span><span data-lang="en">C. Image-only</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不用 augmentation</span><span data-lang="en">D. No augmentation</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">在 scRNA-seq 對比學習中，「false negative」最大風險為何？</p><p data-lang="en">In scRNA-seq CL, what's the biggest "false negative" risk?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 同 cell type 的其他細胞被當成 negative，破壞 cell type 結構</span><span data-lang="en">A. Same-cell-type cells treated as negatives, destroying cell-type structure</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Augmentation 太弱</span><span data-lang="en">B. Augmentation too weak</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Batch 太大</span><span data-lang="en">C. Batch too big</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. τ 太小</span><span data-lang="en">D. τ too small</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="tensor-decomposition.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 22：張量分解" data-en="Ch 22: Tensor Decomposition">Ch 22：張量分解</span></a>
+<a href="symbolic-regression.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 24：符號回歸" data-en="Ch 24: Symbolic Regression">Ch 24：符號回歸</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: anchor + positive + negatives with temperature τ =====
+const W = 700, H = 360;
+const cx = 220, cy = H/2;        // center of embedding circle
+const radius = 130;
+// Anchor at fixed position
+const anchor = {x: cx, y: cy, label: 'anchor (z)', color: '#C83C3C'};
+// Positive: close to anchor
+const positive = {x: cx + 22, y: cy - 14, label: 'positive (z⁺)', color: '#1A6B5A'};
+// 8 negatives distributed around
+const negatives = [];
+const negAngles = [20, 60, 110, 150, 200, 240, 290, 330];
+const negDists  = [60, 110, 85, 130, 100, 75, 145, 90];
+for(let i=0;i<negAngles.length;i++){
+  const a = negAngles[i] * Math.PI / 180;
+  negatives.push({
+    x: cx + Math.cos(a)*negDists[i],
+    y: cy + Math.sin(a)*negDists[i],
+    label: 'n' + (i+1)
+  });
+}
+
+function cosineSim(p, q){
+  // For 2D, treat as cosine on unit sphere via normalizing offset from origin
+  const ax = p.x - cx, ay = p.y - cy;
+  const bx = q.x - cx, by = q.y - cy;
+  const na = Math.sqrt(ax*ax + ay*ay) + 1e-9;
+  const nb = Math.sqrt(bx*bx + by*by) + 1e-9;
+  return (ax*bx + ay*by) / (na * nb);
+}
+
+function softmax(logits){
+  const m = Math.max(...logits);
+  const exps = logits.map(l => Math.exp(l - m));
+  const s = exps.reduce((a,b)=>a+b, 0);
+  return exps.map(e => e/s);
+}
+
+function renderCL(){
+  const tau = +document.getElementById('sTau').value;
+  document.getElementById('vTau').textContent = tau.toFixed(2);
+  // Compute logits: anchor vs (positive, neg1..negK)
+  const allTargets = [positive, ...negatives];
+  const sims = allTargets.map(t => cosineSim(anchor, t));
+  const logits = sims.map(s => s / tau);
+  const probs = softmax(logits);
+  const pPos = probs[0];
+  const loss = -Math.log(pPos + 1e-9);
+  const hardestNegIdx = sims.slice(1).indexOf(Math.max(...sims.slice(1))) + 1;
+  const hardestNegWeight = probs[hardestNegIdx];
+
+  // Build SVG
+  let svg = '';
+  // background circle
+  svg += `<circle cx="${cx}" cy="${cy}" r="${radius+20}" fill="none" stroke="#ddd" stroke-dasharray="4 4"/>`;
+  // Draw line from anchor to positive
+  svg += `<line x1="${anchor.x}" y1="${anchor.y}" x2="${positive.x}" y2="${positive.y}" stroke="#1A6B5A" stroke-width="3" stroke-dasharray="6 3"/>`;
+  // Draw lines to negatives, opacity by softmax weight
+  for(let i=0;i<negatives.length;i++){
+    const w = probs[i+1];
+    const opacity = Math.min(1, w * 5 + 0.05);
+    const width = Math.max(0.5, w * 25);
+    svg += `<line x1="${anchor.x}" y1="${anchor.y}" x2="${negatives[i].x}" y2="${negatives[i].y}" stroke="rgba(120,120,120,${opacity})" stroke-width="${width}"/>`;
+  }
+  // Negatives circles
+  for(let i=0;i<negatives.length;i++){
+    const n = negatives[i];
+    const w = probs[i+1];
+    const r = 8 + w * 30;
+    svg += `<circle cx="${n.x}" cy="${n.y}" r="${r}" fill="rgba(120,120,120,0.5)" stroke="#666" stroke-width="1"/>`;
+    svg += `<text x="${n.x}" y="${n.y+4}" text-anchor="middle" font-size="10" fill="#333" font-weight="600">${n.label}</text>`;
+    svg += `<text x="${n.x}" y="${n.y - r - 4}" text-anchor="middle" font-size="9" fill="#666">${(w*100).toFixed(1)}%</text>`;
+  }
+  // Positive
+  svg += `<circle cx="${positive.x}" cy="${positive.y}" r="${10 + pPos*30}" fill="rgba(26,107,90,0.7)" stroke="#1A6B5A" stroke-width="2"/>`;
+  svg += `<text x="${positive.x}" y="${positive.y+4}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">z⁺</text>`;
+  svg += `<text x="${positive.x}" y="${positive.y - 10 - pPos*30 - 4}" text-anchor="middle" font-size="10" fill="#1A6B5A" font-weight="700">P=${(pPos*100).toFixed(1)}%</text>`;
+  // Anchor
+  svg += `<circle cx="${anchor.x}" cy="${anchor.y}" r="14" fill="#C83C3C" stroke="#fff" stroke-width="2"/>`;
+  svg += `<text x="${anchor.x}" y="${anchor.y+4}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">z</text>`;
+
+  // Right panel: bar chart of softmax distribution
+  const barX = 420, barY = 50, barW = 250, barH = 280;
+  svg += `<text x="${barX + barW/2}" y="${barY - 16}" text-anchor="middle" font-size="13" font-weight="700" fill="#333">softmax distribution</text>`;
+  const labels = ['z⁺', ...negatives.map(n => n.label)];
+  const colors = ['#1A6B5A', ...Array(8).fill('#888')];
+  const barWidth = barW / labels.length;
+  for(let i=0;i<labels.length;i++){
+    const h = probs[i] * barH;
+    const x = barX + i*barWidth;
+    const y = barY + barH - h;
+    svg += `<rect x="${x+2}" y="${y}" width="${barWidth-4}" height="${h}" fill="${colors[i]}" opacity="0.85"/>`;
+    svg += `<text x="${x + barWidth/2}" y="${barY + barH + 14}" text-anchor="middle" font-size="10" fill="#666">${labels[i]}</text>`;
+  }
+  svg += `<line x1="${barX}" y1="${barY + barH}" x2="${barX + barW}" y2="${barY + barH}" stroke="#999" stroke-width="1"/>`;
+
+  document.getElementById('clSvg').innerHTML = svg;
+
+  document.getElementById('vPpos').textContent = (pPos*100).toFixed(1) + '%';
+  document.getElementById('vLoss').textContent = loss.toFixed(3);
+  document.getElementById('vHard').textContent = (hardestNegWeight*100).toFixed(1) + '%';
+
+  const L = I18n.get();
+  let msg;
+  if(tau < 0.1) msg = L==='zh'?'τ 很小 → softmax 銳化。對最近的 negative 過度敏感（hard negative mining 模式），梯度集中在「最像 positive 的 negative」上。':'Very small τ → sharp softmax. Over-sensitive to the nearest negative (hard-negative mining); gradient concentrates on the negative most similar to positive.';
+  else if(tau < 0.5) msg = L==='zh'?'τ 適中 → 標準對比學習範圍。softmax 既關注 hard negative 也保留 easy negative 的訊息。':'Moderate τ → standard CL regime. Softmax weights hard negatives more, but easy negatives still contribute.';
+  else msg = L==='zh'?'τ 較大 → softmax 鈍化。所有 negative 權重幾乎相同，hard-negative mining 效果減弱，loss 訊號弱。':'Large τ → flat softmax. All negatives weighted similarly, hard-negative mining diluted; weaker loss signal.';
+  document.getElementById('clInterp').innerHTML = msg;
+}
+document.getElementById('sTau').addEventListener('input', renderCL);
+document.addEventListener('langchange', renderCL);
+renderCL();
+
+window._QF={zh:{
+q1_y:'答對！InfoNCE 是 MI 的下界，越多 negative bound 越緊。',
+q1_n:'答案是 C。Poole 2019 證明 InfoNCE 為 I(z;z⁺) 的下界，bound = log K − L。',
+q2_y:'答對！BYOL 無 negative，靠 momentum target 與 predictor 防止 collapse。',
+q2_n:'答案是 B。BYOL 顛覆「需要 negative」傳統，用 momentum + predictor 維持 latent diversity。',
+q3_y:'答對！這是 single-cell CL 最大陷阱——同 cell type 的細胞被推遠破壞語意結構。',
+q3_n:'答案是 A。Supervised CL、NN-CL、Debiased CL 都針對此問題。'
+},en:{
+q1_y:'Correct! InfoNCE lower-bounds MI; more negatives → tighter bound.',
+q1_n:'Answer is C. Poole 2019 proved InfoNCE = log K − L bounds I(z;z⁺).',
+q2_y:'Correct! BYOL has no negatives; momentum target + predictor prevent collapse.',
+q2_n:'Answer is B. BYOL overturned the "negatives needed" dogma using momentum + predictor.',
+q3_y:'Correct! The biggest single-cell CL pitfall — same-type cells pushed apart wrongly.',
+q3_n:'Answer is A. Supervised CL, NN-CL, Debiased CL address this.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

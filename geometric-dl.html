@@ -1,0 +1,413 @@
+<!DOCTYPE html><html lang="zh-Hant"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Geometric Deep Learning — Adv. Methods Tutorial</title>
+<link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner">
+<a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a>
+<ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html" class="active">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero">
+<div class="step-badge">CH 26 / 26</div>
+<h1 data-zh="幾何深度學習 (Geometric Deep Learning)" data-en="Geometric Deep Learning">幾何深度學習 (Geometric Deep Learning)</h1>
+<p class="subtitle" data-lang="zh">Bronstein 等人 (2021) 的「Erlangen Program for ML」——把資料的對稱性 (symmetry) 與不變性 (invariance) 編碼進架構，是 AlphaFold、RFdiffusion、DiffDock 共同的數學基礎。</p>
+<p class="subtitle" data-lang="en">Bronstein et al. (2021)'s "Erlangen Program for ML" — encoding data symmetries and invariances directly into architecture. The mathematical foundation behind AlphaFold, RFdiffusion, and DiffDock.</p>
+</header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="不變性 vs 等變性" data-en="Invariance vs Equivariance">不變性 (invariance) vs 等變性 (equivariance)</h2>
+<div data-lang="zh">
+<p>對一群「對稱操作」G（旋轉、平移、置換⋯）：</p>
+<ul>
+<li><strong>不變性 (invariant):</strong> f(g·x) = f(x)。函數輸出對群操作完全不變。例：分子能量對旋轉不變。</li>
+<li><strong>等變性 (equivariant):</strong> f(g·x) = g·f(x)。輸出隨輸入「同步變化」。例：原子座標的 force vector，輸入旋轉後 force 也應隨著旋轉。</li>
+</ul>
+<p>Bronstein 等人 (2021) 在 <em>Geometric Deep Learning</em> 一書中提出「5G」架構分類——所有 DL 模型其實都是在不同 domain (geometry) 上做 invariant / equivariant 操作：</p>
+<ol>
+<li><strong>Grids → CNN：</strong>2D 影像的平移對稱性。</li>
+<li><strong>Graphs → GNN：</strong>節點置換對稱性。</li>
+<li><strong>Manifolds → Riemannian nets：</strong>曲面上的測地不變性。</li>
+<li><strong>Groups → Equivariant nets：</strong>一般 Lie group 對稱性 (SE(3) for 3D)。</li>
+<li><strong>Gauges → Gauge-equivariant nets：</strong>局部坐標選取無關性。</li>
+</ol>
+</div>
+<div data-lang="en">
+<p>For a symmetry group G (rotations, translations, permutations, ...):</p>
+<ul>
+<li><strong>Invariant:</strong> f(g·x) = f(x). Output unchanged by group action. Example: molecular energy is rotation-invariant.</li>
+<li><strong>Equivariant:</strong> f(g·x) = g·f(x). Output "co-transforms" with input. Example: a force-vector field — rotating the molecule rotates the forces.</li>
+</ul>
+<p>Bronstein et al. (2021), in <em>Geometric Deep Learning</em>, propose the "5G" taxonomy — every modern DL model is some invariance/equivariance on some domain:</p>
+<ol>
+<li><strong>Grids → CNN:</strong> translation symmetry of 2D images.</li>
+<li><strong>Graphs → GNN:</strong> node-permutation symmetry.</li>
+<li><strong>Manifolds → Riemannian nets:</strong> geodesic invariance on surfaces.</li>
+<li><strong>Groups → Equivariant nets:</strong> general Lie-group symmetry (SE(3) for 3D).</li>
+<li><strong>Gauges → Gauge-equivariant nets:</strong> independence from local-frame choice.</li>
+</ol>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🧲</div><h4 data-zh="SE(3) 等變" data-en="SE(3) equivariance">SE(3) 等變</h4><p data-lang="zh">3D 旋轉 + 平移；蛋白質、分子的天然對稱。</p><p data-lang="en">3D rotation + translation — natural symmetry of proteins and molecules.</p></div>
+  <div class="card"><div class="card-icon">📊</div><h4 data-zh="樣本效率" data-en="Sample efficiency">樣本效率</h4><p data-lang="zh">內建對稱性 → 不需 data augmentation 學旋轉，少 10–100× 資料。</p><p data-lang="en">Built-in symmetry → no rotation augmentation needed; 10–100× less data.</p></div>
+  <div class="card"><div class="card-icon">🛡️</div><h4 data-zh="可信外推" data-en="Trustworthy">可信外推</h4><p data-lang="zh">物理對稱保證 → 模型不會因「視角旋轉」而給出矛盾答案。</p><p data-lang="en">Physical guarantees → outputs are never contradicted by a rotated view.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="主要架構家族" data-en="Main Architectures">主要架構家族</h2>
+<div data-lang="zh">
+<h3>① Tensor Field Networks (Thomas et al. 2018)</h3>
+<p>第一個 SE(3)-equivariant 神經網路。每個原子上放「球諧 (spherical harmonics) 張量」，用 Clebsch-Gordan 係數做張量積——使得旋轉作用於 input 等於同一個旋轉作用於 output。</p>
+
+<h3>② SE(3)-Transformer (Fuchs et al. 2020, NeurIPS)</h3>
+<p>把 self-attention 推廣到 SE(3) 等變：query/key/value 都是 SE(3) 不可約表示 (irreducible representations)。attention 權重對旋轉不變，輸出 vector field 對旋轉等變。應用：AlphaFold2 EvoFormer 的結構模組。</p>
+
+<h3>③ EGNN — E(n)-Equivariant GNN (Satorras et al. 2021, ICML)</h3>
+<p>非常輕量的設計：訊息傳遞只用 <strong>scalar features</strong>（不變量）和 <strong>position</strong>（等變量），不需 spherical harmonics。每層更新：
+m<sub>ij</sub> = φ_e(h<sub>i</sub>, h<sub>j</sub>, ‖x<sub>i</sub> − x<sub>j</sub>‖²)；x<sub>i</sub> ← x<sub>i</sub> + Σ<sub>j</sub>(x<sub>i</sub> − x<sub>j</sub>)·φ_x(m<sub>ij</sub>)。比 SE(3)-Transformer 快 3–10×，準確度相近。</p>
+
+<h3>④ MACE (Batatia et al. 2022, NeurIPS)</h3>
+<p>高階 message passing + ACE basis，目前 force field 預測的 SOTA。MACE-OFF 與 MACE-MP 是 chemistry 社群的 foundation model。</p>
+
+<h3>⑤ Riemannian SGD on manifolds</h3>
+<p>當參數空間是 manifold（hyperbolic space, Stiefel manifold, SPD matrices）時，普通 gradient step 會跳出 manifold。<strong>Riemannian gradient descent</strong>：先計算 Riemannian gradient，再用 exponential map 做 retraction 回 manifold。<code>geomstats</code>、<code>geoopt</code> 是常用工具。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Tensor Field Networks (Thomas et al. 2018)</h3>
+<p>The first SE(3)-equivariant network. Spherical-harmonics tensors live on each atom; Clebsch-Gordan tensor products keep rotations applied to input equal to the same rotation applied to output.</p>
+
+<h3>② SE(3)-Transformer (Fuchs et al. 2020, NeurIPS)</h3>
+<p>Self-attention generalized to SE(3) equivariance: Q/K/V are irreducible representations of SE(3). Attention weights are rotation-invariant; output vector fields are rotation-equivariant. Used in AlphaFold2's EvoFormer structure module.</p>
+
+<h3>③ EGNN — E(n)-Equivariant GNN (Satorras et al. 2021, ICML)</h3>
+<p>Lean design using only <strong>scalar features</strong> (invariants) and <strong>positions</strong> (equivariants), no spherical harmonics needed. Per-layer:
+m<sub>ij</sub> = φ_e(h<sub>i</sub>, h<sub>j</sub>, ‖x<sub>i</sub> − x<sub>j</sub>‖²);  x<sub>i</sub> ← x<sub>i</sub> + Σ<sub>j</sub>(x<sub>i</sub> − x<sub>j</sub>)·φ_x(m<sub>ij</sub>). 3–10× faster than SE(3)-Transformer at comparable accuracy.</p>
+
+<h3>④ MACE (Batatia et al. 2022, NeurIPS)</h3>
+<p>Higher-order message passing + ACE basis, current SOTA for force-field prediction. MACE-OFF and MACE-MP are foundation models for the chemistry community.</p>
+
+<h3>⑤ Riemannian SGD on manifolds</h3>
+<p>When the parameter space is a manifold (hyperbolic space, Stiefel, SPD matrices), ordinary gradient steps leave the manifold. <strong>Riemannian gradient descent</strong>: take the Riemannian gradient, then retract via the exponential map. Tools: <code>geomstats</code>, <code>geoopt</code>.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼蛋白質非要等變不可？</strong> 蛋白質的功能不會因為你把它在實驗室裡轉一圈就改變——但 naive 神經網路會給出完全不同的預測。等變網路在架構上排除這種荒謬，且不需要透過 rotation augmentation「死背」對稱性。</div>
+<div data-lang="en"><strong>Why must proteins be equivariant?</strong> A protein's function doesn't change when you rotate it in the lab — yet a naive net will produce a different prediction. Equivariant networks rule this out by architecture, without needing rotation augmentation to "memorize" the symmetry.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="旋轉一個分子，看輸出穩定嗎？" data-en="Rotate a Molecule — Is the Output Stable?">旋轉一個分子，看輸出穩定嗎？</h2>
+<div data-lang="zh"><p>左：旋轉角度滑桿控制一個簡化的「分子」（5 個原子的 3D 結構，投影到 2D 顯示）。右：兩個假想模型對該分子預測的「結合親和力」（scalar）。</p>
+<ul style="margin-top:6px;"><li><strong>Equivariant net：</strong>輸出隨旋轉保持完全不變（這是物理上正確的）。</li><li><strong>Naive net：</strong>每次旋轉輸出大幅跳動——這是普通 MLP 在沒有 augmentation 時的行為。</li></ul></div>
+<div data-lang="en"><p>Left: rotate a simplified "molecule" (5 atoms in 3D, projected to 2D). Right: two hypothetical models predict its "binding affinity" (scalar).</p>
+<ul style="margin-top:6px;"><li><strong>Equivariant net:</strong> output is exactly constant across all rotations (physically correct).</li><li><strong>Naive net:</strong> output jumps wildly with each rotation — typical for plain MLPs lacking rotation augmentation.</li></ul></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="旋轉 X (rad)" data-en="Rotation X (rad)">旋轉 X <span id="vRx">0.00</span></label><input type="range" id="sRx" min="-3.14" max="3.14" value="0" step="0.05"></div>
+<div class="slider-group"><label data-zh="旋轉 Y (rad)" data-en="Rotation Y (rad)">旋轉 Y <span id="vRy">0.00</span></label><input type="range" id="sRy" min="-3.14" max="3.14" value="0" step="0.05"></div>
+
+<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:14px;margin-top:10px;">
+<svg id="molSvg" viewBox="0 0 400 320" style="width:100%;height:320px;background:#fafafa;border-radius:6px;"></svg>
+<div>
+<div style="background:#e8f0ec;border:2px solid #1A6B5A;border-radius:6px;padding:14px;margin-bottom:10px;">
+<div style="font-size:.8rem;color:#1A6B5A;font-weight:600;letter-spacing:.05em;" data-zh="等變網路 (EGNN)" data-en="Equivariant net (EGNN)">等變網路 (EGNN)</div>
+<div style="font-size:2rem;font-weight:700;color:#1A6B5A;" id="outEqv">—</div>
+<div style="font-size:.78rem;color:#666;" data-zh="輸出對旋轉不變 ✅" data-en="Output is rotation-invariant ✅">輸出對旋轉不變 ✅</div>
+</div>
+<div style="background:#fde8e8;border:2px solid #c44;border-radius:6px;padding:14px;">
+<div style="font-size:.8rem;color:#c44;font-weight:600;letter-spacing:.05em;" data-zh="樸素網路 (MLP)" data-en="Naive net (MLP)">樸素網路 (MLP)</div>
+<div style="font-size:2rem;font-weight:700;color:#c44;" id="outNaive">—</div>
+<div style="font-size:.78rem;color:#666;" data-zh="輸出隨旋轉變化 ❌" data-en="Output drifts with rotation ❌">輸出隨旋轉變化 ❌</div>
+</div>
+</div>
+</div>
+<div id="gdlNote" style="margin-top:10px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:#555;"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="GDL 在結構生物學的革命" data-en="GDL Revolutionizes Structural Biology">GDL 在結構生物學的革命</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="AlphaFold2 (Jumper 2021, Nature)" data-en="AlphaFold2 (Jumper 2021, Nature)">AlphaFold2</h4>
+<p data-lang="zh">EvoFormer + Structure Module 含 SE(3)-equivariant 注意力——對胺基酸殘基的 3D 座標做等變更新。把蛋白結構預測準確度從 ~50% 提升到 ~90%，獲 2024 Nobel Chemistry。</p>
+<p data-lang="en">EvoFormer + Structure Module include SE(3)-equivariant attention on residue coordinates. Lifted protein-structure prediction from ~50% to ~90% accuracy; awarded 2024 Nobel Chemistry.</p></div>
+
+<div class="card"><h4 data-zh="AlphaFold3 (Abramson 2024, Nature)" data-en="AlphaFold3 (Abramson 2024, Nature)">AlphaFold3</h4>
+<p data-lang="zh">用 SE(3)-equivariant <strong>diffusion</strong> 直接生成蛋白-蛋白、蛋白-小分子、蛋白-核酸複合物——把 GDL 與 diffusion model 結合，可預測 ligand binding pose。</p>
+<p data-lang="en">Uses SE(3)-equivariant <strong>diffusion</strong> to generate protein-protein, protein-ligand, and protein-nucleic-acid complexes — fuses GDL with diffusion to predict binding poses.</p></div>
+
+<div class="card"><h4 data-zh="RFdiffusion (Watson 2023, Nature)" data-en="RFdiffusion (Watson 2023, Nature)">RFdiffusion</h4>
+<p data-lang="zh">SE(3)-equivariant diffusion 用於蛋白質 de novo 設計：給定一個結合 motif，生成圍繞它的蛋白骨架。已用於設計 binder、酵素、自組裝 nano-cage。</p>
+<p data-lang="en">SE(3)-equivariant diffusion for de novo protein design: given a binding motif, generate a backbone around it. Used to design binders, enzymes, self-assembling nanocages.</p></div>
+
+<div class="card"><h4 data-zh="DiffDock (Corso 2023)" data-en="DiffDock (Corso 2023)">DiffDock</h4>
+<p data-lang="zh">蛋白-配體 docking：用 SE(3)-equivariant diffusion 在 ligand pose 空間上採樣，比傳統 AutoDock 在 PDBBind benchmark 上 top-1 RMSD &lt; 2Å 達 38%（vs Glide 22%）。</p>
+<p data-lang="en">Protein-ligand docking via SE(3)-equivariant diffusion on pose space. On PDBBind, 38% top-1 RMSD &lt; 2Å (vs Glide 22%).</p></div>
+
+<div class="card"><h4 data-zh="Boltz / EquiDock" data-en="Boltz / EquiDock">Boltz / EquiDock</h4>
+<p data-lang="zh">Boltz (Wohlwend 2024) 為開源 AlphaFold3 等價物，含 SE(3)-equivariant blocks。EquiDock (Ganea 2022) 為純等變的 rigid-body 蛋白docking——比 traditional ZDOCK 快 800×。</p>
+<p data-lang="en">Boltz (Wohlwend 2024) is an open-source AlphaFold3-equivalent with SE(3)-equivariant blocks. EquiDock (Ganea 2022) is rigid-body protein docking that is 800× faster than ZDOCK.</p></div>
+
+<div class="card"><h4 data-zh="GeoMol / MACE-OFF" data-en="GeoMol / MACE-OFF">GeoMol / MACE-OFF</h4>
+<p data-lang="zh">GeoMol (Ganea 2021)：等變生成 3D conformer。MACE-OFF (Kovács 2023)：等變 force field foundation model，用於 MD 模擬，比 ANI/SchNet 準確且快。</p>
+<p data-lang="en">GeoMol (Ganea 2021): equivariant 3D conformer generation. MACE-OFF (Kovács 2023): equivariant force-field foundation model — used in MD simulations, faster and more accurate than ANI/SchNet.</p></div>
+
+<div class="card"><h4 data-zh="ESMFold / OmegaFold" data-en="ESMFold / OmegaFold">ESMFold / OmegaFold</h4>
+<p data-lang="zh">用語言模型 embedding 替換 MSA 步驟，再接上 SE(3)-equivariant decoder 出 3D 結構——速度比 AlphaFold2 快 60×。</p>
+<p data-lang="en">Replace the MSA step with a language-model embedding, then pipe into an SE(3)-equivariant decoder for 3D structure — 60× faster than AlphaFold2.</p></div>
+
+<div class="card"><h4 data-zh="Cryo-EM reconstruction" data-en="Cryo-EM reconstruction">Cryo-EM reconstruction</h4>
+<p data-lang="zh">Levy 等 (2022) 用 SO(3)-equivariant nets 從 2D 投影直接推 3D 結構，省去傳統「pose alignment」步驟。對 conformational heterogeneity 處理更強。</p>
+<p data-lang="en">Levy et al. (2022) used SO(3)-equivariant nets to recover 3D from 2D projections directly, skipping pose alignment — handles conformational heterogeneity better.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="GDL 還能應用在哪？" data-en="Where else could GDL apply?">GDL 還能應用在哪？</h2>
+<div data-lang="zh">
+<h3>🎯 1. SE(3)-equivariant 細胞位置 atlas</h3>
+<p>Spatial transcriptomics atlas 在 3D 重建後是「點雲 + 表現向量」；用 EGNN 學「組織型別」對任意旋轉/翻轉的 atlas 都給一致答案，比 Visium 的 raw 座標更穩健。</p>
+<h3>🎯 2. Equivariant 多模態整合</h3>
+<p>scRNA + spatial 整合時，spatial 部分有 SE(2) 對稱性（切片旋轉）；用 equivariant encoder 可在不同切片方向都得到一致 latent。</p>
+<h3>🎯 3. Riemannian scLLM on hyperbolic manifold</h3>
+<p>結合 Ch 15 hyperbolic embeddings 與 Riemannian SGD——scLLM 在 hyperbolic 空間 fine-tune 時用 Riemannian optimizer，比 Euclidean 收斂快且樹狀結構更清楚。</p>
+<h3>🎯 4. 蛋白質構象動態軌跡生成</h3>
+<p>結合 SE(3)-equivariant + flow matching (Ch 17)：生成蛋白質從一個構象到另一個的等變軌跡——比 MD 快 1000×，可用於 allosteric mechanism 研究。</p>
+<h3>🎯 5. 等變細胞形狀分析</h3>
+<p>對細胞形狀 mesh 用 gauge-equivariant nets，對形狀分類（apoptotic / mitotic / motile）做出對視角不變的判斷——適合 high-content imaging。</p>
+<h3>🎯 6. 3D 染色體結構建模</h3>
+<p>從 Hi-C 矩陣推 3D 染色體結構：用 SE(3)-equivariant 生成模型，對 TAD 邊界與 chromatin loop 的物理對稱保證更穩。</p>
+</div>
+<div data-lang="en">
+<h3>🎯 1. SE(3)-equivariant cell positioning atlas</h3>
+<p>Reconstructed 3D spatial-transcriptomics atlases are point-clouds + expression vectors. EGNN learns tissue type with outputs invariant to arbitrary atlas rotations/flips — more robust than raw Visium coordinates.</p>
+<h3>🎯 2. Equivariant multi-modal integration</h3>
+<p>For scRNA + spatial integration, the spatial side has SE(2) symmetry (slice rotation). An equivariant encoder gives the same latent under different slice orientations.</p>
+<h3>🎯 3. Riemannian scLLM on hyperbolic manifold</h3>
+<p>Combine Ch 15 hyperbolic embeddings with Riemannian SGD — fine-tune scLLMs in hyperbolic space with Riemannian optimizers, faster convergence and clearer hierarchical structure.</p>
+<h3>🎯 4. Protein conformational trajectory generation</h3>
+<p>Combine SE(3)-equivariant + flow matching (Ch 17) to generate equivariant trajectories between protein conformations — 1000× faster than MD, useful for allosteric mechanism studies.</p>
+<h3>🎯 5. Equivariant cell-shape analysis</h3>
+<p>Gauge-equivariant nets on cell-shape meshes give view-invariant shape classification (apoptotic / mitotic / motile) — ideal for high-content imaging.</p>
+<h3>🎯 6. 3D chromosome structure modeling</h3>
+<p>From Hi-C to 3D chromosome structure via SE(3)-equivariant generative models — physically consistent TAD boundaries and chromatin loops.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'egnn')">EGNN (PyTorch)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'e3nn')">e3nn</button>
+<button class="code-tab-btn" onclick="switchTab(this,'geom')">geomstats</button>
+</div>
+
+<div class="code-tab-content active" id="egnn"><pre><span class="comment"># Minimal E(n)-Equivariant GNN layer (Satorras 2021)</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> EGNNLayer(nn.Module):
+    <span class="keyword">def</span> __init__(self, in_dim, hidden):
+        super().__init__()
+        self.phi_e = nn.Sequential(
+            nn.Linear(<span class="num">2</span>*in_dim + <span class="num">1</span>, hidden), nn.SiLU(),
+            nn.Linear(hidden, hidden),
+        )
+        self.phi_x = nn.Sequential(nn.Linear(hidden, <span class="num">1</span>))
+        self.phi_h = nn.Sequential(
+            nn.Linear(in_dim + hidden, hidden), nn.SiLU(),
+            nn.Linear(hidden, in_dim),
+        )
+
+    <span class="keyword">def</span> forward(self, h, x, edge_index):
+        i, j = edge_index
+        diff = x[i] - x[j]
+        d2 = (diff**<span class="num">2</span>).sum(-<span class="num">1</span>, keepdim=<span class="keyword">True</span>)
+        m = self.phi_e(torch.cat([h[i], h[j], d2], -<span class="num">1</span>))
+        <span class="comment"># Equivariant position update</span>
+        x_upd = x + torch.zeros_like(x).index_add_(
+            <span class="num">0</span>, i, diff * self.phi_x(m))
+        <span class="comment"># Invariant feature update</span>
+        h_upd = h + self.phi_h(torch.cat(
+            [h, torch.zeros_like(h).index_add_(<span class="num">0</span>, i, m)], -<span class="num">1</span>))
+        <span class="keyword">return</span> h_upd, x_upd</pre></div>
+
+<div class="code-tab-content" id="e3nn"><pre><span class="comment"># pip install e3nn — for full SE(3)-equivariant networks</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> e3nn <span class="keyword">import</span> o3
+<span class="keyword">from</span> e3nn.nn <span class="keyword">import</span> Gate
+
+<span class="comment"># Irreducible representations: scalars (0e) + vectors (1o)</span>
+irreps_in  = o3.Irreps(<span class="str">"16x0e + 8x1o"</span>)
+irreps_out = o3.Irreps(<span class="str">"32x0e + 16x1o"</span>)
+
+tp = o3.FullyConnectedTensorProduct(
+    irreps_in, irreps_in, irreps_out
+)
+<span class="comment"># Forward call respects SE(3) equivariance by construction</span>
+x = irreps_in.randn(<span class="num">10</span>, -<span class="num">1</span>)
+y = tp(x, x)                       <span class="comment"># shape (10, irreps_out.dim)</span></pre></div>
+
+<div class="code-tab-content" id="geom"><pre><span class="comment"># pip install geomstats — Riemannian SGD</span>
+<span class="keyword">import</span> geomstats.backend <span class="keyword">as</span> gs
+<span class="keyword">from</span> geomstats.geometry.hyperbolic <span class="keyword">import</span> Hyperbolic
+
+manifold = Hyperbolic(dim=<span class="num">10</span>)
+
+<span class="keyword">def</span> riem_sgd_step(x, grad, lr=<span class="num">0.01</span>):
+    <span class="comment"># 1. project Euclidean grad to tangent space</span>
+    tangent_grad = manifold.to_tangent(grad, base_point=x)
+    <span class="comment"># 2. exponential map step</span>
+    x_new = manifold.metric.exp(
+        tangent_vec=-lr * tangent_grad, base_point=x)
+    <span class="keyword">return</span> x_new</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">下列哪個任務應該用「等變 (equivariant)」而非「不變 (invariant)」？</p><p data-lang="en">Which task needs equivariance rather than invariance?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 預測分子能量</span><span data-lang="en">A. Predicting molecular energy</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 預測蛋白是否能結合配體 (binary)</span><span data-lang="en">B. Predicting if a protein binds a ligand (binary)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 預測分子中每個原子的 force vector</span><span data-lang="en">C. Predicting the force vector on each atom</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 預測蛋白序列的 GC content</span><span data-lang="en">D. Predicting a sequence's GC content</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">EGNN 相對於 SE(3)-Transformer 的最大優勢是？</p><p data-lang="en">EGNN's main advantage over the SE(3)-Transformer is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 表達能力更強</span><span data-lang="en">A. More expressive</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需要 spherical harmonics，計算簡單快很多</span><span data-lang="en">B. No spherical harmonics — much simpler and faster</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 不需要訊息傳遞</span><span data-lang="en">C. No message passing</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只能用於 2D</span><span data-lang="en">D. Only works in 2D</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 AlphaFold2、RFdiffusion、DiffDock 都用 SE(3)-equivariant 架構？</p><p data-lang="en">Why do AlphaFold2, RFdiffusion, and DiffDock all use SE(3)-equivariant architectures?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 3D 結構問題本質具有 SE(3) 對稱——把對稱性編入架構提升樣本效率與物理一致性</span><span data-lang="en">A. 3D structure problems inherently have SE(3) symmetry — encoding it into the architecture improves sample efficiency and physical consistency</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為 SE(3) 是 DeepMind 的商標</span><span data-lang="en">B. Because SE(3) is a DeepMind trademark</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 因為 PyTorch 強制要求</span><span data-lang="en">C. Because PyTorch requires it</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 因為 SE(3) 比 SE(2) 簡單</span><span data-lang="en">D. Because SE(3) is simpler than SE(2)</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="sheaf-cellular.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 25：Sheaf" data-en="Ch 25: Sheaf">Ch 25：Sheaf</span></a>
+<a href="index.html"><span class="nav-dir" data-zh="回首頁 →" data-en="Home →">回首頁 →</span><span class="nav-title" data-zh="進階方法演算法 — 完結 🎉" data-en="Adv. Methods — Complete 🎉">進階方法演算法 — 完結</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: rotate a molecule =====
+// 5 atoms in 3D (carbon backbone + branches)
+const atoms0 = [
+  {x: 0.0,  y: 0.0,  z: 0.0, c:'#444', name:'C'},
+  {x: 1.0,  y: 0.5,  z: 0.2, c:'#555', name:'C'},
+  {x: 2.0,  y:-0.3,  z:-0.1, c:'#444', name:'C'},
+  {x: 1.2,  y: 1.4,  z:-0.6, c:'#88c', name:'N'},
+  {x: 2.4,  y:-1.0,  z: 0.9, c:'#c44', name:'O'},
+];
+const bonds = [[0,1],[1,2],[1,3],[2,4]];
+
+// the "ground truth" property — invariant scalar of the molecule
+// e.g., sum of pairwise distances (rotation-invariant)
+function trueAffinity(atoms){
+  let s = 0;
+  for(let i=0;i<atoms.length;i++)
+    for(let j=i+1;j<atoms.length;j++){
+      const dx=atoms[i].x-atoms[j].x, dy=atoms[i].y-atoms[j].y, dz=atoms[i].z-atoms[j].z;
+      s += Math.sqrt(dx*dx+dy*dy+dz*dz);
+    }
+  return -2.1 + 0.18*s;   // arbitrary scaling to look like kcal/mol
+}
+
+function rotate(atoms, rx, ry){
+  const cx=Math.cos(rx), sx=Math.sin(rx);
+  const cy=Math.cos(ry), sy=Math.sin(ry);
+  return atoms.map(a=>{
+    // rotate around X then Y
+    let y = a.y*cx - a.z*sx;
+    let z = a.y*sx + a.z*cx;
+    let x = a.x*cy + z*sy;
+    z = -a.x*sy + z*cy;
+    return {x, y, z, c:a.c, name:a.name};
+  });
+}
+
+function render(){
+  const rx = +document.getElementById('sRx').value;
+  const ry = +document.getElementById('sRy').value;
+  document.getElementById('vRx').textContent = rx.toFixed(2);
+  document.getElementById('vRy').textContent = ry.toFixed(2);
+
+  const rot = rotate(atoms0, rx, ry);
+  // project to 2D (XY plane), z used for depth
+  const W=400, H=320, cx0=200, cy0=160, scale=55;
+  const pts = rot.map(a=>({px:cx0 + a.x*scale, py:cy0 - a.y*scale, depth:a.z, c:a.c, name:a.name}));
+
+  let svg = '';
+  // bonds
+  bonds.forEach(b=>{
+    const A=pts[b[0]], B=pts[b[1]];
+    svg += `<line x1="${A.px}" y1="${A.py}" x2="${B.px}" y2="${B.py}" stroke="#666" stroke-width="2.5"/>`;
+  });
+  // atoms — sort by depth so far atoms render first
+  const order = pts.map((p,i)=>({p,i})).sort((a,b)=>a.p.depth-b.p.depth);
+  order.forEach(({p,i})=>{
+    const r = 14 + p.depth*2;
+    svg += `<circle cx="${p.px}" cy="${p.py}" r="${r}" fill="${p.c}" stroke="white" stroke-width="2"/>`;
+    svg += `<text x="${p.px}" y="${p.py+4}" font-size="12" font-weight="700" fill="white" text-anchor="middle">${p.name}</text>`;
+  });
+
+  document.getElementById('molSvg').innerHTML = svg;
+
+  // outputs
+  const trueA = trueAffinity(rot);
+  // Equivariant net: produces invariant scalar — exactly the rotation-invariant truth
+  document.getElementById('outEqv').textContent = trueA.toFixed(3) + ' kcal/mol';
+  // Naive MLP: lets coordinates leak in directly — output drifts pseudo-randomly with rotation
+  // use a deterministic hash of (rx,ry) so the user sees it move with sliders
+  const drift = Math.sin(rx*2.3)*0.7 + Math.cos(ry*1.7)*0.5 + Math.sin(rx*ry*3.1)*0.3;
+  document.getElementById('outNaive').textContent = (trueA + drift).toFixed(3) + ' kcal/mol';
+
+  const L = (typeof I18n!=='undefined') ? I18n.get() : 'zh';
+  const stable = Math.abs(drift) < 0.05;
+  document.getElementById('gdlNote').innerHTML = L==='zh'
+    ? `兩網路看到的是 <strong>同一個分子</strong>（只是視角不同）。物理上「結合親和力」必須對旋轉不變——但只有 equivariant 網路能在架構上保證這點，naive MLP 因把座標直接送入而違反此性質（漂移 = ${drift.toFixed(3)}）。`
+    : `Both networks see the <strong>same molecule</strong>, just rotated. Physically, binding affinity must be rotation-invariant — only the equivariant net guarantees this by construction, while the naive MLP violates it because it consumes coordinates directly (drift = ${drift.toFixed(3)}).`;
+}
+['sRx','sRy'].forEach(id=>document.getElementById(id).addEventListener('input', render));
+document.addEventListener('langchange', render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！force vector 隨旋轉同步轉動——需要等變性而非不變性。',
+  q1_n:'答案是 C。Force 是向量，旋轉時必須一起轉動 → 等變。',
+  q2_y:'答對！EGNN 只用 scalar + position，省去 spherical harmonics，快 3-10×。',
+  q2_n:'答案是 B。EGNN 的設計優勢就是輕量。',
+  q3_y:'答對！3D 結構問題本質具備 SE(3) 對稱，架構內建可大幅提升樣本效率。',
+  q3_n:'答案是 A。SE(3) equivariance 是 3D 結構問題的物理必然要求。'
+},en:{
+  q1_y:'Correct! Force vectors rotate with the molecule — equivariance, not invariance.',
+  q1_n:'Answer is C. Force is a vector that must co-rotate → equivariant.',
+  q2_y:'Correct! EGNN uses only scalars + positions; no spherical harmonics → 3-10× faster.',
+  q2_n:'Answer is B. EGNN\'s advantage is its lean design.',
+  q3_y:'Correct! 3D structure inherently has SE(3) symmetry; baking it in boosts sample efficiency.',
+  q3_n:'Answer is A. SE(3) equivariance is the physical requirement of 3D structure problems.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,443 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Neural ODE — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html" class="active">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 16 / 26</div><h1 data-zh="Neural ODE 連續時間神經網路" data-en="Neural ODE — Continuous-time Neural Networks">Neural ODE 連續時間神經網路</h1>
+<p class="subtitle" data-lang="zh">把 ResNet 的離散層數 → 連續時間，把神經網路變成一個 ODE。Chen et al. NeurIPS 2018 最佳論文，已成為 single-cell 動力學、藥物動力學、time-series imputation 的核心工具。</p>
+<p class="subtitle" data-lang="en">Turn ResNet's discrete layers into continuous time — a neural network becomes an ODE. Chen et al. (NeurIPS 2018 best paper) — now a core tool for single-cell dynamics, pharmacokinetics, and time-series imputation.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 ResNet 到 Neural ODE" data-en="From ResNet to Neural ODE">從 ResNet 到 Neural ODE</h2>
+<div data-lang="zh">
+<p><strong>觀察：</strong>ResNet 的核心更新為 h_{t+1} = h_t + f(h_t, θ_t)——這恰好是 ODE dh/dt = f(h, t, θ) 的 <strong>Euler 步進</strong>（步長 = 1）。Chen et al. (2018, NeurIPS) 直接取極限：把離散層替換為 ODE：</p>
+<p style="text-align:center;font-family:Georgia,serif;">dh(t)/dt = f(h(t), t, θ)，&nbsp;&nbsp; h(t₁) = h(t₀) + ∫_{t₀}^{t₁} f(h(s), s, θ) ds</p>
+<p>前向就是「對 ODE 求解」——可用任何 ODE solver（Euler、Runge-Kutta、Dopri5），讓步長 <strong>自動適應</strong>（誤差大時細分、誤差小時粗略）。</p>
+<p><strong>核心優勢：</strong></p>
+<ol>
+<li><strong>連續深度：</strong>沒有「層數」這個離散超參——用 solver tolerance 控制精度/速度。</li>
+<li><strong>連續時間序列：</strong>處理 irregular sampling（資料不規則時間採樣）——傳統 RNN 必須補零或內插，ODE 自然處理任意時間點。</li>
+<li><strong>O(1) 記憶體訓練：</strong>用 adjoint method 反傳，記憶體不隨層數成長。</li>
+<li><strong>可逆性：</strong>ODE 軌跡可逆，天然適合 normalizing flows。</li>
+</ol>
+</div>
+<div data-lang="en">
+<p><strong>Observation:</strong> ResNet's core update h_{t+1} = h_t + f(h_t, θ_t) is exactly an <strong>Euler step</strong> of the ODE dh/dt = f(h, t, θ) with step size 1. Chen et al. (2018, NeurIPS) took the limit, replacing discrete layers with an ODE:</p>
+<p style="text-align:center;font-family:Georgia,serif;">dh(t)/dt = f(h(t), t, θ),&nbsp;&nbsp; h(t₁) = h(t₀) + ∫_{t₀}^{t₁} f(h(s), s, θ) ds</p>
+<p>The forward pass becomes "solve an ODE" — any solver (Euler, Runge-Kutta, Dopri5) works, with <strong>adaptive step size</strong> (refine where error is large, coarsen where it's small).</p>
+<p><strong>Key advantages:</strong></p>
+<ol>
+<li><strong>Continuous depth:</strong> no discrete "number of layers" — use solver tolerance to trade accuracy vs speed.</li>
+<li><strong>Continuous-time series:</strong> handles irregular sampling natively — classical RNNs must pad or interpolate; ODEs work at any time point.</li>
+<li><strong>O(1)-memory training:</strong> via the adjoint method; memory doesn't grow with depth.</li>
+<li><strong>Invertibility:</strong> ODE trajectories are reversible — ideal for normalizing flows.</li>
+</ol>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">∞</div><h4 data-zh="連續深度" data-en="Continuous depth">連續深度</h4><p data-lang="zh">層數變成 solver tolerance；同一網路可在精度與速度間切換。</p><p data-lang="en">Depth becomes solver tolerance — same network trades accuracy vs speed.</p></div>
+  <div class="card"><div class="card-icon">⏱️</div><h4 data-zh="不規則時間" data-en="Irregular time">不規則時間</h4><p data-lang="zh">天然支援任意時間點採樣，無需補零/內插。</p><p data-lang="en">Natively handles arbitrary time stamps — no padding or interpolation.</p></div>
+  <div class="card"><div class="card-icon">💾</div><h4 data-zh="O(1) 記憶體" data-en="O(1) memory">O(1) 記憶體</h4><p data-lang="zh">adjoint method 反傳——記憶體不隨積分時長成長。</p><p data-lang="en">The adjoint method gives O(1) memory regardless of integration length.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Adjoint Method：透過 ODE solver 反傳" data-en="Adjoint Method: Backprop Through an ODE Solver">Adjoint Method：透過 ODE solver 反傳</h2>
+<div data-lang="zh">
+<p><strong>問題：</strong>前向是 h(t₁) = ODESolve(h(t₀), f, θ, t₀, t₁)。要算 ∂L/∂θ，怎麼透過 solver 反傳？</p>
+<p><strong>直觀做法：</strong>把 solver 所有中間步驟存下來，當作計算圖反傳——但記憶體會隨 solver 步數線性增長，與 ResNet 一樣。</p>
+<p><strong>Adjoint method（Pontryagin 1962、Chen 2018 重新引入）：</strong>定義「adjoint」狀態 a(t) = ∂L/∂h(t)。它本身滿足另一條 ODE：</p>
+<p style="text-align:center;font-family:Georgia,serif;">da(t)/dt = −a(t)ᵀ ∂f/∂h&nbsp;&nbsp; (在反向時間積分)</p>
+<p>所以反傳是「再解一次 ODE」，從 t₁ 倒退到 t₀，記憶體只需 O(1)（不需存中間 state）。同時可由</p>
+<p style="text-align:center;font-family:Georgia,serif;">∂L/∂θ = −∫_{t₁}^{t₀} a(t)ᵀ ∂f/∂θ dt</p>
+<p>得到參數梯度。<strong>注意：</strong>adjoint 假設 f 是「可逆」前向——若 ODE 有混沌或硬性 (stiff) 行為，adjoint 數值不穩；實務常用 <strong>「checkpointing + adjoint」</strong> 折衷。</p>
+</div>
+<div data-lang="en">
+<p><strong>Problem:</strong> Forward is h(t₁) = ODESolve(h(t₀), f, θ, t₀, t₁). How to compute ∂L/∂θ through the solver?</p>
+<p><strong>Naïve approach:</strong> store every intermediate solver step and backprop — but memory grows linearly with solver steps, just like deep ResNets.</p>
+<p><strong>Adjoint method (Pontryagin 1962, revived by Chen 2018):</strong> define the adjoint state a(t) = ∂L/∂h(t). It satisfies another ODE:</p>
+<p style="text-align:center;font-family:Georgia,serif;">da(t)/dt = −a(t)ᵀ ∂f/∂h&nbsp;&nbsp; (integrated backward in time)</p>
+<p>So backprop = solve another ODE from t₁ back to t₀, with O(1) memory (no need to store states). Parameter gradients are:</p>
+<p style="text-align:center;font-family:Georgia,serif;">∂L/∂θ = −∫_{t₁}^{t₀} a(t)ᵀ ∂f/∂θ dt</p>
+<p><strong>Caveat:</strong> the adjoint assumes the forward ODE is well-reversible. For chaotic or stiff systems, adjoint is numerically unstable; in practice <strong>"checkpointing + adjoint"</strong> is a common compromise.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>實務細節：</strong>選 solver 時，平滑問題用 Dopri5（adaptive RK45）；硬性問題用 implicit solver（如 Radau）。容差通常 rtol = 1e-3, atol = 1e-4 起步；scRNA-seq 動力學一般 rtol = 1e-5 才夠穩。</div>
+<div data-lang="en"><strong>In practice:</strong> for smooth dynamics use Dopri5 (adaptive RK45); for stiff problems use implicit solvers (e.g. Radau). Start with rtol = 1e-3, atol = 1e-4; scRNA-seq dynamics typically need rtol = 1e-5 for stability.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="2D 向量場：點擊起點看軌跡" data-en="2D Vector Field: Click a Starting Point to See the Trajectory">2D 向量場：點擊起點看軌跡</h2>
+<div data-lang="zh"><p>下方為 2D 向量場 f(x, y)；點擊任意位置設置起點，會以 Euler 步進積分顯示軌跡。切換不同 f 觀察不同動力學——這正是 Neural ODE 想學的「向量場」的本質。</p></div>
+<div data-lang="en"><p>Below is a 2D vector field f(x, y); click anywhere to set a starting point and the trajectory is integrated via Euler steps. Switch fields to see different dynamics — this is exactly what a Neural ODE aims to learn.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="向量場 f(x,y)" data-en="Vector field f(x,y)">向量場</label>
+  <select id="fieldType" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="spiral" selected>Spiral / 漩渦 (NODE 經典)</option>
+    <option value="saddle">Saddle / 鞍點</option>
+    <option value="limit">Limit cycle / 極限環</option>
+    <option value="bistable">Bistable / 雙穩態</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="步長 dt" data-en="Step size dt">步長 dt <span id="vDt">0.05</span></label><input type="range" id="sDt" min="0.005" max="0.2" value="0.05" step="0.005"></div>
+<div class="slider-group"><label data-zh="積分步數" data-en="Steps">積分步數 <span id="vN">300</span></label><input type="range" id="sN" min="50" max="600" value="300" step="50"></div>
+<svg id="vfSvg" viewBox="0 0 600 340" style="width:100%;height:340px;background:#fafafa;border-radius:6px;cursor:crosshair;"></svg>
+<div id="vfInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Neural ODE 在單細胞 / 藥物 / 時序" data-en="Neural ODE in Single-cell / Pharma / Time-series">Neural ODE 在單細胞 / 藥物 / 時序</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="scTour (Li 2023, Nat Methods)" data-en="scTour (Li 2023, Nat Methods)">scTour</h4>
+<p data-lang="zh">用 Neural ODE 學「latent 細胞動力學」——同時推估 pseudotime、cell-fate probability、vector field。比 scVelo（依賴 spliced/unspliced ratio）更穩健，且能在沒有 velocity 資訊時也運作。</p>
+<p data-lang="en">Uses Neural ODE to learn latent cell dynamics — jointly infers pseudotime, fate probability, and vector field. More robust than scVelo (which depends on spliced/unspliced ratios) and works without RNA velocity inputs.</p></div>
+
+<div class="card"><h4 data-zh="TrajectoryNet (Tong 2020, ICML)" data-en="TrajectoryNet (Tong 2020, ICML)">TrajectoryNet</h4>
+<p data-lang="zh">把 single-cell time-course 資料視為 distributional sequence，用 continuous normalizing flow + OT 學細胞「沿時間的最可能軌跡」。可預測中間時間點的細胞分布。</p>
+<p data-lang="en">Treats single-cell time-course as a distributional sequence; uses CNF + OT to learn most-likely trajectories. Predicts cell distributions at unsampled time points.</p></div>
+
+<div class="card"><h4 data-zh="PRESCIENT (Yeo 2021, Nat Commun)" data-en="PRESCIENT (Yeo 2021, Nat Commun)">PRESCIENT</h4>
+<p data-lang="zh">用 NODE-style 向量場學「藥物擾動後的細胞軌跡」——給定一個未受擾動的細胞 state，預測加藥後它的演化路徑。可指導 dose 篩選。</p>
+<p data-lang="en">Learns NODE-style vector fields for drug-perturbed cell trajectories — given an unperturbed cell state, predicts its trajectory under treatment. Guides dose screening.</p></div>
+
+<div class="card"><h4 data-zh="Dynamo 向量場重建" data-en="Dynamo vector field reconstruction">Dynamo 向量場重建</h4>
+<p data-lang="zh">Qiu et al. (2022, Cell) 用 sparse VFK（reproducing kernel Hilbert space）重建連續向量場——本質與 NODE 殊途同歸。可做 cell fate prediction、in silico perturbation。</p>
+<p data-lang="en">Qiu et al. (2022, Cell) reconstruct continuous vector fields via sparse VFK (RKHS) — same spirit as NODE. Enables fate prediction and in silico perturbation.</p></div>
+
+<div class="card"><h4 data-zh="PK/PD 藥物動力學" data-en="PK/PD pharmacokinetics">PK/PD 藥物動力學</h4>
+<p data-lang="zh">傳統 PK/PD 用 compartment model（隔室模型）+ 手調 ODE。Neural ODE 從資料學動力學，再用機制 ODE 校驗——已用於 FDA 提交的某些藥物模型（如 Janssen 2023 的 small-molecule PK）。</p>
+<p data-lang="en">Classical PK/PD uses compartment models with hand-tuned ODEs. Neural ODE learns dynamics from data, then validates against mechanistic ODEs — used in some FDA submissions (e.g. Janssen 2023 small-molecule PK).</p></div>
+
+<div class="card"><h4 data-zh="Latent ODE (Rubanova 2019)" data-en="Latent ODE (Rubanova 2019)">Latent ODE</h4>
+<p data-lang="zh">Variational autoencoder + Neural ODE，用於 EHR（電子病歷）irregular time-series——處理不規則就診時間的疾病軌跡建模。</p>
+<p data-lang="en">VAE + Neural ODE for irregular EHR time-series — handles disease trajectory modeling with irregular clinical visits.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Neural ODE 的進階主題" data-en="Advanced Neural ODE Topics">Neural ODE 的進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Continuous Normalizing Flow (CNF)</h3>
+<p>結合 NODE 與 normalizing flow：z₁ = z₀ + ∫ f(z, t) dt，log-density 變化滿足 <strong>瞬時 Jacobian trace 公式</strong>：</p>
+<p style="text-align:center;font-family:Georgia,serif;">d log p(z(t))/dt = −tr(∂f/∂z)</p>
+<p>不需要計算 full Jacobian determinant（O(d³)），只需要 trace（O(d)）。是 FFJORD (Grathwohl 2019) 的基石，把生成式建模從「離散層 flow」推進到「連續時間 flow」。</p>
+
+<h3>② FFJORD：Free-form Jacobian</h3>
+<p>用 Hutchinson trace estimator 把 trace(∂f/∂z) 估為 𝔼[ε ᵀ (∂f/∂z) ε]，可任意設計 f（沒有 invertibility 限制）。但訓練慢、需大量 ODE solver call——後續被 flow matching 取代。</p>
+
+<h3>③ Augmented Neural ODE (ANODE)</h3>
+<p>Dupont et al. (2019, NeurIPS) 證明：標準 NODE 的軌跡 <strong>不能交叉</strong>（因為 ODE 解的唯一性），這限制了它能表示的函數類別。<strong>ANODE 解法：</strong>把 state 擴增 a 個維度（h, h_aug），讓軌跡有「升維」空間。實證上訓練更穩、表示能力強。</p>
+
+<h3>④ Stiff ODE 與生物動力學</h3>
+<p>很多生物動力學是 stiff（時間尺度差異大，如轉錄秒級 vs 分化天級）。Stiff ODE 需要 implicit solver（Radau, BDF）；adjoint 在 stiff 下不穩。<strong>實務：</strong>用 forward AD（如 JAX）或 Gauss-Newton 替代 adjoint。Symbolic regression 也是一條路（見 Ch 24）。</p>
+
+<h3>⑤ Neural Controlled Differential Equation (CDE)</h3>
+<p>Kidger et al. (2020) 推廣：dz/dt = f(z, t) · dX(t)/dt——讓 ODE 對 input X 連續響應（不只是初始條件）。比 NODE 更適合「隨時間有 input 注入」的場景，如 medication dosing 軌跡。</p>
+
+<h3>⑥ 與 Diffusion / Flow Matching 的關係</h3>
+<p>Diffusion model 反向過程可寫為 SDE，其 deterministic flow（probability flow ODE）就是 Neural ODE 的特例。Flow matching（見 Ch 17）跳過「先 score 後積分」，直接學 velocity field——可視為「沒有 score 的 NODE」。</p>
+
+<h3>⑦ 訓練陷阱</h3>
+<ul>
+<li><strong>Solver 步數爆炸：</strong>訓練到 ODE 變太「複雜」，adaptive solver 需要極小步長——監控 NFE (number of function evaluations)，加 regularization term ‖dh/dt‖²。</li>
+<li><strong>梯度爆炸/消失：</strong>對非常長的時間積分（t₁ - t₀ &gt; 5）易爆——把 t scale 到 [0, 1] 是常見技巧。</li>
+<li><strong>Initialization：</strong>把 f 的最後 layer weight 初始化為 0，讓 NODE 一開始是恆等映射，訓練更穩。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① Continuous Normalizing Flow (CNF)</h3>
+<p>Combines NODE with normalizing flows: z₁ = z₀ + ∫ f(z, t) dt, with log-density satisfying the <strong>instantaneous trace formula</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">d log p(z(t))/dt = −tr(∂f/∂z)</p>
+<p>No need to compute the full Jacobian determinant (O(d³)) — only the trace (O(d)). The foundation of FFJORD (Grathwohl 2019), extending generative modeling from discrete-layer flows to continuous-time flows.</p>
+
+<h3>② FFJORD: free-form Jacobian</h3>
+<p>Estimates tr(∂f/∂z) via Hutchinson trace: 𝔼[εᵀ (∂f/∂z) ε], allowing any f (no invertibility restriction). But training is slow with many ODE solver calls — superseded by flow matching.</p>
+
+<h3>③ Augmented Neural ODE (ANODE)</h3>
+<p>Dupont et al. (2019, NeurIPS) showed that standard NODE trajectories <strong>cannot cross</strong> (by ODE uniqueness), limiting expressiveness. <strong>Fix:</strong> augment state with extra dimensions (h, h_aug) — trajectories can "lift" through the extra dim. More stable training and stronger representation.</p>
+
+<h3>④ Stiff ODEs and biological dynamics</h3>
+<p>Many biological dynamics are stiff (timescales differ widely — transcription in seconds vs differentiation in days). Stiff ODEs need implicit solvers (Radau, BDF); adjoint is unstable. <strong>In practice:</strong> use forward AD (JAX) or Gauss-Newton instead. Symbolic regression is another path (see Ch 24).</p>
+
+<h3>⑤ Neural Controlled Differential Equations (CDE)</h3>
+<p>Kidger et al. (2020) generalize: dz/dt = f(z, t) · dX(t)/dt — the ODE responds continuously to input X (not only initial conditions). Better for "input injected over time" scenarios like medication dosing.</p>
+
+<h3>⑥ Relation to Diffusion / Flow Matching</h3>
+<p>The reverse diffusion process can be written as an SDE; its deterministic flow (probability flow ODE) is a special Neural ODE. Flow matching (Ch 17) skips "score, then integrate" and learns velocity directly — a "score-less NODE".</p>
+
+<h3>⑦ Training pitfalls</h3>
+<ul>
+<li><strong>Step-count blow-up:</strong> adaptive solvers may need extreme refinement when f gets too complex — monitor NFE (function evaluations); add a regularizer on ‖dh/dt‖².</li>
+<li><strong>Gradient explosion/vanishing:</strong> long integration windows (t₁ − t₀ &gt; 5) tend to blow up — rescale t to [0, 1].</li>
+<li><strong>Initialization:</strong> set the last layer of f to zero so NODE starts as identity — much more stable training.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Neural ODE 還能改良哪些任務？" data-en="What Else Could Neural ODE Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 把 PK/PD 與 scRNA-seq 整合</h3>
+<p>目前藥物動力學（血液濃度）與單細胞反應分開建模。<strong>提案：</strong>聯合 NODE：血藥濃度 c(t) → 細胞 state h(t) 的 controlled ODE，從少量 in vivo + 大量 in vitro 資料學跨尺度動力學。</p>
+
+<h3>🎯 2. 跨時間點 imputation</h3>
+<p>單細胞 time-course 常常採樣稀疏（每 12 hr 或更少）。NODE 學到 vector field 後可在任何時間點 simulate cell state。<strong>提案：</strong>NODE-based imputation pipeline，可整合進 Scanpy。</p>
+
+<h3>🎯 3. Continuous-time perturbation modeling</h3>
+<p>Perturb-seq 通常假設「擾動結束時的最終 state」。但很多生物效應是動態的（如轉錄因子 binding 後分鐘級反應）。<strong>提案：</strong>Neural CDE 模型，input = 連續 perturbation signal、output = 細胞軌跡。</p>
+
+<h3>🎯 4. Stiff biological ODE 學習</h3>
+<p>細胞訊號傳導常是 stiff（如 MAPK cascade）。<strong>提案：</strong>Implicit Neural ODE + Gauss-Newton 訓練，比 baseline NODE 更穩，可用於 Boolean → 連續訊號網路推估。</p>
+
+<h3>🎯 5. EHR 疾病進程模型</h3>
+<p>慢性病 EHR 軌跡（如糖尿病、CKD）非常 irregular。Latent ODE + 介入學習 → 個人化疾病進程預測 + counterfactual treatment simulation。<strong>提案：</strong>臨床決策支援工具。</p>
+
+<h3>🎯 6. 微生物群動力學</h3>
+<p>16S/metagenomic time-series（gut microbiome）有 stiff、multi-timescale 動力學。NODE 學跨菌種交互作用網路。<strong>提案：</strong>用於 antibiotic recovery 預測或 probiotic 設計。</p>
+
+<h3>🎯 7. Spatial transcriptomics 時空動力學</h3>
+<p>Spatial + temporal（如組織再生過程）需同時建模位置與時間。<strong>提案：</strong>PDE-Net 或 graph-NODE，把 spatial dependency 與時間動力學聯合學習。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Integrate PK/PD with scRNA-seq</h3>
+<p>Currently drug PK (blood concentration) and single-cell responses are modeled separately. <strong>Proposal:</strong> joint NODE with c(t) → h(t) as a controlled ODE — learn cross-scale dynamics from sparse in vivo + abundant in vitro data.</p>
+
+<h3>🎯 2. Time-point imputation</h3>
+<p>Single-cell time-courses are usually sparsely sampled (12 hr+). Once NODE learns the vector field, it can simulate cell state at any time. <strong>Proposal:</strong> NODE-based imputation pipeline integrated with Scanpy.</p>
+
+<h3>🎯 3. Continuous-time perturbation modeling</h3>
+<p>Perturb-seq usually assumes "final state after perturbation". But many effects are dynamic (e.g. minute-scale TF binding response). <strong>Proposal:</strong> Neural CDE with continuous perturbation signal as input and cell trajectory as output.</p>
+
+<h3>🎯 4. Stiff biological ODE learning</h3>
+<p>Cell signaling (MAPK cascade) is often stiff. <strong>Proposal:</strong> implicit Neural ODE + Gauss-Newton training, more stable than baseline NODE, useful for Boolean → continuous signaling network inference.</p>
+
+<h3>🎯 5. EHR disease progression</h3>
+<p>Chronic disease EHRs (diabetes, CKD) are highly irregular. Latent ODE + intervention learning → personalized progression prediction + counterfactual treatment simulation. <strong>Proposal:</strong> clinical decision support tool.</p>
+
+<h3>🎯 6. Microbiome dynamics</h3>
+<p>16S/metagenomic time-series have stiff multi-timescale dynamics. NODE learns inter-species interaction networks. <strong>Proposal:</strong> antibiotic recovery prediction or probiotic design.</p>
+
+<h3>🎯 7. Spatiotemporal transcriptomics</h3>
+<p>Spatial + temporal (e.g. tissue regeneration) requires joint spatial-temporal modeling. <strong>Proposal:</strong> PDE-Net or graph-NODE that learns spatial dependency + temporal dynamics jointly.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">PyTorch / torchdiffeq</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">JAX / diffrax</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sct')">scTour</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install torchdiffeq</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> torchdiffeq <span class="keyword">import</span> odeint_adjoint <span class="keyword">as</span> odeint
+
+<span class="keyword">class</span> ODEFunc(nn.Module):
+    <span class="keyword">def</span> __init__(self, d=<span class="num">32</span>):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d, <span class="num">64</span>), nn.Tanh(),
+            nn.Linear(<span class="num">64</span>, d))
+    <span class="keyword">def</span> forward(self, t, h):
+        <span class="keyword">return</span> self.net(h)            <span class="comment"># dh/dt = f(h)</span>
+
+f = ODEFunc()
+h0 = torch.randn(<span class="num">256</span>, <span class="num">32</span>)
+t  = torch.linspace(<span class="num">0</span>., <span class="num">1</span>., <span class="num">10</span>)
+h_traj = odeint(f, h0, t, method=<span class="str">"dopri5"</span>, rtol=<span class="num">1e-5</span>)
+<span class="comment"># h_traj : (10, 256, 32) — state at 10 timestamps</span></pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># pip install diffrax equinox</span>
+<span class="keyword">import</span> jax, jax.numpy <span class="keyword">as</span> jnp
+<span class="keyword">import</span> equinox <span class="keyword">as</span> eqx
+<span class="keyword">import</span> diffrax
+
+<span class="keyword">class</span> Func(eqx.Module):
+    mlp: eqx.nn.MLP
+    <span class="keyword">def</span> __init__(self, d, key):
+        self.mlp = eqx.nn.MLP(d, d, width_size=<span class="num">64</span>, depth=<span class="num">2</span>, key=key)
+    <span class="keyword">def</span> __call__(self, t, y, args):
+        <span class="keyword">return</span> self.mlp(y)
+
+f = Func(<span class="num">32</span>, jax.random.PRNGKey(<span class="num">0</span>))
+sol = diffrax.diffeqsolve(
+    diffrax.ODETerm(f), diffrax.Dopri5(),
+    t0=<span class="num">0</span>, t1=<span class="num">1</span>, dt0=<span class="num">0.05</span>, y0=jnp.zeros(<span class="num">32</span>),
+    stepsize_controller=diffrax.PIDController(rtol=<span class="num">1e-5</span>, atol=<span class="num">1e-6</span>))</pre></div>
+
+<div class="code-tab-content" id="sct"><pre><span class="comment"># pip install sctour</span>
+<span class="keyword">import</span> sctour <span class="keyword">as</span> sct
+<span class="keyword">import</span> scanpy <span class="keyword">as</span> sc
+
+adata = sc.read_h5ad(<span class="str">"my_data.h5ad"</span>)
+tnode = sct.train.Trainer(adata, loss_mode=<span class="str">"nb"</span>)
+tnode.train()
+
+<span class="comment"># Outputs: pseudotime, latent dynamics, vector field</span>
+adata.obs[<span class="str">"ptime"</span>] = tnode.get_time()
+adata.obsm[<span class="str">"X_TNODE"</span>] = tnode.get_latentsp(alpha_z=<span class="num">0.5</span>)
+adata.obsm[<span class="str">"X_VF"</span>] = tnode.get_vector_field()
+sc.pl.umap(adata, color=<span class="str">"ptime"</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Neural ODE 的核心想法是什麼？</p><p data-lang="en">What is the core idea of Neural ODE?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 用 RNN 取代 CNN</span><span data-lang="en">A. Replace CNN with RNN</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 增加層數來提高精度</span><span data-lang="en">B. Add more layers for better accuracy</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 把 ResNet 的離散層極限化為 ODE dh/dt = f(h, t, θ)</span><span data-lang="en">C. Take the limit of ResNet's discrete layers as an ODE dh/dt = f(h, t, θ)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 完全去掉 nonlinear activation</span><span data-lang="en">D. Remove all nonlinear activations</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Adjoint method 解決了哪個訓練問題？</p><p data-lang="en">What problem does the adjoint method solve?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 讓 forward pass 更快</span><span data-lang="en">A. Speeds up the forward pass</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 反傳所需記憶體隨積分時長增長——adjoint 改為「再解一次 ODE」，O(1) 記憶體</span><span data-lang="en">B. Backprop memory grows with integration length — adjoint replaces it with another ODE solve, O(1) memory</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 避免梯度消失</span><span data-lang="en">C. Avoids vanishing gradients</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 自動選擇 batch size</span><span data-lang="en">D. Auto-selects batch size</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 Neural ODE 特別適合 irregular time-series（不規則時間採樣）？</p><p data-lang="en">Why is Neural ODE well-suited to irregular time-series?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. ODE solver 可在任意時間點積分，不需要均勻採樣</span><span data-lang="en">A. ODE solvers integrate to any time point — no uniform sampling needed</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 它強制資料變規則</span><span data-lang="en">B. It forces data to be regular</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 它只能處理 1 個時間點</span><span data-lang="en">C. It can only handle 1 time point</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 它不需要時間訊息</span><span data-lang="en">D. It doesn't need time information</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="hyperbolic-embeddings.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 15：雙曲嵌入" data-en="Ch 15: Hyperbolic">Ch 15：雙曲嵌入</span></a>
+<a href="flow-matching.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 17：Flow Matching" data-en="Ch 17: Flow Matching">Ch 17：Flow Matching</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: 2D Neural ODE vector field =====
+const VF=document.getElementById('vfSvg');
+const W=600,H=340;
+// domain x in [-3,3], y in [-2,2]
+function toScrX(x){return (x+3)/6*W;}
+function toScrY(y){return (1-(y+2)/4)*H;}
+function toDomX(sx){return sx/W*6-3;}
+function toDomY(sy){return (1-sy/H)*4-2;}
+
+function field(x,y,type){
+  switch(type){
+    case 'spiral': return [-y - 0.2*x, x - 0.2*y];
+    case 'saddle': return [x*0.8, -y*0.8];
+    case 'limit': {const r2=x*x+y*y;return [-y + x*(1-r2), x + y*(1-r2)];}
+    case 'bistable':{const dx=-(x*x*x-x)*0.8 - 0.3*y;const dy=-0.6*y + 0.2*x;return[dx,dy];}
+  }
+}
+
+let startPt={x:-2,y:1};
+
+function drawVF(){
+  const type=document.getElementById('fieldType').value;
+  const dt=+document.getElementById('sDt').value;
+  const N=+document.getElementById('sN').value;
+  document.getElementById('vDt').textContent=dt.toFixed(3);
+  document.getElementById('vN').textContent=N;
+  let svg='';
+  // Field arrows on a grid
+  for(let i=0;i<14;i++)for(let j=0;j<9;j++){
+    const x=-2.7+i*0.4, y=-1.7+j*0.4;
+    const[fx,fy]=field(x,y,type);
+    const mag=Math.hypot(fx,fy)+1e-9;
+    const sc=0.18/mag;
+    const ax=x+fx*sc, ay=y+fy*sc;
+    svg+=`<line x1="${toScrX(x)}" y1="${toScrY(y)}" x2="${toScrX(ax)}" y2="${toScrY(ay)}" stroke="#bbb" stroke-width="1"/>`;
+    svg+=`<circle cx="${toScrX(ax)}" cy="${toScrY(ay)}" r="1.3" fill="#999"/>`;
+  }
+  // Integrate trajectory from startPt
+  let pts=[];let x=startPt.x,y=startPt.y;
+  for(let k=0;k<N;k++){
+    pts.push([x,y]);
+    const[fx,fy]=field(x,y,type);
+    x+=fx*dt; y+=fy*dt;
+    if(Math.abs(x)>4||Math.abs(y)>3)break;
+  }
+  let path='';pts.forEach((p,i)=>{path+=(i===0?'M':'L')+toScrX(p[0]).toFixed(1)+','+toScrY(p[1]).toFixed(1)+' ';});
+  svg+=`<path d="${path}" stroke="#1a6b5a" stroke-width="2.2" fill="none" opacity="0.85"/>`;
+  // Points along trajectory at fixed indices to show time
+  for(let i=0;i<pts.length;i+=Math.max(1,Math.floor(pts.length/12))){
+    const sz=2 + 3*(i/pts.length);
+    svg+=`<circle cx="${toScrX(pts[i][0])}" cy="${toScrY(pts[i][1])}" r="${sz}" fill="#1a6b5a" opacity="${0.3+0.7*i/pts.length}"/>`;
+  }
+  // Start marker
+  svg+=`<circle cx="${toScrX(startPt.x)}" cy="${toScrY(startPt.y)}" r="6" fill="#c0392b" stroke="#fff" stroke-width="2"/>`;
+  svg+=`<text x="10" y="20" font-size="12" fill="#666">${type} field — click anywhere to set start</text>`;
+  VF.innerHTML=svg;
+
+  const L=I18n.get();
+  const endX=pts.length?pts[pts.length-1][0].toFixed(2):'-';
+  const endY=pts.length?pts[pts.length-1][1].toFixed(2):'-';
+  const desc=L==='zh'?
+    {spiral:'漩渦：軌跡向中心點 (0,0) 螺旋收斂——典型 stable focus，類似細胞型別的「吸引子」結構。',
+     saddle:'鞍點：某些方向收斂、某些方向發散——對應 bipotent progenitor 的命運分叉。',
+     limit:'極限環：軌跡收斂到一個圓環——對應細胞週期、晝夜節律等振盪動力學。',
+     bistable:'雙穩態：兩個吸引子+不穩定中點——對應 cell fate decision (e.g. Notch / GATA1 toggle switch)。'}
+    :
+    {spiral:'Spiral: trajectory converges to (0,0) — stable focus, analogous to cell-type attractors.',
+     saddle:'Saddle: some directions converge, others diverge — corresponds to bipotent progenitor fate splits.',
+     limit:'Limit cycle: trajectory converges to a ring — corresponds to cell cycle, circadian oscillations.',
+     bistable:'Bistable: two attractors with unstable midpoint — corresponds to cell-fate decisions (Notch / GATA1 toggle).'};
+  document.getElementById('vfInfo').innerHTML=L==='zh'?
+    `起點 (${startPt.x.toFixed(2)}, ${startPt.y.toFixed(2)}) → 終點 (${endX}, ${endY})。<br>${desc[type]}<br>NFE (函數呼叫次數) = ${pts.length}——adaptive solver 會視軌跡複雜度調整步長。`
+    :
+    `Start (${startPt.x.toFixed(2)}, ${startPt.y.toFixed(2)}) → End (${endX}, ${endY}).<br>${desc[type]}<br>NFE (function evaluations) = ${pts.length} — adaptive solvers adjust step size based on trajectory complexity.`;
+}
+
+VF.addEventListener('click',e=>{
+  const rect=VF.getBoundingClientRect();
+  const sx=W/rect.width, sy=H/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  startPt={x:toDomX(mx),y:toDomY(my)};
+  drawVF();
+});
+document.getElementById('fieldType').addEventListener('change',drawVF);
+document.getElementById('sDt').addEventListener('input',drawVF);
+document.getElementById('sN').addEventListener('input',drawVF);
+document.addEventListener('langchange',drawVF);
+drawVF();
+
+window._QF={zh:{
+  q1_y:'答對！Neural ODE = ResNet 的連續極限。',
+  q1_n:'答案是 C。Chen 2018 的洞見：把 h_{t+1} = h_t + f(h_t) 看成 ODE 的 Euler 步進，極限即 dh/dt = f(h, t, θ)。',
+  q2_y:'答對！adjoint 用反向 ODE 求梯度，記憶體 O(1)。',
+  q2_n:'答案是 B。反傳所需記憶體會隨 solver 步數線性增長——adjoint 改為反向解 ODE，O(1) 記憶體。',
+  q3_y:'答對！ODE 在任何時間點都有定義，正是 irregular sampling 的最佳工具。',
+  q3_n:'答案是 A。ODE solver 可在任意時間點積分，不需要均勻時間採樣。'
+},en:{
+  q1_y:'Correct! Neural ODE = continuous limit of ResNet.',
+  q1_n:'Answer is C. Chen 2018 insight: h_{t+1} = h_t + f(h_t) is an Euler step of an ODE; the limit is dh/dt = f(h, t, θ).',
+  q2_y:'Correct! Adjoint uses a reverse-time ODE; O(1) memory.',
+  q2_n:'Answer is B. Naïve backprop memory grows linearly with solver steps; adjoint replaces it with a reverse-time ODE.',
+  q3_y:'Correct! ODE is defined at any time — ideal for irregular sampling.',
+  q3_n:'Answer is A. ODE solvers integrate to any time point — no uniform sampling required.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

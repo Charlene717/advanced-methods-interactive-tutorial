@@ -1,0 +1,523 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Random Matrix Theory — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html" class="active">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 31 / 38</div><h1 data-zh="隨機矩陣理論 (Random Matrix Theory)" data-en="Random Matrix Theory">隨機矩陣理論 (Random Matrix Theory)</h1>
+<p class="subtitle" data-lang="zh">當 n×p 維度都大、樣本與基因數差不多時，傳統統計直覺崩潰：純噪音矩陣的 covariance 也會出現「看似有結構」的 eigenvalue。Marchenko-Pastur 與 Tracy-Widom 定律給我們一把尺：何處才是真正的訊號？</p>
+<p class="subtitle" data-lang="en">When n and p are both large and comparable, classical statistics breaks: pure-noise covariances appear "structured". Marchenko-Pastur and Tracy-Widom give a ruler — where does real signal begin and noise end?</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為什麼需要 RMT？" data-en="Why Random Matrix Theory?">為什麼需要 RMT？</h2>
+<div data-lang="zh">
+<p><strong>古典統計直覺的失靈：</strong>當樣本數 n 遠大於變數數 p 時（n ≫ p），sample covariance Ŝ → 真實 Σ。然而 omics 資料常見 <strong>p ≫ n</strong>（基因 20,000 ↔ 樣本數百），或 p, n 同階。此時 Ŝ 的 eigenvalue 散佈大幅扭曲——即使資料是純白噪音，前幾個 PC 也會「看起來顯著」。</p>
+<p><strong>Marchenko-Pastur (1967)：</strong>若 W 是 n × p iid 噪音矩陣，元素 W_ij ~ N(0, σ²)，當 n, p → ∞ 且 c = p/n 固定，則樣本協方差 (1/n) W^T W 的 eigenvalue 經驗分佈收斂到</p>
+<p style="text-align:center;font-family:Georgia,serif;">ρ(λ) = (1/(2πσ²cλ)) √((λ₊ − λ)(λ − λ₋)) · 𝟙_{[λ₋, λ₊]}</p>
+<p>其中 <strong>λ₊ = σ²(1 + √c)²</strong>, <strong>λ₋ = σ²(1 − √c)²</strong>（若 c &lt; 1）。所有 eigenvalue 集中在 [λ₋, λ₊]！</p>
+<p><strong>Tracy-Widom (1994)：</strong>最大 eigenvalue λ_max 的精細分佈——非高斯，有特定的左偏型態：</p>
+<p style="text-align:center;font-family:Georgia,serif;">(λ_max − μ_TW) / σ_TW &nbsp; → &nbsp; F₁ (TW₁ 分佈)</p>
+<p>用來檢驗「最大 eigenvalue 是否顯著超出純噪音 bulk」——這是 RMT-based PCA 顯著性檢驗的核心。</p>
+</div>
+<div data-lang="en">
+<p><strong>Classical intuition fails:</strong> when n ≫ p, sample covariance Ŝ → true Σ. But omics typically has <strong>p ≫ n</strong> (20,000 genes vs hundreds of samples), or p ≍ n. The eigenvalue spectrum of Ŝ is then heavily distorted — even pure white noise produces "significant-looking" leading PCs.</p>
+<p><strong>Marchenko-Pastur (1967):</strong> if W is an n × p iid noise matrix with W_ij ~ N(0, σ²), as n, p → ∞ with c = p/n fixed, the empirical eigenvalue distribution of (1/n) W^T W converges to</p>
+<p style="text-align:center;font-family:Georgia,serif;">ρ(λ) = (1/(2πσ²cλ)) √((λ₊ − λ)(λ − λ₋)) · 𝟙_{[λ₋, λ₊]}</p>
+<p>where <strong>λ₊ = σ²(1 + √c)²</strong>, <strong>λ₋ = σ²(1 − √c)²</strong> (if c &lt; 1). All eigenvalues concentrate in [λ₋, λ₊].</p>
+<p><strong>Tracy-Widom (1994):</strong> the fluctuation of λ_max — non-Gaussian, characteristically left-skewed:</p>
+<p style="text-align:center;font-family:Georgia,serif;">(λ_max − μ_TW) / σ_TW &nbsp; → &nbsp; F₁ (TW₁ law)</p>
+<p>Used to test whether the largest eigenvalue is significantly above the noise bulk — the core of RMT-based PCA significance testing.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📏</div><h4 data-zh="噪音門檻" data-en="Noise threshold">噪音門檻</h4><p data-lang="zh">λ₊ 給出「純噪音 eigenvalue 的上限」 — 超過才有可能是訊號。</p><p data-lang="en">λ₊ is the upper bound of pure-noise eigenvalues — anything above may be signal.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="顯著訊號" data-en="Spike model">顯著訊號</h4><p data-lang="zh">Spike model：少數真實訊號 eigenvalue 從 bulk 中突出，可被識別。</p><p data-lang="en">Spike model: a few signal eigenvalues stick out above the bulk — identifiable.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="維度比 c=p/n" data-en="Aspect ratio c=p/n">維度比 c=p/n</h4><p data-lang="zh">c 越大 → bulk 越寬 → 越難分訊號與噪音。omics p ≫ n 屬高 c。</p><p data-lang="en">Larger c → wider bulk → harder to separate signal from noise. Omics p ≫ n is high-c.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="M-P PCA、Spike model、Stieltjes 變換" data-en="M-P PCA, Spike Model, Stieltjes Transform">M-P PCA、Spike model、Stieltjes 變換</h2>
+<div data-lang="zh">
+
+<p><strong>① M-P based PCA noise threshold（演算法）：</strong></p>
+<ol>
+<li>對中心化、scale 後的資料 X (n × p)，計算 (1/n) X^T X 的 eigenvalue {λ_i}。</li>
+<li>用 robust 估計 σ̂²（例如：取低端 quantile fit M-P）。</li>
+<li>計算 λ₊ = σ̂²(1 + √(p/n))²。</li>
+<li>保留 λ_i &gt; λ₊ 的 PC；其餘視為噪音。</li>
+</ol>
+<p><strong>② Spike model (Johnstone 2001)：</strong>真實 covariance Σ = σ²(I + Σ_k h_k v_k v_k^T)。<strong>BBP 相變</strong> (Baik, Ben Arous, Péché 2005)：</p>
+<ul>
+<li>若 h_k &gt; √c → 對應 sample eigenvalue 從 bulk 中分離，PCA 可偵測。</li>
+<li>若 h_k &lt; √c → eigenvalue 與 bulk 重疊，無法用 PCA 分離。</li>
+</ul>
+<p>這是 PCA 在 high-dimensional 情境的本質限制——訊號太弱時即使無限樣本仍無法分離。</p>
+
+<p><strong>③ Stieltjes transform：</strong>RMT 主力工具。對任意 measure ρ 定義</p>
+<p style="text-align:center;font-family:Georgia,serif;">m(z) = ∫ ρ(λ) / (λ − z) dλ, &nbsp; z ∈ ℂ⁺</p>
+<p>M-P 的 m(z) 滿足代數方程 cz m² + (z + c − 1) m + 1 = 0；解出再代回 Stieltjes-Perron inversion 得 ρ(λ)。<br>應用：計算任意 covariance shrinkage 後的 eigenvalue 分佈（free probability）。</p>
+
+<p><strong>④ Free probability 與 covariance cleaning：</strong>Ledoit-Wolf (2004)、Bun-Bouchaud-Potters (2017) RIE estimator 用 Stieltjes / free convolution 推導出最佳「shrinkage 函數」，把 noisy eigenvalue 拉回更接近真值。</p>
+
+<p><strong>⑤ TW 顯著性檢驗：</strong>計算統計量 T = (n λ_max / σ̂² − μ_TW) / σ_TW；查 TW₁ 分位數判斷顯著性。Patterson 2006 EIGENSOFT、smartpca 為此設計。</p>
+</div>
+<div data-lang="en">
+
+<p><strong>① M-P PCA noise threshold:</strong></p>
+<ol>
+<li>Centre and scale X (n × p), compute eigenvalues of (1/n) X^T X.</li>
+<li>Estimate σ̂² robustly (e.g. fit M-P to the lower-quantile tail).</li>
+<li>Compute λ₊ = σ̂²(1 + √(p/n))².</li>
+<li>Keep PCs with λ_i &gt; λ₊; treat the rest as noise.</li>
+</ol>
+
+<p><strong>② Spike model (Johnstone 2001):</strong> true covariance Σ = σ²(I + Σ_k h_k v_k v_k^T). <strong>BBP phase transition</strong> (Baik, Ben Arous, Péché 2005):</p>
+<ul>
+<li>If h_k &gt; √c → the corresponding sample eigenvalue separates from the bulk; PCA can detect it.</li>
+<li>If h_k &lt; √c → it overlaps the bulk; undetectable by PCA.</li>
+</ul>
+<p>This is an essential PCA limit in high dimensions — weak signals stay hidden no matter how much data.</p>
+
+<p><strong>③ Stieltjes transform:</strong> RMT's main tool. For any measure ρ define</p>
+<p style="text-align:center;font-family:Georgia,serif;">m(z) = ∫ ρ(λ) / (λ − z) dλ, &nbsp; z ∈ ℂ⁺</p>
+<p>The M-P m(z) satisfies cz m² + (z + c − 1) m + 1 = 0; solve and invert via Stieltjes-Perron to recover ρ(λ). Used to derive eigenvalue distributions for general covariance shrinkage (free probability).</p>
+
+<p><strong>④ Free probability and covariance cleaning:</strong> Ledoit-Wolf (2004), Bun-Bouchaud-Potters (2017) RIE estimator derive the optimal "shrinkage function" using Stieltjes / free convolution — pulling noisy eigenvalues back towards truth.</p>
+
+<p><strong>⑤ TW significance test:</strong> compute T = (n λ_max / σ̂² − μ_TW) / σ_TW; compare to TW₁ quantiles. Patterson 2006 EIGENSOFT / smartpca implements this.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>BBP 相變的直覺：</strong> 在純噪音背景中，真實訊號要強到 h &gt; √(p/n) 才會「冒出 bulk」。omics 常見 c ≈ 1 (p≈n)，需要 h &gt; 1；若 p = 20000, n = 200，則 c = 100、h 必須 &gt; 10。所以高維 PCA 找弱訊號 <em>原理上</em> 不可能——必須先做 feature selection 或正則化。</div>
+<div data-lang="en"><strong>BBP intuition:</strong> in pure noise, a true signal must be strong enough that h &gt; √(p/n) to escape the bulk. Omics often has c ≈ 1 (p ≈ n), requiring h &gt; 1; with p = 20,000, n = 200, c = 100 and we need h &gt; 10. Hence weak-signal PCA is <em>in principle</em> impossible in high dimensions — feature selection or regularisation must come first.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="隨機矩陣 eigenvalue 與 M-P 理論曲線" data-en="Random Matrix Eigenvalues vs M-P Theoretical Curve">隨機矩陣 eigenvalue 與 M-P 理論曲線</h2>
+<div data-lang="zh"><p>下方產生 n × p 的標準常態隨機矩陣 W，計算 (1/n)W^T W 的 eigenvalue 並畫直方圖；疊上 Marchenko-Pastur 理論密度。可調整 n、p、spike 強度——觀察當 spike 大於 √c 才能跳出 bulk。</p></div>
+<div data-lang="en"><p>Below: an n × p standard-normal matrix W, eigenvalues of (1/n)W^T W, overlaid with the Marchenko-Pastur theoretical density. Adjust n, p, spike strength — note the spike must exceed √c to escape the bulk.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="樣本數 n" data-en="Samples n">樣本數 n <span id="vN">200</span></label><input type="range" id="sN" min="60" max="600" value="200" step="20"></div>
+<div class="slider-group"><label data-zh="變數數 p" data-en="Features p">變數數 p <span id="vP">100</span></label><input type="range" id="sP" min="40" max="500" value="100" step="20"></div>
+<div class="slider-group"><label data-zh="Spike 強度 h" data-en="Spike strength h">Spike 強度 h <span id="vH">0.0</span></label><input type="range" id="sH" min="0" max="6" value="0" step="0.2"></div>
+<div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">
+  <button id="btnSample" style="padding:8px 18px;background:var(--c-accent);color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;" data-zh="🎲 重新取樣" data-en="🎲 Resample">🎲 重新取樣</button>
+</div>
+<div class="chart-container" style="height:340px;"><canvas id="rmtChart"></canvas></div>
+<div id="rmtInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🧭 <span data-zh="什麼時候用 RMT？" data-en="When to use RMT?">什麼時候用 RMT？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>高維 PCA：</strong>p, n 相當（gene expression, GWAS, connectome）— 用 M-P / TW 決定保留幾個 PC。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>Co-expression cleaning：</strong>GRN / WGCNA 把 M-P bulk 內的相關係數視為噪音剔除。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>Covariance shrinkage：</strong>portfolio / batch correction 用 RIE / Ledoit-Wolf 改良 covariance 估計。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>低維 (p ≪ n) 經典統計即可；非 iid 噪音結構（強相關、heavy-tail）需要 generalised RMT。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>High-dim PCA:</strong> p ≍ n (gene expression, GWAS, connectomes) — use M-P / TW to decide PC count.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Co-expression cleaning:</strong> in GRN / WGCNA, drop correlations whose eigenvalue lies in the M-P bulk.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Covariance shrinkage:</strong> portfolio / batch correction via RIE / Ledoit-Wolf.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Low-dim (p ≪ n) — classical stats suffice; non-iid noise (strong correlation, heavy tails) needs generalised RMT.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="RMT 在基因組、GRN、連接體" data-en="RMT in Genomics, GRN, Connectomes">RMT 在基因組、GRN、連接體</h2>
+<div class="card-grid cols-2">
+
+<div class="card"><h4 data-zh="Eigengene 與 M-P 門檻" data-en="Eigengene and M-P threshold">Eigengene 與 M-P 門檻</h4>
+<p data-lang="zh">Alter, Brown & Botstein (2000, PNAS) 提出 SVD 抽取 gene expression 的 "eigengenes"；Kim & Tidor (2003)、Wall (2003) 等明確用 M-P 預測噪音 bulk，只保留超出 λ₊ 的 PC。是 microarray / RNA-seq 的標準前處理之一。</p>
+<p data-lang="en">Alter, Brown & Botstein (2000, PNAS) introduced SVD-based "eigengenes" of expression; Kim & Tidor (2003), Wall (2003) used M-P to bound the noise bulk, keeping only PCs with eigenvalue &gt; λ₊. Now a standard microarray / RNA-seq pre-processing step.</p></div>
+
+<div class="card"><h4 data-zh="WGCNA 模組偵測" data-en="WGCNA module detection">WGCNA 模組偵測</h4>
+<p data-lang="zh">WGCNA (Langfelder & Horvath 2008, BMC Bioinformatics) 用 soft thresholding 後的 adjacency matrix 偵測模組；後續變體把 M-P 噪音剔除 (e.g. Luo 2007 RMT-based module finding) 提升模組生物學可解釋性。</p>
+<p data-lang="en">WGCNA (Langfelder & Horvath 2008, BMC Bioinformatics) detects modules via soft-thresholded adjacency. RMT-based variants (Luo 2007) remove M-P noise before module discovery, improving biological interpretability.</p></div>
+
+<div class="card"><h4 data-zh="GRN denoising" data-en="GRN denoising">GRN denoising</h4>
+<p data-lang="zh">基因–基因 correlation 矩陣經常含大量「純隨機」相關。用 M-P 預期 bulk 內 eigenvalue 對應的 modes 視為噪音、扣除——保留 spike modes 為真實 co-expression module。應用於 TCGA、GTEx 表現資料 GRN 重建。</p>
+<p data-lang="en">Gene–gene correlation matrices are full of spurious links. Drop modes whose eigenvalues lie in the M-P bulk; keep the spike modes as real co-expression modules. Applied to TCGA, GTEx GRN reconstruction.</p></div>
+
+<div class="card"><h4 data-zh="GWAS heritability" data-en="GWAS heritability">GWAS heritability</h4>
+<p data-lang="zh">Patterson, Price & Reich (2006, PLOS Genet) 在 GWAS 用 TW 檢驗 PC 顯著性，避免 population stratification 假陽性；之後 LD score regression 與 RMT-based heritability 估計（如 RHE / SumHer）廣泛採用。</p>
+<p data-lang="en">Patterson, Price & Reich (2006, PLOS Genet) used the TW test to assess PC significance in GWAS, controlling stratification false positives. Later LD-score regression and RMT-based heritability (RHE / SumHer) became widespread.</p></div>
+
+<div class="card"><h4 data-zh="神經連接體噪音過濾" data-en="Connectome noise filtering">神經連接體噪音過濾</h4>
+<p data-lang="zh">fMRI / DTI / EEG 推導的 functional / structural connectome 含大量短時程隨機相關。MacMahon & Garlaschelli (2015)、Almog 2015 等將 RMT 用於 connectome cleaning，使社群偵測更穩健。</p>
+<p data-lang="en">Functional / structural connectomes from fMRI / DTI / EEG carry massive transient correlations. MacMahon & Garlaschelli (2015), Almog 2015 used RMT to clean connectomes, stabilising community detection.</p></div>
+
+<div class="card"><h4 data-zh="股市 vs 基因組同方法" data-en="Stock market ↔ genomics same method">股市 vs 基因組同方法</h4>
+<p data-lang="zh">Laloux et al. (1999, PRL)、Plerou et al. (2002, PRE) 首先把 RMT 用於股市 correlation cleaning；同樣的 Marchenko-Pastur 框架在生物 correlation 矩陣完全成立，是少數可直接「跨領域搬遷」的數理工具。</p>
+<p data-lang="en">Laloux et al. (1999, PRL) and Plerou et al. (2002, PRE) first applied RMT to stock-return correlation cleaning. The same Marchenko-Pastur framework applies wholesale to biological correlations — a rare direct cross-domain transfer.</p></div>
+
+<div class="card"><h4 data-zh="scRNA-seq doublet / 雙倍細胞偵測" data-en="scRNA-seq doublet detection">scRNA-seq doublet / 雙倍細胞偵測</h4>
+<p data-lang="zh">scRNA-seq 中 doublet 細胞會引入 spurious high-rank structure。RMT-based denoising（如 ALRA, Linderman 2018; randomly-projected SVD）可去除噪音 PC 同時保留真實 biological variance；下游 cluster 更乾淨。</p>
+<p data-lang="en">Doublets in scRNA-seq introduce spurious high-rank structure. RMT-based denoising (ALRA, Linderman 2018; random-projection SVD) removes noise PCs while preserving real biological variance, leading to cleaner clusters.</p></div>
+
+<div class="card"><h4 data-zh="深度學習 weight matrices 分析" data-en="Deep-learning weight analysis">深度學習 weight matrices 分析</h4>
+<p data-lang="zh">Martin & Mahoney (2021, JMLR) WeightWatcher 用 heavy-tailed RMT 分析 NN weight matrix——好訓練的網路出現 power-law 偏離 M-P 的「heavy tail」，可作為訓練品質指標。已應用於 protein LM 與 cell LM 評估。</p>
+<p data-lang="en">Martin & Mahoney (2021, JMLR) WeightWatcher uses heavy-tailed RMT to analyse NN weight matrices — well-trained networks show power-law deviations from M-P. Now used to audit protein and cell LMs.</p></div>
+
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題：相關噪音、free probability、信號回收" data-en="Advanced: correlated noise, free probability, signal recovery">進階主題</h2>
+<div data-lang="zh">
+<h3>① 相關噪音 (correlated noise) 下的 M-P</h3>
+<p>原始 M-P 假設 iid 噪音；現實 (batch effects、技術 covariates) 不滿足。<strong>Generalised M-P / spiked covariance model</strong> 允許非單位 noise covariance Ψ，spectrum 變為 Ψ 與 M-P 的 free convolution。批次效應強時 bulk 會「拉長」。</p>
+
+<h3>② Heavy-tailed RMT</h3>
+<p>單細胞 count、scRNA-seq 表現資料常呈 Poisson-like 或 NegBin，非高斯。Burda & Jurkiewicz (2004) 研究 Lévy-stable 元素的 RMT；scRNA-seq 文獻 (Tracy-Widom adjustment for low counts) 已嘗試對應修正。</p>
+
+<h3>③ Free probability 簡介</h3>
+<p>Voiculescu (1980s) 提出的 free independence 概念：兩個「自由獨立」隨機矩陣的 eigenvalue 分佈以 <strong>R-transform / S-transform</strong> 卷積。對 covariance cleaning（先 PCA 減維、再合併 batch）給出精確分佈計算工具。</p>
+
+<h3>④ 信號回收：optimal RIE shrinkage</h3>
+<p>Bun-Bouchaud-Potters (2017, Phys. Rep.) 推導 rotationally-invariant estimator：</p>
+<p style="text-align:center;font-family:Georgia,serif;">ξ_i^RIE = λ_i / | 1 − c + cz_i m(z_i) |²</p>
+<p>把每個 sample eigenvalue 拉回最接近真實的位置——比 Ledoit-Wolf linear shrinkage 更精細，已在生物 / 金融 covariance 估計使用。</p>
+
+<h3>⑤ Tracy-Widom 與最大 eigenvalue 假設檢驗</h3>
+<p>TW₁ (real Wishart) 與 TW₂ (complex) 分佈在資料分析中是標準工具。Patterson 2006 EIGENSOFT 直接內建 TW 顯著性測試；scLLM 的「latent dim 該多少？」也是 TW 問題。</p>
+
+<h3>⑥ BBP 相變的實務意涵</h3>
+<p>若想用 PCA 偵測強度 h 的訊號，至少需要 h &gt; √(p/n)。實務：</p>
+<ul>
+<li>p = 1,000，n = 100 → c = 10，需要 h &gt; 3.16</li>
+<li>p = 20,000，n = 200 → c = 100，需要 h &gt; 10</li>
+</ul>
+<p>所以生物 PCA 在不做 feature selection 時，弱訊號 <em>幾乎必然遺漏</em>。先用 HVG / variance filtering 把 p 降到 n 量級才合理。</p>
+
+<h3>⑦ 與深度學習的接口</h3>
+<p>NN 訓練後 weight matrix 的 spectrum 可診斷 over-fitting / under-trained。Martin-Mahoney "5+1 phases" 把訓練分為 random → power-law-tailed → bulk-and-spikes 等階段；對 ESM、scGPT 等模型可作為健康度檢測。</p>
+</div>
+<div data-lang="en">
+<h3>① M-P under correlated noise</h3>
+<p>Vanilla M-P assumes iid noise; real-world batch effects / technical covariates violate this. <strong>Generalised M-P / spiked covariance</strong> allows non-identity noise covariance Ψ; the spectrum becomes the free convolution of Ψ and M-P. Strong batch effects "stretch" the bulk.</p>
+
+<h3>② Heavy-tailed RMT</h3>
+<p>Single-cell counts are Poisson / negative-binomial, not Gaussian. Burda & Jurkiewicz (2004) studied RMT with Lévy-stable entries; scRNA-seq literature applies Tracy-Widom adjustments for low counts.</p>
+
+<h3>③ Free probability primer</h3>
+<p>Voiculescu's (1980s) free independence: eigenvalue distributions of "freely independent" matrices convolve via the <strong>R-transform / S-transform</strong>. Gives exact spectral computations for covariance cleaning (PCA + batch merging).</p>
+
+<h3>④ Signal recovery: optimal RIE shrinkage</h3>
+<p>Bun-Bouchaud-Potters (2017, Phys. Rep.) derived the rotationally-invariant estimator:</p>
+<p style="text-align:center;font-family:Georgia,serif;">ξ_i^RIE = λ_i / | 1 − c + cz_i m(z_i) |²</p>
+<p>It pulls each sample eigenvalue back to its closest-to-truth value — finer than Ledoit-Wolf linear shrinkage, now used in biological / financial covariance estimation.</p>
+
+<h3>⑤ Tracy-Widom tests for largest eigenvalue</h3>
+<p>TW₁ (real Wishart) and TW₂ (complex) are standard tools. EIGENSOFT (Patterson 2006) ships built-in TW testing. The "what's the right latent dim?" question for scLLMs is a TW problem.</p>
+
+<h3>⑥ Practical implication of BBP</h3>
+<p>To detect a signal of strength h via PCA, you need h &gt; √(p/n). Concretely:</p>
+<ul>
+<li>p = 1,000, n = 100 → c = 10, need h &gt; 3.16</li>
+<li>p = 20,000, n = 200 → c = 100, need h &gt; 10</li>
+</ul>
+<p>Without prior feature selection, weak biological signals are <em>almost certainly missed</em>. HVG / variance filtering down to p ≍ n is essential.</p>
+
+<h3>⑦ Interface with deep learning</h3>
+<p>Spectra of trained weight matrices diagnose over-fitting / under-training. Martin-Mahoney's "5+1 phases" classify training stages (random → power-law tailed → bulk-and-spikes); applicable as health checks for ESM, scGPT.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / numpy M-P</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / RIE shrinkage</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / RMTstat</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> mp_threshold(n, p, sigma2=<span class="num">1.0</span>):
+    <span class="str">"""Returns upper edge λ₊ of Marchenko-Pastur bulk."""</span>
+    c = p / n
+    <span class="keyword">return</span> sigma2 * (<span class="num">1</span> + np.sqrt(c))**<span class="num">2</span>
+
+<span class="keyword">def</span> mp_density(lam, c, sigma2=<span class="num">1.0</span>):
+    lam_p = sigma2*(<span class="num">1</span>+np.sqrt(c))**<span class="num">2</span>
+    lam_m = sigma2*(<span class="num">1</span>-np.sqrt(c))**<span class="num">2</span>
+    val = np.zeros_like(lam)
+    mask = (lam &gt; lam_m) & (lam &lt; lam_p)
+    val[mask] = np.sqrt((lam_p - lam[mask])*(lam[mask] - lam_m)) \
+                / (<span class="num">2</span>*np.pi*sigma2*c*lam[mask])
+    <span class="keyword">return</span> val
+
+<span class="comment"># Demo: simulate vs theory</span>
+n, p = <span class="num">400</span>, <span class="num">200</span>
+W = np.random.randn(n, p)
+S = (W.T @ W) / n
+ev = np.linalg.eigvalsh(S)
+lam_plus = mp_threshold(n, p)
+print(<span class="str">"M-P upper edge:"</span>, lam_plus)
+print(<span class="str">"# eigenvalues above noise bulk:"</span>, (ev &gt; lam_plus).sum())</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># Ledoit-Wolf shrinkage (linear) and a sketch of RIE</span>
+<span class="keyword">from</span> sklearn.covariance <span class="keyword">import</span> LedoitWolf
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+lw = LedoitWolf().fit(X)              <span class="comment"># X: n × p</span>
+Sigma_lw = lw.covariance_
+print(<span class="str">"shrinkage α ="</span>, lw.shrinkage_)
+
+<span class="comment"># Sketch of Bun-Bouchaud-Potters RIE (rotationally invariant)</span>
+<span class="keyword">def</span> rie(X, eps=<span class="num">1e-3</span>):
+    n, p = X.shape; c = p/n
+    S = (X.T @ X) / n
+    lam, U = np.linalg.eigh(S)
+    <span class="comment"># Stieltjes via Cauchy kernel smoothing</span>
+    xi = np.empty_like(lam)
+    <span class="keyword">for</span> i, li <span class="keyword">in</span> enumerate(lam):
+        z = li + <span class="num">1j</span>*eps
+        m = np.mean(<span class="num">1</span>/(lam - z))
+        denom = abs(<span class="num">1</span> - c + c*z*m)**<span class="num">2</span>
+        xi[i] = li / denom
+    <span class="keyword">return</span> U @ np.diag(xi) @ U.T</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages("RMTstat"); install.packages("RSpectra")</span>
+<span class="keyword">library</span>(RMTstat)
+
+<span class="comment"># Tracy-Widom CDF / quantiles (for PCA significance testing)</span>
+ptw(<span class="num">2.0</span>, beta=<span class="num">1</span>)         <span class="comment"># P(TW1 ≤ 2.0)</span>
+qtw(<span class="num">0.95</span>, beta=<span class="num">1</span>)        <span class="comment"># 95% TW1 quantile</span>
+
+<span class="comment"># Marchenko-Pastur density</span>
+dmp(x=<span class="num">1.5</span>, svr=<span class="num">2</span>)         <span class="comment"># svr = n/p (sample-to-var ratio)</span>
+
+<span class="comment"># Significance of largest PC of a centred matrix X</span>
+n &lt;- nrow(X); p &lt;- ncol(X); c &lt;- p/n
+S &lt;- crossprod(X)/n
+ev &lt;- eigen(S, only.values=<span class="keyword">TRUE</span>)$values
+lam_plus &lt;- (<span class="num">1</span>+sqrt(c))^<span class="num">2</span>          <span class="comment"># assuming sigma2 = 1</span>
+sig_pcs &lt;- which(ev &gt; lam_plus)</pre></div>
+</div>
+
+<p data-lang="zh" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">主要套件：Python — <code>numpy</code>、<code>pyrmt</code> (簡單 RMT 工具)、<code>scikit-learn-extra</code> (LedoitWolf 等)。R — <code>RMTstat</code>、<code>RSpectra</code>、<code>WGCNA</code>。基因組專屬：EIGENSOFT/smartpca（Patterson 2006）。</p>
+<p data-lang="en" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">Key libraries: Python — <code>numpy</code>, <code>pyrmt</code>, <code>scikit-learn-extra</code> (LedoitWolf etc.). R — <code>RMTstat</code>, <code>RSpectra</code>, <code>WGCNA</code>. Genomics: EIGENSOFT / smartpca (Patterson 2006).</p>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Marchenko-Pastur 定律給出純噪音矩陣 covariance 的何種特徵？</p><p data-lang="en">What does Marchenko-Pastur describe for a pure-noise covariance matrix?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 所有 eigenvalue 都等於 1</span><span data-lang="en">A. All eigenvalues equal 1</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Eigenvalue 集中在 [λ₋, λ₊] 區間，邊界由 c = p/n 決定</span><span data-lang="en">B. Eigenvalues concentrate in [λ₋, λ₊], with edges set by c = p/n</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Eigenvalue 服從常態分佈</span><span data-lang="en">C. Eigenvalues are Gaussian</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Eigenvalue 與 sample size 無關</span><span data-lang="en">D. Eigenvalues are independent of sample size</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">BBP 相變告訴我們什麼？</p><p data-lang="en">What does the BBP phase transition tell us?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. PCA 永遠能偵測訊號</span><span data-lang="en">A. PCA always detects signals</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Eigenvalue 一定常態</span><span data-lang="en">B. Eigenvalues are always Gaussian</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 訊號強度需 h &gt; √(p/n) 才能從 M-P bulk 中分離</span><span data-lang="en">C. Signal strength must exceed √(p/n) to separate from the M-P bulk</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 高維 PCA 比低維更靈敏</span><span data-lang="en">D. High-dim PCA is more sensitive than low-dim</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">下列何者最能描述 Tracy-Widom 分佈在 PCA 中的角色？</p><p data-lang="en">Which best describes Tracy-Widom in PCA?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 描述最大 eigenvalue 的精細分佈，用於檢驗是否顯著超過噪音 bulk</span><span data-lang="en">A. Describes the fine distribution of the largest eigenvalue — used to test significance above the noise bulk</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 取代 t-test</span><span data-lang="en">B. Replaces the t-test</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 計算 PCA 的 loading 向量</span><span data-lang="en">C. Computes PCA loadings</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 是 SVD 的別名</span><span data-lang="en">D. Just another name for SVD</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="reinforcement-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 30：Reinforcement Learning" data-en="Ch 30: Reinforcement Learning">Ch 30：Reinforcement Learning</span></a>
+<a href="sliced-wasserstein.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 32：Sliced-Wasserstein" data-en="Ch 32: Sliced-Wasserstein">Ch 32：Sliced-Wasserstein</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+/* ===== Interactive: random matrix eigenvalues vs M-P density ===== */
+let CHART=null;
+
+function randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+function mpEdges(n,p){const c=p/n;return [Math.pow(1-Math.sqrt(c),2), Math.pow(1+Math.sqrt(c),2), c];}
+function mpDensity(lam,c){const lp=Math.pow(1+Math.sqrt(c),2),lm=Math.pow(1-Math.sqrt(c),2);if(lam<=lm||lam>=lp)return 0;return Math.sqrt((lp-lam)*(lam-lm))/(2*Math.PI*c*lam);}
+
+/* Power iteration for top-k symmetric eigenvalues (just top-K for visualization speed) */
+function symMatmul(S,v){const p=v.length;const r=new Float64Array(p);for(let i=0;i<p;i++){let s=0;for(let j=0;j<p;j++)s+=S[i*p+j]*v[j];r[i]=s;}return r;}
+function topKEigs(S,p,K=8,iters=80){
+  const eigs=[];const vecs=[];
+  for(let k=0;k<K;k++){
+    let v=new Float64Array(p);for(let i=0;i<p;i++)v[i]=randn();
+    // deflate previous eigenvectors
+    for(let it=0;it<iters;it++){
+      let w=symMatmul(S,v);
+      // deflate
+      for(let j=0;j<vecs.length;j++){const vj=vecs[j],lj=eigs[j];let dot=0;for(let i=0;i<p;i++)dot+=vj[i]*v[i];for(let i=0;i<p;i++)w[i]-=lj*dot*vj[i];}
+      let n=0;for(let i=0;i<p;i++)n+=w[i]*w[i];n=Math.sqrt(n);if(n<1e-12)break;for(let i=0;i<p;i++)w[i]/=n;v=w;
+    }
+    // Rayleigh quotient
+    const Sv=symMatmul(S,v);let lam=0;for(let i=0;i<p;i++)lam+=v[i]*Sv[i];
+    eigs.push(lam);vecs.push(v);
+  }
+  return eigs;
+}
+
+/* For the bulk histogram we don't need the top-K — we need all eigenvalues.
+   For modest p (up to ~250) we can do a basic Jacobi-like full eig but that
+   gets expensive in JS. Instead use the trace / moments approach: sample
+   eigenvalues via Lanczos-style sampling. To keep this widget snappy and
+   self-contained, we approximate the bulk histogram from the singular values
+   of W (much cheaper for thin n×p matrices) using power iteration only for
+   the top-K spike — and for the bulk we use the eigenvalue density
+   computed from the diagonal of the deflated matrix.
+   For a clean educational widget, we instead compute eigenvalues exactly
+   for moderate p (≤200) using a JS Jacobi eigensolver. */
+function jacobiEig(A,n,tol=1e-9,maxSweep=40){
+  // A is flat n*n; will be modified
+  const V=new Float64Array(n*n);for(let i=0;i<n;i++)V[i*n+i]=1;
+  for(let sweep=0;sweep<maxSweep;sweep++){
+    let off=0;
+    for(let p=0;p<n-1;p++)for(let q=p+1;q<n;q++)off+=A[p*n+q]*A[p*n+q];
+    if(Math.sqrt(off)<tol)break;
+    for(let p=0;p<n-1;p++){
+      for(let q=p+1;q<n;q++){
+        const apq=A[p*n+q];
+        if(Math.abs(apq)<1e-14)continue;
+        const app=A[p*n+p],aqq=A[q*n+q];
+        const theta=(aqq-app)/(2*apq);
+        let t=theta>=0?1/(theta+Math.sqrt(1+theta*theta)):1/(theta-Math.sqrt(1+theta*theta));
+        const c=1/Math.sqrt(1+t*t),s=t*c;
+        // apply rotation
+        for(let i=0;i<n;i++){
+          const aip=A[i*n+p],aiq=A[i*n+q];
+          A[i*n+p]=c*aip-s*aiq;A[i*n+q]=s*aip+c*aiq;
+        }
+        for(let i=0;i<n;i++){
+          const api=A[p*n+i],aqi=A[q*n+i];
+          A[p*n+i]=c*api-s*aqi;A[q*n+i]=s*api+c*aqi;
+        }
+      }
+    }
+  }
+  const ev=new Array(n);for(let i=0;i<n;i++)ev[i]=A[i*n+i];return ev;
+}
+
+function buildMatrix(n,p,h){
+  // W: n×p iid N(0,1); also add spike: + h * u v^T   (rank-1 deterministic spike)
+  // Sample eigenvalues of (1/n) W^T W
+  const W=new Float64Array(n*p);
+  for(let i=0;i<n*p;i++)W[i]=randn();
+  if(h>0){
+    // pick unit direction u in R^n, v in R^p
+    const u=new Float64Array(n);let un=0;for(let i=0;i<n;i++){u[i]=randn();un+=u[i]*u[i];}un=Math.sqrt(un);for(let i=0;i<n;i++)u[i]/=un;
+    const v=new Float64Array(p);let vn=0;for(let j=0;j<p;j++){v[j]=randn();vn+=v[j]*v[j];}vn=Math.sqrt(vn);for(let j=0;j<p;j++)v[j]/=vn;
+    const scale=h*Math.sqrt(n*p); // makes spike eigenvalue ≈ (1+h)·c-ish
+    for(let i=0;i<n;i++)for(let j=0;j<p;j++)W[i*p+j]+=scale*u[i]*v[j];
+  }
+  // S = (1/n) W^T W  (p×p)
+  const S=new Float64Array(p*p);
+  for(let j=0;j<p;j++){
+    for(let k=j;k<p;k++){
+      let s=0;for(let i=0;i<n;i++)s+=W[i*p+j]*W[i*p+k];
+      s/=n;S[j*p+k]=s;S[k*p+j]=s;
+    }
+  }
+  const ev=jacobiEig(S,p);
+  ev.sort((a,b)=>a-b);
+  return ev;
+}
+
+function drawChart(){
+  const n=+document.getElementById('sN').value;
+  const p=+document.getElementById('sP').value;
+  const h=+document.getElementById('sH').value;
+  document.getElementById('vN').textContent=n;
+  document.getElementById('vP').textContent=p;
+  document.getElementById('vH').textContent=h.toFixed(1);
+
+  // Cap p to 220 to keep Jacobi snappy
+  const pEff=Math.min(p,220);
+  const t0=performance.now();
+  const ev=buildMatrix(n,pEff,h);
+  const tEig=(performance.now()-t0).toFixed(0);
+
+  const [lm,lp,c]=mpEdges(n,pEff);
+  // Histogram
+  const xmin=0,xmax=Math.max(lp*1.05, h>0?(ev[ev.length-1]*1.05):lp*1.05);
+  const nBins=40;
+  const bins=new Array(nBins).fill(0);
+  const dx=(xmax-xmin)/nBins;
+  for(const v of ev){const k=Math.min(nBins-1,Math.max(0,Math.floor((v-xmin)/dx)));bins[k]++;}
+  // Normalise to density
+  const total=ev.length;
+  const histY=bins.map(b=>b/(total*dx));
+  const histX=Array.from({length:nBins},(_,i)=>xmin+(i+0.5)*dx);
+
+  // Theory curve (oversample)
+  const nT=200;
+  const tx=Array.from({length:nT},(_,i)=>xmin+(i+0.5)*(xmax-xmin)/nT);
+  const ty=tx.map(x=>mpDensity(x,c));
+
+  const L=I18n.get();
+  if(CHART)CHART.destroy();
+  CHART=new Chart(document.getElementById('rmtChart'),{
+    type:'bar',
+    data:{labels:histX.map(x=>x.toFixed(2)),datasets:[
+      {type:'bar',label:L==='zh'?'樣本 eigenvalue 直方圖':'Sample eigenvalue histogram',data:histY,backgroundColor:'rgba(37,99,168,.45)',borderColor:'rgba(37,99,168,.9)',borderWidth:1,categoryPercentage:1,barPercentage:1},
+      {type:'line',label:L==='zh'?'M-P 理論密度':'M-P theoretical density',data:tx.map((x,i)=>({x:x,y:ty[i]})),borderColor:'#c0392b',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.2,parsing:false}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:false,
+      scales:{x:{type:'linear',min:xmin,max:xmax,title:{display:true,text:L==='zh'?'eigenvalue λ':'eigenvalue λ'}},
+              y:{title:{display:true,text:L==='zh'?'密度':'density'}}},
+      plugins:{legend:{position:'top'}}
+    }
+  });
+
+  const sqrtC=Math.sqrt(c);
+  const spikeCondition = h > sqrtC;
+  document.getElementById('rmtInfo').innerHTML = L==='zh'?
+    `n = ${n}, p = ${pEff} (顯示上限 220) · c = p/n = <strong>${c.toFixed(3)}</strong> · √c = ${sqrtC.toFixed(3)}<br>
+M-P 邊界: λ₋ = ${lm.toFixed(3)}, λ₊ = <strong>${lp.toFixed(3)}</strong> · 最大 eigenvalue = <strong>${ev[ev.length-1].toFixed(3)}</strong><br>
+${h>0?(spikeCondition?`✓ spike h=${h.toFixed(1)} &gt; √c — 應該突出 bulk`:`✗ spike h=${h.toFixed(1)} ≤ √c — BBP 預測 spike 仍在 bulk 中`):'（無 spike — 純 M-P 預測）'} · 計算 ${tEig} ms`
+    :
+    `n = ${n}, p = ${pEff} (cap 220) · c = p/n = <strong>${c.toFixed(3)}</strong> · √c = ${sqrtC.toFixed(3)}<br>
+M-P edges: λ₋ = ${lm.toFixed(3)}, λ₊ = <strong>${lp.toFixed(3)}</strong> · max eigenvalue = <strong>${ev[ev.length-1].toFixed(3)}</strong><br>
+${h>0?(spikeCondition?`✓ spike h=${h.toFixed(1)} &gt; √c — should escape the bulk`:`✗ spike h=${h.toFixed(1)} ≤ √c — BBP predicts it stays hidden`):'(no spike — pure M-P prediction)'} · computed in ${tEig} ms`;
+}
+
+document.getElementById('sN').addEventListener('change',drawChart);
+document.getElementById('sP').addEventListener('change',drawChart);
+document.getElementById('sH').addEventListener('change',drawChart);
+document.getElementById('btnSample').addEventListener('click',drawChart);
+document.addEventListener('langchange',drawChart);
+drawChart();
+
+window._QF={zh:{
+  q1_y:'答對！M-P 給出 bulk 區間 [λ₋, λ₊]，λ₊ = σ²(1+√c)²。',
+  q1_n:'答案是 B。M-P 預測純噪音 eigenvalue 集中在 [λ₋, λ₊] 內，邊界由 c = p/n 決定。',
+  q2_y:'答對！這是 BBP 相變的本質——弱於 √c 的訊號在 PCA 下原理上不可分離。',
+  q2_n:'答案是 C。BBP (Baik-Ben Arous-Péché 2005) 指出 spike 強度需超過 √(p/n) 才會從 bulk 分離。',
+  q3_y:'答對！TW₁/TW₂ 描述 λ_max 的尺度化波動，提供顯著性 p-value。',
+  q3_n:'答案是 A。Tracy-Widom 給出最大 eigenvalue 的尺度化分佈，用於 PCA 顯著性檢驗。'
+},en:{
+  q1_y:'Correct! M-P gives the bulk interval [λ₋, λ₊], with λ₊ = σ²(1+√c)².',
+  q1_n:'Answer is B. M-P predicts pure-noise eigenvalues concentrate in [λ₋, λ₊], edges set by c = p/n.',
+  q2_y:'Correct! This is the BBP phase transition — signals weaker than √c are in-principle inseparable in PCA.',
+  q2_n:'Answer is C. BBP (Baik-Ben Arous-Péché 2005) shows the spike must exceed √(p/n) to separate from the bulk.',
+  q3_y:'Correct! TW₁/TW₂ describe the scaled fluctuation of λ_max, giving significance p-values.',
+  q3_n:'Answer is A. Tracy-Widom is the scaled distribution of the largest eigenvalue, used for PCA significance tests.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,548 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Modern Hopfield Networks — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html" class="active">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 27 / 38</div><h1 data-zh="Modern Hopfield Networks 現代霍普菲爾德網路" data-en="Modern Hopfield Networks">Modern Hopfield Networks 現代霍普菲爾德網路</h1>
+<p class="subtitle" data-lang="zh">Hopfield (1982) 的聯想式記憶網路在 2020 年迎來復興：Ramsauer et al. (2021, ICLR) 證明指數能量函數的新版 Hopfield 與 Transformer attention 數學上等價，且具有指數級記憶容量。一夜之間，Hopfield 不再只是歷史，而是 attention 的「能量視角」。</p>
+<p class="subtitle" data-lang="en">Hopfield's (1982) associative memory network was resurrected in 2020: Ramsauer et al. (2021, ICLR) proved that the new exponential-energy Hopfield is mathematically equivalent to Transformer attention, with exponential memory capacity. Overnight, Hopfield went from history to "the energy view of attention".</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從經典 Hopfield 到 Modern Hopfield" data-en="From Classical to Modern Hopfield">從經典 Hopfield 到 Modern Hopfield</h2>
+<div data-lang="zh">
+<p><strong>經典 Hopfield (Hopfield 1982, PNAS)：</strong>給定一組記憶 {x¹, ..., x^N}（二元 ±1 向量），權重矩陣 W = Σ_i x^i (x^i)^T（Hebbian）。能量函數為</p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −½ ξ^T W ξ</p>
+<p>輸入「噪音樣本」ξ_0，反覆做 ξ ← sign(W ξ)，能量單調下降，最終收斂到最近的記憶。<strong>容量上限約為 0.14 N</strong>——只能儲存少於 14% 神經元數的 pattern。</p>
+<p><strong>Modern Hopfield (Krotov & Hopfield 2016, NeurIPS; Demircigil 2017)：</strong>把能量改為「polynomial 或 exponential interaction function」，記憶容量隨之提升。Demircigil et al. (2017) 用指數能量達成 <strong>指數級容量</strong> ~2^(d/2)。</p>
+<p><strong>Continuous Modern Hopfield (Ramsauer et al. 2021, ICLR)：</strong>把記憶 X = [x¹ ... x^N] 收進矩陣，連續查詢向量 ξ，新能量函數</p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −lse(β, X^T ξ) + ½ ξ^T ξ + const</p>
+<p>其中 lse = log-sum-exp。<strong>更新規則</strong>為：</p>
+<p style="text-align:center;font-family:Georgia,serif;">ξ_new = X · softmax(β · X^T · ξ)</p>
+<p><strong>這正是 Transformer 的 attention！</strong> X 是 keys/values、ξ 是 query、β 是溫度倒數（在 Transformer 中是 1/√d_k）。一次更新就近似收斂到最近記憶。</p>
+</div>
+<div data-lang="en">
+<p><strong>Classical Hopfield (Hopfield 1982, PNAS):</strong> given memories {x¹, ..., x^N} (binary ±1), weight matrix W = Σ_i x^i (x^i)^T (Hebbian rule). Energy:</p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −½ ξ^T W ξ</p>
+<p>From a noisy input ξ_0, iterate ξ ← sign(W ξ); energy decreases monotonically, converging to the nearest memory. <strong>Capacity is only ~0.14 N</strong> — fewer than 14% of neuron count can be stored.</p>
+<p><strong>Modern Hopfield (Krotov & Hopfield 2016, NeurIPS; Demircigil 2017):</strong> replace the quadratic energy with polynomial / exponential interactions to increase capacity. Demircigil et al. (2017) used exponential energy to achieve <strong>exponential capacity</strong> ~2^(d/2).</p>
+<p><strong>Continuous Modern Hopfield (Ramsauer et al. 2021, ICLR):</strong> stack memories into X = [x¹ ... x^N], use continuous query ξ, with new energy</p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −lse(β, X^T ξ) + ½ ξ^T ξ + const</p>
+<p>where lse = log-sum-exp. <strong>Update rule:</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">ξ_new = X · softmax(β · X^T · ξ)</p>
+<p><strong>This is exactly the Transformer attention!</strong> X plays the role of keys/values, ξ is the query, and β is the inverse temperature (= 1/√d_k in Transformers). A single update converges close to the nearest memory.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">💾</div><h4 data-zh="指數容量" data-en="Exponential capacity">指數容量</h4><p data-lang="zh">經典 Hopfield 容量 ≈ 0.14 N；Modern 版可儲存 2^(d/2) 個 pattern，遠超神經元數。</p><p data-lang="en">Classical capacity ≈ 0.14 N; Modern achieves 2^(d/2) patterns — far beyond neuron count.</p></div>
+  <div class="card"><div class="card-icon">🔗</div><h4 data-zh="等於 Attention" data-en="≡ Attention">等於 Attention</h4><p data-lang="zh">更新規則 ξ ← X·softmax(βX^Tξ) 正是 Transformer 的 self-attention 公式。</p><p data-lang="en">Update rule ξ ← X·softmax(βX^Tξ) is literally Transformer self-attention.</p></div>
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="一步收斂" data-en="One-step retrieval">一步收斂</h4><p data-lang="zh">β 大時，一次 update 就完成檢索；不像經典 Hopfield 需要多輪迭代。</p><p data-lang="en">For large β, retrieval converges in a single update — no multi-round iteration like classical Hopfield.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Continuous Modern Hopfield 與 Hopfield Layers" data-en="Continuous Modern Hopfield and Hopfield Layers">Continuous Modern Hopfield 與 Hopfield Layers</h2>
+<div data-lang="zh">
+<p><strong>① 能量函數的設計（Ramsauer 2021）：</strong>新能量寫成</p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −β⁻¹ log(Σ_i exp(β x^i · ξ)) + ½‖ξ‖² + const</p>
+<p>第一項 lse 對「最相似的記憶」取軟最大；第二項是 self-energy 防止 ξ 無限增大。<strong>梯度為</strong> ∇E = ξ − X·softmax(β X^T ξ)，令其為零就得到 fixed-point ξ = X·softmax(β X^T ξ)。</p>
+<p><strong>② 三種 Hopfield 操作模式（hflayers）：</strong></p>
+<ul>
+<li><strong>Hopfield（標準）:</strong> Q from input, K/V from learnable memory matrix → 同 self-attention。</li>
+<li><strong>HopfieldPooling:</strong> Q 為 learnable 單向量，所有 K/V 從一組輸入聚合 → set 上的 attention pooling。</li>
+<li><strong>HopfieldLayer:</strong> Q from data, K/V = learnable lookup table → 大型 stored-pattern memory（似 retrieval-augmented）。</li>
+</ul>
+<p><strong>③ β 的角色：</strong>β 小 → softmax 平滑、回傳 multiple memories 的混合（meta-stable state）；β 大 → softmax 銳化、單一記憶（pure memory state）。Ramsauer 證明：β &gt; β_c 時，每個 memory 各有 basin of attraction，<strong>誤差指數小</strong>。</p>
+<p><strong>④ 與 Transformer 對應：</strong>Transformer attention(Q, K, V) = softmax(QK^T/√d)V。若 V = X、K = X、Q = ξ、β = 1/√d，則完全等價。Ramsauer 還推出「兩層 Hopfield = standard attention block」的對應。</p>
+<p><strong>⑤ 訓練：</strong>把 Hopfield 當作 differentiable layer 直接接到 NN，標準 backprop 即可。記憶 X 可以是 learnable parameter，也可以是 batch-dependent input（如 DeepRC：把整個 repertoire 當 keys）。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Energy design (Ramsauer 2021):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">E(ξ) = −β⁻¹ log(Σ_i exp(β x^i · ξ)) + ½‖ξ‖² + const</p>
+<p>The first term (lse) soft-maxes over similarity to the most similar memory; the second is a self-energy preventing ξ from blowing up. <strong>Gradient</strong> ∇E = ξ − X·softmax(β X^T ξ); setting it to zero gives fixed point ξ = X·softmax(β X^T ξ).</p>
+<p><strong>② Three Hopfield modes (hflayers):</strong></p>
+<ul>
+<li><strong>Hopfield (standard):</strong> Q from input, K/V from learnable memory matrix → same as self-attention.</li>
+<li><strong>HopfieldPooling:</strong> Q is a single learnable vector; K/V aggregate inputs → attention pooling over sets.</li>
+<li><strong>HopfieldLayer:</strong> Q from data, K/V = learnable lookup table → large stored-pattern memory (akin to retrieval-augmented).</li>
+</ul>
+<p><strong>③ Role of β:</strong> small β → smooth softmax → mixture of memories (meta-stable state); large β → sharp softmax → a single memory (pure state). Ramsauer proves: for β > β_c, each memory has its basin of attraction with <strong>exponentially small retrieval error</strong>.</p>
+<p><strong>④ Correspondence to Transformer:</strong> attention(Q, K, V) = softmax(QK^T/√d)V. With V = X, K = X, Q = ξ, β = 1/√d, they are identical. Ramsauer also derived "two Hopfield updates = one standard attention block".</p>
+<p><strong>⑤ Training:</strong> drop Hopfield in as a differentiable layer; standard backprop. Memory X can be a learnable parameter or batch-dependent input (e.g. DeepRC: the entire repertoire as keys).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>歷史轉折：</strong>Hopfield 在 2024 年因「對人工神經網路的奠基貢獻」與 Geoffrey Hinton 共獲諾貝爾物理獎。Modern Hopfield 的復興表明：經典模型在新的能量函數下，仍可以與最先進的深度學習對齊。</div>
+<div data-lang="en"><strong>Historical turn:</strong> Hopfield received the 2024 Nobel Prize in Physics with Geoffrey Hinton for "foundational contributions to artificial neural networks". The Modern Hopfield revival shows: classical models under a new energy function can still align with state-of-the-art deep learning.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="噪音樣本如何被吸引到最近記憶" data-en="How a Noisy Sample is Attracted to the Nearest Memory">噪音樣本如何被吸引到最近記憶</h2>
+<div data-lang="zh"><p>下方視覺化呈現一個 2D Hopfield 能量地景。三個「記憶」 x¹, x², x³ 分別形成三個低能量井。<strong>拖動藍色查詢點 ξ</strong>，觀察其往最近記憶移動。<strong>調整 β</strong>：β 小 → 吸引力柔和、混合多個記憶；β 大 → 銳利、強烈吸到單一最近記憶。<strong>按「Step」</strong> 執行一次 ξ ← X·softmax(βX^Tξ) 更新。</p></div>
+<div data-lang="en"><p>The visualization shows a 2D Hopfield energy landscape. Three memories x¹, x², x³ form low-energy basins. <strong>Drag the blue query ξ</strong> and watch it move toward the nearest memory. <strong>Adjust β</strong>: small β → soft attraction, mixture of memories; large β → sharp, single-memory retrieval. <strong>Click "Step"</strong> to apply one update ξ ← X·softmax(βX^Tξ).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="溫度倒數 β" data-en="Inverse temperature β">β <span id="vBeta">2.00</span></label><input type="range" id="sBeta" min="0.2" max="10" value="2.0" step="0.1"></div>
+<div class="slider-group"><label data-zh="記憶分離度" data-en="Memory separation">記憶分離度 <span id="vSep">1.00</span></label><input type="range" id="sSep" min="0.4" max="1.8" value="1.0" step="0.05"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnStep" class="toggle-btn">▶ <span data-zh="一步更新" data-en="Step">一步更新</span></button>
+  <button id="btnRun" class="toggle-btn">⏩ <span data-zh="連續收斂" data-en="Run">連續收斂</span></button>
+  <button id="btnReset" class="toggle-btn"><span data-zh="重置" data-en="Reset">重置</span></button>
+  <button id="btnNoise" class="toggle-btn"><span data-zh="隨機放置 ξ" data-en="Random ξ">隨機放置 ξ</span></button>
+</div>
+<svg id="hopSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;cursor:crosshair;"></svg>
+<div id="hopInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="何時用 Hopfield Layer？" data-en="When to use Hopfield layers?">何時用 Hopfield Layer？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>Set / Bag 輸入聚合</strong>——TCR 倉庫、藥物分子集合、影像 patch 集合：用 HopfieldPooling 把 set 聚合成單向量。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>記憶式檢索</strong>——把訓練集當 stored patterns，查詢時取 attention-weighted 平均（如 retrieval-augmented LLM、藥物-靶點檢索）。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>類比 attention 但需要能量視角</strong>——關注 attractor 收斂、basin 結構或聯想記憶分析。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>純語言序列建模——標準 Transformer 已足夠；Hopfield 不會帶來顯著收益。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Set / bag aggregation</strong> — TCR repertoires, molecule sets, image patch sets: HopfieldPooling collapses a set into one vector.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Memory-based retrieval</strong> — treat training set as stored patterns; query via attention-weighted recall (retrieval-augmented LLM, drug-target retrieval).</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Attention with an energy view</strong> — when attractor convergence, basin structure, or associative-memory analysis matters.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Pure language sequence modeling — standard Transformer suffices; Hopfield offers no clear gain.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Hopfield Layers 在免疫與分子生物資訊" data-en="Hopfield Layers in Immunology and Molecular Bioinformatics">Hopfield Layers 在免疫與分子生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="DeepRC (Widrich 2020)" data-en="DeepRC (Widrich 2020)">DeepRC — 免疫倉庫分類</h4>
+<p data-lang="zh">Widrich et al. (2020, NeurIPS) 用 Modern Hopfield (HopfieldPooling) 把 patient 的 TCR/BCR 倉庫（10^5 − 10^6 序列）聚合成單向量，用於疾病分類（CMV、HIV、CRC）。Hopfield attention 自動挑出 disease-associated clonotypes。</p>
+<p data-lang="en">Widrich et al. (2020, NeurIPS) used HopfieldPooling to aggregate a patient's TCR/BCR repertoire (10⁵–10⁶ sequences) into one vector for disease classification (CMV, HIV, CRC). Hopfield attention automatically selects disease-associated clonotypes.</p></div>
+
+<div class="card"><h4 data-zh="HopfieldRepertoire (Schäfl 2024)" data-en="HopfieldRepertoire (Schäfl 2024)">HopfieldRepertoire</h4>
+<p data-lang="zh">Schäfl et al. (2024) 改良 DeepRC，把 TCR repertoire 變成 stored memories，新樣本查詢時做 attention retrieval。可解釋哪些 TCR 對診斷貢獻最大，並支援少樣本 transfer。</p>
+<p data-lang="en">Schäfl et al. (2024) extended DeepRC by treating repertoires as stored memories; new queries retrieve via attention. Interpretable which TCRs drive diagnosis, and supports few-shot transfer.</p></div>
+
+<div class="card"><h4 data-zh="DTI / 藥物-靶點預測" data-en="DTI / drug-target prediction">藥物-靶點結合預測</h4>
+<p data-lang="zh">將已知 ligand-target pairs 當作 Hopfield 記憶，新查詢藥物透過 attention 檢索相似配體，預測結合強度。Schmidhuber 團隊的 Hopfield-DTI 與後續 MolBind 都採此架構。</p>
+<p data-lang="en">Store known ligand-target pairs as Hopfield memories; new drug queries retrieve similar binders via attention to predict binding. Schmidhuber group's Hopfield-DTI and MolBind follow this design.</p></div>
+
+<div class="card"><h4 data-zh="Conformal-DeepRC" data-en="Conformal-DeepRC">Conformal-DeepRC 倉庫預測</h4>
+<p data-lang="zh">把 DeepRC 與 Conformal Prediction 結合：對患者 TCR repertoire 做 disease prediction 時同時給出可信度區間。對臨床轉譯很關鍵（FDA-style uncertainty）。</p>
+<p data-lang="en">Combines DeepRC with Conformal Prediction: alongside disease prediction from a TCR repertoire, output a calibrated uncertainty interval. Crucial for clinical translation (FDA-style uncertainty).</p></div>
+
+<div class="card"><h4 data-zh="Mol-Hopfield / 分子相似度" data-en="Mol-Hopfield / molecular similarity">Mol-Hopfield 分子相似度檢索</h4>
+<p data-lang="zh">把化合物庫的 ECFP / 圖嵌入當記憶，新分子查詢做 attention-weighted similarity；用於 hit expansion 與 scaffold hopping。比傳統 Tanimoto NN 更善於捕捉「軟相似度」。</p>
+<p data-lang="en">Store compound library ECFP / graph embeddings as memory; query via attention-weighted similarity for hit expansion and scaffold hopping. Captures "soft similarity" better than Tanimoto NN.</p></div>
+
+<div class="card"><h4 data-zh="蛋白功能標註 / MIL" data-en="Protein function / MIL">蛋白功能標註 — Multiple-Instance Learning</h4>
+<p data-lang="zh">每個蛋白由多個 domain / motif 組成（bag of instances）。HopfieldPooling 自然處理 MIL：把 domain embeddings 聚合成蛋白級表示，預測 GO term 或 enzyme function。</p>
+<p data-lang="en">Proteins consist of domains / motifs (bag of instances). HopfieldPooling naturally handles MIL: aggregate domain embeddings into a protein-level vector for GO term or enzyme prediction.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Modern Hopfield 進階主題" data-en="Advanced Modern Hopfield Topics">Modern Hopfield 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① 容量爆炸：從多項式到指數</h3>
+<p>Krotov & Hopfield (2016) 用 polynomial interaction F(s) = s^n 把容量提升到 O(d^(n−1))；Demircigil (2017) 用 exp(s) 進一步達到 2^(d/2)。Ramsauer (2021) 的 lse + ½‖ξ‖² 形式繼承了指數容量，並使能量在連續空間平滑可導。</p>
+
+<h3>② 與 Attention 的兩種對應</h3>
+<p>「軟」對應：一次 Hopfield update = 一次 attention forward。「硬」對應：Ramsauer 證明連續多次 Hopfield update 與「跨層 attention 累積」等價，這暗示 Transformer 各層其實在做漸進記憶檢索。</p>
+
+<h3>③ Meta-stable state 與 mixture retrieval</h3>
+<p>當 β 取中等值，softmax 不會收斂到單一記憶，而是「鄰近記憶的加權混合」。這對應神經科學的 schema/prototype 概念，也是 retrieval-augmented generation 的數學基礎——查詢得到多個相關記憶的混合。</p>
+
+<h3>④ Hopfield Layer 變體</h3>
+<ul>
+<li><strong>HopfieldPooling:</strong> Q 為單向量、output 為單向量 — set aggregation。</li>
+<li><strong>HopfieldLayer:</strong> learnable memory（外部 K/V） — 大型 lookup table。</li>
+<li><strong>Multi-head Hopfield:</strong> 多組獨立 (Q, K, V) 平行 — 同 multi-head attention。</li>
+</ul>
+
+<h3>⑤ 與 Energy-Based Model 的關係</h3>
+<p>Modern Hopfield 是 EBM 的特殊型：能量為 lse + self-term；採樣的 Langevin 動力學 = continuous Hopfield update + noise。本章下一節「EBM & DCA」會看到更通用的 EBM 框架。</p>
+
+<h3>⑥ 訓練實務</h3>
+<ul>
+<li><strong>β 初始化：</strong>1/√d_k（同 Transformer）；過大會 saturate softmax 造成梯度消失。</li>
+<li><strong>記憶數量 N：</strong>容量上限 ~2^(d/2)，但實務中 N 過大會增加 attention 計算成本（O(N²)）。</li>
+<li><strong>Normalization：</strong>對 K, V 做 LayerNorm 通常穩定訓練；對 ξ 不要 normalize（破壞 attractor 結構）。</li>
+<li><strong>Dropout：</strong>對 attention score 做 dropout 可避免「記住 noise」。</li>
+</ul>
+
+<h3>⑦ 與 retrieval-augmented LLM 的關係</h3>
+<p>RAG / kNN-LM 在大型知識庫上做檢索 + attention——這本質就是大尺度的 HopfieldLayer。把外部知識庫當 stored patterns，查詢時取最相似 top-k 並 attention-weighted aggregation。Hopfield 提供了能量解讀。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Capacity explosion: polynomial to exponential</h3>
+<p>Krotov & Hopfield (2016) used polynomial interactions F(s) = s^n to lift capacity to O(d^(n−1)); Demircigil (2017) reached 2^(d/2) via exp(s). Ramsauer (2021)'s lse + ½‖ξ‖² inherits the exponential capacity while remaining smooth and differentiable in continuous space.</p>
+
+<h3>② Two correspondences to attention</h3>
+<p>"Soft" correspondence: one Hopfield update = one attention forward. "Hard" correspondence: Ramsauer proved iterated Hopfield ≡ stacking attention across layers — suggesting Transformer layers implicitly perform progressive memory retrieval.</p>
+
+<h3>③ Meta-stable states and mixture retrieval</h3>
+<p>At moderate β, softmax does not converge to a single memory but to a "weighted mixture of nearby memories". This matches schema/prototype concepts in neuroscience and grounds retrieval-augmented generation — queries retrieve a mixture of related memories.</p>
+
+<h3>④ Hopfield Layer variants</h3>
+<ul>
+<li><strong>HopfieldPooling:</strong> Q = single vector, output = single vector → set aggregation.</li>
+<li><strong>HopfieldLayer:</strong> learnable memory (external K/V) → large lookup table.</li>
+<li><strong>Multi-head Hopfield:</strong> parallel (Q, K, V) groups, mirroring multi-head attention.</li>
+</ul>
+
+<h3>⑤ Relation to Energy-Based Models</h3>
+<p>Modern Hopfield is a special EBM: energy is lse + self-term; Langevin sampling = continuous Hopfield update + noise. The next chapter on EBM & DCA covers the broader framework.</p>
+
+<h3>⑥ Training tips</h3>
+<ul>
+<li><strong>β init:</strong> 1/√d_k (same as Transformer); too large saturates softmax → vanishing gradient.</li>
+<li><strong>Number of memories N:</strong> capacity ~2^(d/2), but large N inflates O(N²) attention cost.</li>
+<li><strong>Normalization:</strong> LayerNorm on K, V usually stabilizes training; don't normalize ξ (breaks attractor structure).</li>
+<li><strong>Dropout:</strong> attention dropout helps avoid memorizing noise.</li>
+</ul>
+
+<h3>⑦ Connection to retrieval-augmented LLMs</h3>
+<p>RAG / kNN-LM perform retrieval + attention on large knowledge bases — essentially a large-scale HopfieldLayer. External knowledge = stored patterns; query retrieves top-k via attention-weighted aggregation. Hopfield supplies the energy interpretation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Modern Hopfield 還能改良哪些任務？" data-en="What Else Could Modern Hopfield Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 整合 patient-level 多模態倉庫</h3>
+<p>每位患者有 TCR、BCR、scRNA、scATAC 各自為「set」。<strong>提案：</strong>多模態 HopfieldPooling，每個 modality 分別聚合後跨模態 attention，可用於免疫表型分類與臨床預後。</p>
+
+<h3>🎯 2. 細胞型別 prototype memory</h3>
+<p>把 scLLM (scGPT / Geneformer) 學到的細胞 embedding 平均成 cell-type prototype，存進 HopfieldLayer；新細胞做 attention retrieval 即可標註。<strong>提案：</strong>scHopfield zero-shot annotation。</p>
+
+<h3>🎯 3. 蛋白家族 prototype-based annotation</h3>
+<p>Pfam family 的 consensus embedding 當記憶；query 蛋白序列做 attention 即可分到 family / clan。<strong>提案：</strong>HopfieldHMMer，可解釋 + 可信度區間。</p>
+
+<h3>🎯 4. 影像病理 patch aggregation</h3>
+<p>Whole-slide image (WSI) 由數萬 patch 組成，現有 MIL 用 Attention-MIL。<strong>提案：</strong>HopfieldPooling MIL 訓練更穩、解釋性更佳（哪些 patch 是 attractor）。</p>
+
+<h3>🎯 5. CRISPR perturbation library 檢索</h3>
+<p>Perturb-seq 已知 perturbation → expression profile 映射存為記憶。<strong>提案：</strong>新 perturbation 直接 attention 檢索最相似 perturbation 預測效應，無需從頭訓練。</p>
+
+<h3>🎯 6. RAG-style 生物資訊知識增強</h3>
+<p>把 GO / Reactome / KEGG pathway annotation 全部嵌入 HopfieldLayer，作為 LLM 的外部記憶。<strong>提案：</strong>BioRAG = 生物知識基底 + Hopfield retrieval。</p>
+
+<h3>🎯 7. Conformal-Hopfield uncertainty</h3>
+<p>Hopfield retrieval 天然有 attention weight 可作為信心度，但缺乏統計保證。<strong>提案：</strong>結合 conformal prediction 對 Hopfield top-k 給出嚴格 coverage。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Patient-level multimodal repertoires</h3>
+<p>Each patient has TCR, BCR, scRNA, scATAC sets. <strong>Proposal:</strong> multimodal HopfieldPooling — each modality pooled separately, then cross-modal attention — for immune phenotyping and clinical prognosis.</p>
+
+<h3>🎯 2. Cell-type prototype memory</h3>
+<p>Average scLLM (scGPT / Geneformer) embeddings into cell-type prototypes; store in a HopfieldLayer; new cells retrieve via attention. <strong>Proposal:</strong> scHopfield zero-shot annotation.</p>
+
+<h3>🎯 3. Protein-family prototype annotation</h3>
+<p>Pfam family consensus embeddings as memory; query proteins attention into family/clan. <strong>Proposal:</strong> HopfieldHMMer — interpretable, with calibrated uncertainty.</p>
+
+<h3>🎯 4. Pathology WSI patch aggregation</h3>
+<p>Whole-slide images aggregate via Attention-MIL today. <strong>Proposal:</strong> HopfieldPooling MIL — more stable training, clearer interpretability (which patches are attractors).</p>
+
+<h3>🎯 5. CRISPR perturbation library retrieval</h3>
+<p>Perturb-seq stored as perturbation → expression mapping. <strong>Proposal:</strong> new perturbations retrieve nearest known effects via attention, no retraining needed.</p>
+
+<h3>🎯 6. RAG-style bioinformatics knowledge augmentation</h3>
+<p>Embed GO / Reactome / KEGG annotations into a HopfieldLayer as LLM external memory. <strong>Proposal:</strong> BioRAG = biological knowledge base + Hopfield retrieval.</p>
+
+<h3>🎯 7. Conformal-Hopfield uncertainty</h3>
+<p>Attention weights serve as a confidence proxy but lack statistical guarantees. <strong>Proposal:</strong> combine conformal prediction with Hopfield top-k for rigorous coverage.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'hfl')">hflayers (官方)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scr')">From scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'deeprc')">DeepRC-style pooling</button>
+</div>
+
+<div class="code-tab-content active" id="hfl"><pre><span class="comment"># pip install hflayers</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> hflayers <span class="keyword">import</span> Hopfield, HopfieldPooling, HopfieldLayer
+
+<span class="comment"># Standard Hopfield: input → attention over learnable memory</span>
+hop = Hopfield(input_size=<span class="num">128</span>, hidden_size=<span class="num">64</span>,
+               num_heads=<span class="num">4</span>, scaling=<span class="num">0.125</span>)   <span class="comment"># β = 1/√64</span>
+x = torch.randn(<span class="num">16</span>, <span class="num">32</span>, <span class="num">128</span>)               <span class="comment"># (B, seq, dim)</span>
+y = hop(x)                                       <span class="comment"># same shape</span>
+
+<span class="comment"># HopfieldPooling: aggregate set → single vector</span>
+pool = HopfieldPooling(input_size=<span class="num">128</span>, hidden_size=<span class="num">64</span>,
+                       num_heads=<span class="num">4</span>, output_size=<span class="num">128</span>)
+bag = torch.randn(<span class="num">16</span>, <span class="num">200</span>, <span class="num">128</span>)             <span class="comment"># 200 instances</span>
+out = pool(bag)                                  <span class="comment"># (16, 128)</span>
+
+<span class="comment"># HopfieldLayer: external learnable memory of N patterns</span>
+layer = HopfieldLayer(input_size=<span class="num">128</span>, hidden_size=<span class="num">64</span>,
+                      quantity=<span class="num">5000</span>)            <span class="comment"># 5000 stored patterns</span>
+q = torch.randn(<span class="num">16</span>, <span class="num">128</span>)
+r = layer(q.unsqueeze(<span class="num">1</span>)).squeeze(<span class="num">1</span>)         <span class="comment"># attention over memory</span></pre></div>
+
+<div class="code-tab-content" id="scr"><pre><span class="comment"># Pure PyTorch — Modern Hopfield update</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn, torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">class</span> ModernHopfield(nn.Module):
+    <span class="keyword">def</span> __init__(self, d, n_mem, beta=<span class="keyword">None</span>):
+        super().__init__()
+        self.X = nn.Parameter(torch.randn(n_mem, d) * <span class="num">0.02</span>)
+        self.beta = beta <span class="keyword">if</span> beta <span class="keyword">is</span> <span class="keyword">not</span> <span class="keyword">None</span> <span class="keyword">else</span> <span class="num">1</span>/d**<span class="num">0.5</span>
+    <span class="keyword">def</span> forward(self, xi, n_steps=<span class="num">1</span>):
+        <span class="comment"># xi : (B, d) query; iterate update</span>
+        <span class="keyword">for</span> _ <span class="keyword">in</span> range(n_steps):
+            sim = xi @ self.X.t()             <span class="comment"># (B, n_mem)</span>
+            w = F.softmax(self.beta * sim, dim=-<span class="num">1</span>)
+            xi = w @ self.X                   <span class="comment"># (B, d)</span>
+        <span class="keyword">return</span> xi
+
+mh = ModernHopfield(d=<span class="num">128</span>, n_mem=<span class="num">500</span>, beta=<span class="num">0.5</span>)
+xi = torch.randn(<span class="num">16</span>, <span class="num">128</span>)
+retrieved = mh(xi, n_steps=<span class="num">3</span>)             <span class="comment"># 3 iterations</span></pre></div>
+
+<div class="code-tab-content" id="deeprc"><pre><span class="comment"># DeepRC-style repertoire classifier sketch</span>
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> hflayers <span class="keyword">import</span> HopfieldPooling
+
+<span class="keyword">class</span> RepertoireClassifier(nn.Module):
+    <span class="keyword">def</span> __init__(self, seq_dim=<span class="num">256</span>, n_classes=<span class="num">2</span>):
+        super().__init__()
+        self.seq_encoder = nn.Sequential(           <span class="comment"># per-TCR encoder</span>
+            nn.Conv1d(<span class="num">21</span>, <span class="num">128</span>, <span class="num">5</span>, padding=<span class="num">2</span>), nn.ReLU(),
+            nn.AdaptiveMaxPool1d(<span class="num">1</span>))
+        self.pool = HopfieldPooling(
+            input_size=<span class="num">128</span>, hidden_size=<span class="num">64</span>,
+            num_heads=<span class="num">8</span>, output_size=<span class="num">128</span>)
+        self.cls = nn.Linear(<span class="num">128</span>, n_classes)
+
+    <span class="keyword">def</span> forward(self, tcr_set):
+        <span class="comment"># tcr_set : (B, N_clonotypes, 21, L_aa)</span>
+        B, N, A, L = tcr_set.shape
+        h = self.seq_encoder(tcr_set.view(B*N, A, L)).squeeze(-<span class="num">1</span>)
+        h = h.view(B, N, <span class="num">128</span>)
+        v = self.pool(h)                             <span class="comment"># Hopfield over repertoire</span>
+        <span class="keyword">return</span> self.cls(v)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Modern Hopfield (Ramsauer 2021) 與 Transformer attention 的關係是？</p><p data-lang="en">How are Modern Hopfield (Ramsauer 2021) and Transformer attention related?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 完全無關，僅同名巧合" data-en="A. Unrelated, only a name coincidence">A. 完全無關，僅同名巧合</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. Hopfield 只能用於二元向量" data-en="B. Hopfield only handles binary vectors">B. Hopfield 只能用於二元向量</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 更新規則 ξ←X·softmax(βX^Tξ) 即等於 self-attention，差別只在 β 對應 1/√d_k" data-en="C. Update ξ←X·softmax(βX^Tξ) equals self-attention; β corresponds to 1/√d_k">C. 更新規則 ξ←X·softmax(βX^Tξ) 即等於 self-attention，差別只在 β 對應 1/√d_k</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. Hopfield 比 Transformer 慢且容量更小" data-en="D. Hopfield is slower with smaller capacity">D. Hopfield 比 Transformer 慢且容量更小</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">與經典 (1982) Hopfield 相比，Modern Hopfield 的記憶容量最大改變是什麼？</p><p data-lang="en">What is the main capacity change Modern Hopfield brings vs. classical (1982) Hopfield?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 從 O(N) 線性提升到 O(N log N)" data-en="A. From O(N) to O(N log N)">A. 從 O(N) 線性提升到 O(N log N)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 從約 0.14·d 線性容量提升到 2^(d/2) 指數容量" data-en="B. From ~0.14·d linear to 2^(d/2) exponential">B. 從約 0.14·d 線性容量提升到 2^(d/2) 指數容量</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 容量沒變，只是更新更快" data-en="C. Capacity unchanged, only faster">C. 容量沒變，只是更新更快</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 完全不能儲存記憶" data-en="D. Cannot store memories">D. 完全不能儲存記憶</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">DeepRC (Widrich 2020) 用 HopfieldPooling 處理 TCR repertoire 的核心優勢是？</p><p data-lang="en">What is the core advantage of DeepRC's HopfieldPooling for TCR repertoires?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 把可變大小的 clonotype 集合聚合成單向量，且 attention 自動挑出 disease-associated TCR" data-en="A. Pools a variable-size clonotype set into one vector and auto-selects disease-associated TCRs via attention">A. 把可變大小的 clonotype 集合聚合成單向量，且 attention 自動挑出 disease-associated TCR</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 需要每位患者倉庫大小相同" data-en="B. Requires identical repertoire size per patient">B. 需要每位患者倉庫大小相同</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 用 GAN 生成假 TCR" data-en="C. Uses GAN to generate fake TCRs">C. 用 GAN 生成假 TCR</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 不需要訓練資料" data-en="D. No training data needed">D. 不需要訓練資料</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="geometric-dl.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 26：Geometric DL" data-en="Ch 26: Geometric DL">Ch 26：Geometric DL</span></a>
+<a href="energy-based-dca.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 28：EBM & DCA" data-en="Ch 28: EBM & DCA">Ch 28：EBM & DCA</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Modern Hopfield Energy Landscape =====
+const HSVG=document.getElementById('hopSvg');
+const W=600,H=360;
+// World coords: x∈[-2,2], y∈[-1.2,1.2]
+function toScrX(x){return (x+2)/4*W;}
+function toScrY(y){return (1-(y+1.2)/2.4)*H;}
+function toWorldX(sx){return sx/W*4-2;}
+function toWorldY(sy){return 1.2-sy/H*2.4;}
+
+let memories=[]; // base positions; will be scaled by sep
+function baseMemories(){return [
+  {x:-1.0,y:0.6,label:'x¹'},
+  {x: 1.1,y:0.5,label:'x²'},
+  {x: 0.0,y:-0.8,label:'x³'}
+];}
+let xi={x:-0.2,y:0.05};
+let trail=[];
+let dragXi=false;
+let running=false;
+
+function scaledMems(){
+  const sep=+document.getElementById('sSep').value;
+  return baseMemories().map(m=>({x:m.x*sep,y:m.y*sep,label:m.label}));
+}
+
+function softmaxAttention(){
+  const beta=+document.getElementById('sBeta').value;
+  const mems=scaledMems();
+  // compute similarity (dot product)
+  const sims=mems.map(m=>m.x*xi.x+m.y*xi.y);
+  const mx=Math.max(...sims);
+  const ex=sims.map(s=>Math.exp(beta*(s-mx)));
+  const Z=ex.reduce((a,b)=>a+b,0);
+  const w=ex.map(e=>e/Z);
+  // new xi = sum w_i * x_i
+  let nx=0,ny=0;
+  for(let i=0;i<mems.length;i++){nx+=w[i]*mems[i].x;ny+=w[i]*mems[i].y;}
+  // Compute energy
+  const lse=Math.log(Z)/beta+mx;
+  const E=-lse+0.5*(xi.x*xi.x+xi.y*xi.y);
+  return {w,nx,ny,E,mems};
+}
+
+function step(){
+  const r=softmaxAttention();
+  trail.push({x:xi.x,y:xi.y});
+  if(trail.length>60)trail.shift();
+  xi={x:r.nx,y:r.ny};
+  render();
+}
+
+function render(){
+  const r=softmaxAttention();
+  const mems=r.mems;
+  // Build energy contour grid (simple raster as colored rects, downsampled)
+  let svg='';
+  const G=24; // grid resolution
+  const beta=+document.getElementById('sBeta').value;
+  let Emin=1e9,Emax=-1e9;
+  const grid=[];
+  for(let i=0;i<G;i++){
+    grid.push([]);
+    for(let j=0;j<G;j++){
+      const wx=-2+4*(j+0.5)/G, wy=-1.2+2.4*(i+0.5)/G;
+      const sims=mems.map(m=>m.x*wx+m.y*wy);
+      const mx=Math.max(...sims);
+      const ex=sims.map(s=>Math.exp(beta*(s-mx)));
+      const Z=ex.reduce((a,b)=>a+b,0);
+      const lse=Math.log(Z)/beta+mx;
+      const E=-lse+0.5*(wx*wx+wy*wy);
+      grid[i].push(E);
+      if(E<Emin)Emin=E;if(E>Emax)Emax=E;
+    }
+  }
+  const cellW=W/G,cellH=H/G;
+  for(let i=0;i<G;i++)for(let j=0;j<G;j++){
+    const t=(grid[i][j]-Emin)/(Emax-Emin+1e-9);
+    // Low E (basins) dark; high E light
+    const r0=Math.round(245-(245-26)*(1-t));
+    const g0=Math.round(243-(243-107)*(1-t));
+    const b0=Math.round(232-(232-90)*(1-t));
+    svg+=`<rect x="${j*cellW}" y="${i*cellH}" width="${cellW+0.5}" height="${cellH+0.5}" fill="rgb(${r0},${g0},${b0})" opacity="0.85"/>`;
+  }
+  // Trail
+  if(trail.length>1){
+    let path=`M ${toScrX(trail[0].x)},${toScrY(trail[0].y)}`;
+    for(let i=1;i<trail.length;i++)path+=` L ${toScrX(trail[i].x)},${toScrY(trail[i].y)}`;
+    path+=` L ${toScrX(xi.x)},${toScrY(xi.y)}`;
+    svg+=`<path d="${path}" stroke="#2563a8" stroke-width="1.8" fill="none" stroke-dasharray="2 2" opacity="0.7"/>`;
+  }
+  // Memories
+  mems.forEach((m,i)=>{
+    const cx=toScrX(m.x),cy=toScrY(m.y);
+    svg+=`<circle cx="${cx}" cy="${cy}" r="12" fill="#c0392b" stroke="#fff" stroke-width="2.5"/>`;
+    svg+=`<text x="${cx}" y="${cy+4}" text-anchor="middle" font-size="12" fill="#fff" font-weight="700">${m.label}</text>`;
+    // Show attention weight
+    const wt=r.w[i].toFixed(2);
+    svg+=`<text x="${cx}" y="${cy+26}" text-anchor="middle" font-size="10" fill="#1a1a1a" font-weight="600">w=${wt}</text>`;
+  });
+  // Query ξ
+  const qx=toScrX(xi.x),qy=toScrY(xi.y);
+  svg+=`<circle cx="${qx}" cy="${qy}" r="9" fill="#2563a8" stroke="#fff" stroke-width="2.5" style="cursor:grab;"/>`;
+  svg+=`<text x="${qx}" y="${qy-14}" text-anchor="middle" font-size="11" fill="#2563a8" font-weight="700">ξ</text>`;
+  // Legend
+  svg+=`<text x="14" y="22" font-size="11" fill="#1a1a1a" font-weight="600">Energy: dark = basin (low E)</text>`;
+  svg+=`<text x="${W-160}" y="22" font-size="11" fill="#1a1a1a" font-weight="600">E(ξ) = ${r.E.toFixed(3)}</text>`;
+  HSVG.innerHTML=svg;
+
+  const beta_v=+document.getElementById('sBeta').value;
+  document.getElementById('vBeta').textContent=beta_v.toFixed(2);
+  document.getElementById('vSep').textContent=(+document.getElementById('sSep').value).toFixed(2);
+  const wmax=Math.max(...r.w);
+  const wMaxIdx=r.w.indexOf(wmax);
+  const L=I18n.get();
+  document.getElementById('hopInfo').innerHTML=L==='zh'?
+    `當前 attention 權重：x¹ = <strong>${r.w[0].toFixed(3)}</strong>, x² = <strong>${r.w[1].toFixed(3)}</strong>, x³ = <strong>${r.w[2].toFixed(3)}</strong>。最強對齊：<strong>${mems[wMaxIdx].label}</strong>（w=${wmax.toFixed(3)}）。<br>β = ${beta_v.toFixed(2)}：${beta_v<1?'<strong>低 β</strong>：softmax 平緩，回傳混合記憶（meta-stable state）':beta_v>4?'<strong>高 β</strong>：softmax 銳化，幾乎全部權重落在最相似記憶':'<strong>中等 β</strong>：可清楚但仍有 mixture'}。能量 E(ξ) = ${r.E.toFixed(3)}（每步必下降至 fixed point）。`
+    :
+    `Attention weights: x¹ = <strong>${r.w[0].toFixed(3)}</strong>, x² = <strong>${r.w[1].toFixed(3)}</strong>, x³ = <strong>${r.w[2].toFixed(3)}</strong>. Closest match: <strong>${mems[wMaxIdx].label}</strong> (w=${wmax.toFixed(3)}).<br>β = ${beta_v.toFixed(2)}: ${beta_v<1?'<strong>low β</strong> — soft softmax → mixture (meta-stable state)':beta_v>4?'<strong>high β</strong> — sharp softmax → almost all weight on nearest memory':'<strong>moderate β</strong> — clear retrieval but still mixed'}. Energy E(ξ) = ${r.E.toFixed(3)} (monotonically decreases each step).`;
+}
+
+// Interaction
+HSVG.addEventListener('mousedown',e=>{
+  const rect=HSVG.getBoundingClientRect();
+  const sx=W/rect.width, sy=H/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  const wx=toWorldX(mx), wy=toWorldY(my);
+  const dq=Math.hypot(wx-xi.x,wy-xi.y);
+  if(dq<0.2){dragXi=true;}else{xi={x:wx,y:wy};trail=[];render();}
+});
+window.addEventListener('mouseup',()=>{dragXi=false;});
+HSVG.addEventListener('mousemove',e=>{
+  if(!dragXi)return;
+  const rect=HSVG.getBoundingClientRect();
+  const sx=W/rect.width, sy=H/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  xi={x:toWorldX(mx),y:toWorldY(my)};
+  trail=[];render();
+});
+
+document.getElementById('btnStep').addEventListener('click',()=>{step();});
+document.getElementById('btnRun').addEventListener('click',function(){
+  if(running)return;running=true;
+  let n=0;
+  const id=setInterval(()=>{step();n++;if(n>=12){clearInterval(id);running=false;}},220);
+});
+document.getElementById('btnReset').addEventListener('click',()=>{xi={x:-0.2,y:0.05};trail=[];render();});
+document.getElementById('btnNoise').addEventListener('click',()=>{
+  xi={x:(Math.random()*3.4-1.7), y:(Math.random()*2-1)};
+  trail=[];render();
+});
+document.getElementById('sBeta').addEventListener('input',render);
+document.getElementById('sSep').addEventListener('input',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！Ramsauer 2021 證明 Modern Hopfield 更新就是 self-attention，β 對應 1/√d_k。',
+  q1_n:'答案是 C。ξ←X·softmax(βX^Tξ) 等同 attention(Q=ξ, K=V=X)。',
+  q2_y:'答對！指數能量帶來指數容量，遠超經典 0.14·d 上限。',
+  q2_n:'答案是 B。Demircigil 2017 / Ramsauer 2021 把容量推到 2^(d/2)。',
+  q3_y:'答對！HopfieldPooling 處理可變大小 set 並用 attention 自動 highlight 重要 clonotypes。',
+  q3_n:'答案是 A。DeepRC 把每位患者的整個 repertoire 當 bag-of-instances，HopfieldPooling 聚合並指認 disease-associated TCRs。'
+},en:{
+  q1_y:'Correct! Ramsauer 2021 proved Modern Hopfield update = self-attention with β = 1/√d_k.',
+  q1_n:'Answer is C. ξ←X·softmax(βX^Tξ) equals attention(Q=ξ, K=V=X).',
+  q2_y:'Correct! Exponential energy yields exponential capacity, far above classical 0.14·d.',
+  q2_n:'Answer is B. Demircigil 2017 / Ramsauer 2021 push capacity to 2^(d/2).',
+  q3_y:'Correct! HopfieldPooling handles variable-size sets and highlights important clonotypes via attention.',
+  q3_n:'Answer is A. DeepRC treats each patient repertoire as a bag-of-instances; HopfieldPooling aggregates and pinpoints disease-associated TCRs.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

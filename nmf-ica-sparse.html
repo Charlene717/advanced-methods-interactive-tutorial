@@ -1,0 +1,606 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>NMF / ICA / Sparse Coding — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html" class="active">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 48 / 50</div><h1 data-zh="NMF / ICA / Sparse Coding 線性因子化三劍客" data-en="NMF / ICA / Sparse Coding">NMF / ICA / Sparse Coding 線性因子化三劍客</h1>
+<p class="subtitle" data-lang="zh">三種「無監督因子化」演算法都解一個共同問題：X ≈ W · H。NMF 強制非負（Lee &amp; Seung 1999, Nature）、ICA 強制獨立（Comon 1994）、Sparse Coding 強制稀疏（Olshausen &amp; Field 1996, Nature）。它們是現代生物資訊（mutation signatures、cell-type deconvolution、fMRI 訊號分離）的隱形主力。</p>
+<p class="subtitle" data-lang="en">Three "unsupervised factorization" algorithms solve one shared problem: X ≈ W · H. NMF enforces non-negativity (Lee &amp; Seung 1999, Nature), ICA enforces independence (Comon 1994), Sparse Coding enforces sparsity (Olshausen &amp; Field 1996, Nature). They are the silent workhorses of modern bioinformatics — mutation signatures, cell-type deconvolution, fMRI signal separation.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="一個方程式三個約束：X ≈ W · H" data-en="One Equation, Three Constraints: X ≈ W · H">一個方程式三個約束：X ≈ W · H</h2>
+<div data-lang="zh">
+<p><strong>共同目標：</strong>把 (m × n) 資料矩陣 X 分解為 X ≈ W · H，其中 W 是 (m × k) 的「基底/特徵」、H 是 (k × n) 的「係數/活性」，k 通常遠小於 m, n。<strong>這就是無監督學習的最古老形式之一。</strong></p>
+<p><strong>① NMF (Lee &amp; Seung 1999, Nature)：</strong>強制 W ≥ 0、H ≥ 0。為什麼有用？非負約束讓分解產生「parts-based representation」——例如人臉資料會自動分離出「眼睛、鼻子、嘴巴」這類局部組件，而非 PCA 那種「整張臉混合 ± 的 eigenfaces」。<strong>生物上特別有用</strong>，因為基因表達量、突變計數、photon count 都是天然非負的。</p>
+<p><strong>② ICA (Comon 1994, Bell &amp; Sejnowski 1995)：</strong>假設源訊號 H 各 row 統計獨立、非高斯。和 PCA 只要 uncorrelated（二階統計）不同，ICA 要求更強的高階獨立性。典型應用：cocktail-party problem（在嘈雜環境分離不同說話者）、fMRI 神經訊號分離。</p>
+<p><strong>③ Sparse Coding (Olshausen &amp; Field 1996, Nature)：</strong>強制 H 大部分元素為 0（L1 norm 或 L0 約束）。每個樣本只用少數 atoms。生物動機：Olshausen 原文證明對自然影像做 sparse coding 自動學出 V1 神經元的 Gabor-like receptive fields——大腦早期視覺皮層其實在做 sparse coding！</p>
+</div>
+<div data-lang="en">
+<p><strong>Shared goal:</strong> factor an (m × n) matrix X ≈ W · H where W is (m × k) "basis/features" and H is (k × n) "coefficients/activations", with k ≪ m, n. <strong>One of the oldest forms of unsupervised learning.</strong></p>
+<p><strong>① NMF (Lee &amp; Seung 1999, Nature):</strong> require W ≥ 0, H ≥ 0. Why useful? Non-negativity gives a "parts-based representation" — on face data NMF discovers "eyes / nose / mouth" instead of PCA's signed eigenfaces. <strong>Especially good for biology</strong> because gene-expression counts, mutation counts, and photon counts are intrinsically non-negative.</p>
+<p><strong>② ICA (Comon 1994, Bell &amp; Sejnowski 1995):</strong> assume the rows of H are statistically independent and non-Gaussian. Unlike PCA which only enforces uncorrelated (2nd-order), ICA imposes higher-order independence. Classic uses: cocktail-party speaker separation, fMRI source unmixing.</p>
+<p><strong>③ Sparse Coding (Olshausen &amp; Field 1996, Nature):</strong> require H to be mostly zero (L1 or L0). Each sample reconstructs from a few atoms. The biological motivation: applying sparse coding to natural images automatically yields Gabor-like receptive fields matching V1 neurons — your early visual cortex appears to be doing sparse coding!</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">➕</div><h4 data-zh="NMF：非負" data-en="NMF: non-negative">NMF：非負</h4><p data-lang="zh">W, H ≥ 0 → parts-based、可解釋。表達計數、突變、信號強度。</p><p data-lang="en">W, H ≥ 0 → parts-based and interpretable. For counts, mutations, intensities.</p></div>
+  <div class="card"><div class="card-icon">🎵</div><h4 data-zh="ICA：獨立" data-en="ICA: independent">ICA：獨立</h4><p data-lang="zh">H 各源統計獨立、非高斯。雞尾酒會問題、fMRI 訊號分離。</p><p data-lang="en">Statistically independent, non-Gaussian sources in H. Cocktail party, fMRI.</p></div>
+  <div class="card"><div class="card-icon">🕳</div><h4 data-zh="Sparse：稀疏" data-en="Sparse: sparse">Sparse：稀疏</h4><p data-lang="zh">H 中多數為 0。學到「字典 atoms」——影像、神經、生物 signature。</p><p data-lang="en">Most of H is zero. Learns a "dictionary of atoms" — images, neurons, bio-signatures.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="三家演算法各自怎麼解？" data-en="How Each Family is Solved">三家演算法各自怎麼解？</h2>
+<div data-lang="zh">
+<p><strong>① NMF 解法：</strong></p>
+<ul>
+<li><strong>Multiplicative Update (Lee &amp; Seung 2001)：</strong>W ← W ⊙ (XH⊤) ⊘ (WHH⊤)、H ← H ⊙ (W⊤X) ⊘ (W⊤WH)。元素相乘相除，自動保持非負。簡單但收斂慢。</li>
+<li><strong>ALS / HALS（Hierarchical ALS, Cichocki 2007）：</strong>交替固定 W 解 H、固定 H 解 W；HALS 每次只更新一個 column/row，收斂更快。</li>
+<li><strong>Coordinate Descent (Lin 2007)：</strong>精細控制每個元素，現代 sklearn 預設。</li>
+<li><strong>Online NMF (Mairal 2010, JMLR)：</strong>streaming 資料、mini-batch 更新——可處理百萬細胞 scRNA-seq。</li>
+</ul>
+<p><strong>② ICA 解法：</strong></p>
+<ul>
+<li><strong>FastICA (Hyvärinen 1999)：</strong>fixed-point iteration on whitened data，最大化 negentropy（用 G(u) = log cosh(u) 或 exp(−u²/2) 近似）。最常用。</li>
+<li><strong>Infomax (Bell &amp; Sejnowski 1995)：</strong>用 sigmoid + maximize mutual information。被 fMRI 領域廣泛使用。</li>
+<li><strong>JADE (Cardoso 1999)：</strong>用 4 階累積量 (cumulants) 對角化，閉式解較穩定但 scale 大時慢。</li>
+</ul>
+<p><strong>③ Sparse Coding 解法：</strong></p>
+<ul>
+<li><strong>K-SVD (Aharon, Elad &amp; Bruckstein 2006, IEEE TSP)：</strong>交替「sparse coding step (用 OMP)」與「dictionary update step (對殘差做 rank-1 SVD)」。經典。</li>
+<li><strong>Lasso / FISTA：</strong>固定 W 解 H 用 L1 regression；可加速為 ISTA → FISTA (Beck &amp; Teboulle 2009)。</li>
+<li><strong>Online Dictionary Learning (Mairal 2009, ICML)：</strong>streaming + 線上字典更新，是 SPAMS 套件核心。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p><strong>① NMF solvers:</strong></p>
+<ul>
+<li><strong>Multiplicative Update (Lee &amp; Seung 2001):</strong> W ← W ⊙ (XH⊤) ⊘ (WHH⊤); H ← H ⊙ (W⊤X) ⊘ (W⊤WH). Element-wise — automatically preserves non-negativity. Simple but slow.</li>
+<li><strong>ALS / HALS (Hierarchical ALS, Cichocki 2007):</strong> alternate fixing W to solve H, and vice versa; HALS updates one column/row per step — faster.</li>
+<li><strong>Coordinate Descent (Lin 2007):</strong> fine element-wise control; default in modern scikit-learn.</li>
+<li><strong>Online NMF (Mairal 2010, JMLR):</strong> streaming data, mini-batch updates — handles million-cell scRNA-seq.</li>
+</ul>
+<p><strong>② ICA solvers:</strong></p>
+<ul>
+<li><strong>FastICA (Hyvärinen 1999):</strong> fixed-point iteration on whitened data; maximize negentropy (via G(u) = log cosh u or exp(−u²/2)). Most common.</li>
+<li><strong>Infomax (Bell &amp; Sejnowski 1995):</strong> sigmoid + maximize mutual information. Standard in fMRI.</li>
+<li><strong>JADE (Cardoso 1999):</strong> diagonalize 4th-order cumulants; closed-form, stable but slow at scale.</li>
+</ul>
+<p><strong>③ Sparse coding solvers:</strong></p>
+<ul>
+<li><strong>K-SVD (Aharon, Elad &amp; Bruckstein 2006, IEEE TSP):</strong> alternate "sparse-coding step (via OMP)" and "dictionary update (rank-1 SVD on residual)". Classic.</li>
+<li><strong>Lasso / FISTA:</strong> fix W, solve H by L1 regression; ISTA → FISTA (Beck &amp; Teboulle 2009) accelerates.</li>
+<li><strong>Online Dictionary Learning (Mairal 2009, ICML):</strong> streaming + online dictionary updates — core of the SPAMS toolbox.</li>
+</ul>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>共同陷阱：</strong>三類方法的 cost function 都是 <strong>非凸</strong>，因此局部最小值依賴初始化。實務技巧：(i) 多次 random init 取最佳；(ii) NMF 用 NNDSVD 初始化（Boutsidis 2008）；(iii) cNMF (Kotliar 2019) 對 k 個 NMF run 做 consensus clustering 求穩定 program。</div>
+<div data-lang="en"><strong>Shared pitfall:</strong> all three are <strong>non-convex</strong>; local minima depend on init. Practical tips: (i) multiple random inits, pick best; (ii) NMF with NNDSVD init (Boutsidis 2008); (iii) cNMF (Kotliar 2019) consensus-clusters across runs for stable programs.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="X = W·H 因子化：拖動 rank 看重建誤差" data-en="X = W·H Factorization: Rank vs Reconstruction Error">X = W·H 因子化：拖動 rank 看重建誤差</h2>
+<div data-lang="zh"><p>下方 SVG 顯示一個由 4 個真實 ground-truth program 組成的合成資料矩陣 X (20 樣本 × 16 特徵)。<strong>拖動 rank 滑桿</strong> 觀察 NMF 在不同 k 下的重建。當 k &lt; 真實 rank：欠擬合、誤差大；當 k = 4：剛好擬合，殘差最小；當 k 過大：開始擬合雜訊。同時切換「方法」看 NMF vs PCA-like SVD 在非負資料上的表現差異。</p></div>
+<div data-lang="en"><p>The SVG shows a synthetic data matrix X (20 samples × 16 features) generated from 4 ground-truth programs. <strong>Drag the rank slider</strong> to see NMF reconstruction at different k. k &lt; true rank → underfit; k = 4 → optimal residual; k too large → starts fitting noise. Toggle "method" to compare NMF vs PCA-like SVD on non-negative data.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="分解方法" data-en="Method">分解方法</label>
+  <select id="method" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="nmf" selected>NMF (W, H ≥ 0)</option>
+    <option value="svd">SVD (sign-free, 類 PCA)</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="rank k" data-en="rank k">rank k <span id="vK">4</span></label><input type="range" id="sK" min="1" max="8" value="4" step="1"></div>
+<div class="slider-group"><label data-zh="雜訊強度" data-en="Noise level">雜訊強度 <span id="vN">0.10</span></label><input type="range" id="sN" min="0" max="0.5" value="0.1" step="0.02"></div>
+<svg id="nmfSvg" viewBox="0 0 700 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="nmfInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🎯 <span data-zh="什麼時候用哪一個？" data-en="Which one when?">什麼時候用哪一個？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>計數型資料 + 想要可解釋的 program</strong>（scRNA-seq、mutation count、photon count）→ NMF。基因 program、突變 signature 都用它。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>混合訊號分離</strong>（fMRI、EEG、麥克風陣列）→ ICA。重點不是「重建好」而是「源能分開」。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>影像/訊號 patch + 高過完備字典</strong> → Sparse coding / K-SVD。每個 patch 用 dictionary 中少數 atoms 表達。</div></div>
+<div class="dt-node"><span class="dt-q">情境4:</span><div><strong>spatial transcriptomics deconvolution</strong>（每個 spot 含多種 cell type）→ NMF-based（SPOTlight、CARD）。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>資料可正可負且結構簡單（如金融 return）→ PCA 即可。三劍客的代價（非凸、調 k）不划算。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Count data + want interpretable programs</strong> (scRNA-seq, mutation counts, photon counts) → NMF. Used for gene programs and mutation signatures.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Mixed-source separation</strong> (fMRI, EEG, microphone arrays) → ICA. Goal is source separation, not reconstruction.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Image/signal patches + over-complete dictionary</strong> → sparse coding / K-SVD. Each patch is a sparse combination of dictionary atoms.</div></div>
+<div class="dt-node"><span class="dt-q">Case 4:</span><div><strong>Spatial-transcriptomics deconvolution</strong> (each spot mixes cell types) → NMF-based methods (SPOTlight, CARD).</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Signed data with simple structure (financial returns) → PCA is enough. The cost of these methods (non-convex, tune k) isn't worth it.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="NMF / ICA / Sparse 在生物資訊" data-en="NMF / ICA / Sparse in Bioinformatics">NMF / ICA / Sparse 在生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="LIGER：跨樣本 scRNA-seq 整合" data-en="LIGER: cross-sample scRNA-seq">LIGER：跨樣本整合</h4>
+<p data-lang="zh">Welch et al. (2019, Cell) 提出 LIGER (iNMF) — 整合多個 scRNA-seq 資料集（甚至跨 modality 如 RNA + ATAC）。學「共享」+「特定」兩組 NMF program，可比 Seurat-CCA 更穩處理 batch effect。已是 single-cell 整合的主流工具之一。</p>
+<p data-lang="en">Welch et al. (2019, Cell) introduce LIGER (integrative NMF) — integrates multiple scRNA-seq datasets (even cross-modality RNA + ATAC). Learns "shared" + "specific" program factors; more robust than Seurat-CCA for some batch effects. A mainstream single-cell integration tool.</p></div>
+
+<div class="card"><h4 data-zh="cNMF：穩定 gene program" data-en="cNMF: stable gene programs">cNMF：穩定 gene program</h4>
+<p data-lang="zh">Kotliar et al. (2019, eLife) 提出 consensus NMF — 多次 NMF run 後用 hierarchical clustering 找出最穩定的 k 個 program。解決 NMF 局部最佳解不一致問題，被廣泛用於發現 single-cell gene module。</p>
+<p data-lang="en">Kotliar et al. (2019, eLife) consensus NMF — runs NMF many times and clusters factors to find the k most stable programs. Resolves NMF's local-optimum inconsistency; widely used for discovering single-cell gene modules.</p></div>
+
+<div class="card"><h4 data-zh="Mutation signatures：NMF 改寫癌症基因體" data-en="Mutation signatures (NMF)">Mutation signatures：癌症基因體</h4>
+<p data-lang="zh">Alexandrov et al. (2013, Nature) 用 NMF 從 96-channel mutation context 矩陣中解出 ~30 個 mutational signature（如 SBS1 deamination、SBS4 tobacco smoking、SBS7 UV、SBS3 BRCA / HRD）。COSMIC mutational signatures 資料庫至今 100+ 條 signature 皆源於 NMF。SignatureAnalyzer (Kim 2016, Nat Genet) 用 Bayesian NMF 自動選 rank。</p>
+<p data-lang="en">Alexandrov et al. (2013, Nature) used NMF on 96-channel mutation context to extract ~30 mutational signatures (SBS1 deamination, SBS4 tobacco, SBS7 UV, SBS3 BRCA/HRD). The COSMIC database (100+ signatures) is fundamentally an NMF result. SignatureAnalyzer (Kim 2016, Nat Genet) adds Bayesian NMF for auto-rank selection.</p></div>
+
+<div class="card"><h4 data-zh="SPOTlight / CARD：空間轉錄體 deconvolution" data-en="SPOTlight / CARD: spatial deconvolution">SPOTlight / CARD：空間轉錄體</h4>
+<p data-lang="zh">10x Visium 每個 spot 包含 5–20 個細胞混合 — Elosua-Bayes et al. (2021, NAR, SPOTlight) 用 seeded NMF，每個 cell type 對應一個 program，spot 的 H 列即 cell-type 比例。CARD (Ma &amp; Zhou 2022, Nat Biotech) 加入空間平滑先驗。</p>
+<p data-lang="en">10x Visium spots mix 5–20 cells. Elosua-Bayes et al. (2021, NAR, SPOTlight) use seeded NMF — each cell type = one program; the H column gives cell-type proportions. CARD (Ma &amp; Zhou 2022, Nat Biotech) adds a spatial smoothness prior.</p></div>
+
+<div class="card"><h4 data-zh="ICA for fMRI 神經訊號分離" data-en="ICA for fMRI source separation">ICA for fMRI</h4>
+<p data-lang="zh">Calhoun et al. (2009, NeuroImage) 開創 group-ICA — 從 fMRI BOLD 訊號中分離出 default mode network、salience network 等獨立 brain network。是 fMRI 分析的事實標準（GIFT toolbox）。</p>
+<p data-lang="en">Calhoun et al. (2009, NeuroImage) pioneered group-ICA — separates fMRI BOLD into independent brain networks (default mode, salience). De-facto standard in fMRI analysis (GIFT toolbox).</p></div>
+
+<div class="card"><h4 data-zh="Sparse coding for V1 receptive fields" data-en="Sparse coding for V1">Sparse coding for V1</h4>
+<p data-lang="zh">Olshausen &amp; Field (1996, Nature) 原始論文發現對自然影像 patch 做 sparse coding 自動學出 oriented edge filters，與 V1 simple cell receptive field 高度相似。生物視覺系統的數學解釋。</p>
+<p data-lang="en">Olshausen &amp; Field (1996, Nature) showed that sparse coding on natural-image patches yields oriented edge filters matching V1 simple cells — a mathematical explanation for biological vision.</p></div>
+
+<div class="card"><h4 data-zh="Sparse PCA on GWAS" data-en="Sparse PCA on GWAS">Sparse PCA on GWAS</h4>
+<p data-lang="zh">Zou et al. (2006, JCGS) Sparse PCA 把 PC loading 變稀疏 — 每個 PC 只有少數 SNP 顯著。應用於 GWAS 可發現「少數 SNP 解釋的祖源結構」，比 standard PCA 更可解釋。</p>
+<p data-lang="en">Zou et al. (2006, JCGS) sparse PCA — only a few SNPs load on each PC. Applied to GWAS, it discovers "ancestry components explained by a small SNP set", more interpretable than standard PCA.</p></div>
+
+<div class="card"><h4 data-zh="Topic models 與 NMF 的關係" data-en="Topic models vs NMF">Topic models 與 NMF</h4>
+<p data-lang="zh">LDA (Blei 2003) 與 NMF 本質都是「文件 ≈ 主題 × 詞」的分解。在 single-cell 上類比為「細胞 ≈ program × 基因」。FastTopics (Carbonetto 2022) 與 hierarchical Poisson factorization 把兩者統一。</p>
+<p data-lang="en">LDA (Blei 2003) and NMF both factor "document ≈ topic × word". Single-cell analog: "cell ≈ program × gene". FastTopics (Carbonetto 2022) and hierarchical Poisson factorization unify them.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題與細節" data-en="Advanced Topics">進階主題與細節</h2>
+<div data-lang="zh">
+<h3>① NMF 的唯一性問題</h3>
+<p>NMF 解不唯一：任何可逆 Q 使 W' = WQ⁻¹、H' = QH 仍然滿足 X ≈ W'H'，只要 Q 保持非負約束。<strong>解：</strong>(i) 加 sparsity penalty（uniqueness 在某些條件下可保證 — Donoho &amp; Stodden 2003）；(ii) consensus NMF 用多次 run 找穩定 program；(iii) anchor-word/separability assumption（Arora 2012）可保證可恢復。</p>
+
+<h3>② 選 rank k 的方法</h3>
+<ul>
+<li><strong>Cophenetic correlation (Brunet 2004, PNAS)</strong>：對每個 k 做多次 NMF，看 consensus matrix 的階層聚類穩定性。k* 在曲線開始下降前。</li>
+<li><strong>SVD spectrum gap</strong>：看 X 的奇異值有無 gap。</li>
+<li><strong>Cross-validation</strong>：mask 部分 entry 做 reconstruction error。</li>
+<li><strong>ARD-NMF (Tan &amp; Févotte 2013)</strong>：自動相關決定，給每個 component 一個 prior，不需要的會被剪掉。</li>
+</ul>
+
+<h3>③ Beta-divergence NMF</h3>
+<p>標準 NMF 用 Frobenius² loss（假設 Gaussian noise）。但對 count data 應該用 Poisson NLL（β = 1，KL divergence）；對 spectra 用 Itakura-Saito（β = 0）。Févotte &amp; Idier (2011) 把這些統一為 β-divergence NMF family。<strong>Single-cell 適合 β = 1（KL）</strong>，因 count noise 是 Poisson。</p>
+
+<h3>④ ICA 的 identifiability</h3>
+<p>ICA 假設 sources 獨立非高斯 — 若 sources 都是 Gaussian，ICA 退化為 PCA + 任意旋轉。實務上：用 kurtosis 或 negentropy 判斷 non-Gaussianity；對 sub-Gaussian (kurtosis &lt; 3) 與 super-Gaussian (kurtosis &gt; 3) 用不同的 G 函數。</p>
+
+<h3>⑤ Sparse coding 與 compressed sensing 的關係</h3>
+<p>Sparse coding 學「字典 + 稀疏係數」；compressed sensing 假設「字典已知」（如 wavelet）僅恢復稀疏係數。兩者皆基於「稀疏先驗讓 underdetermined 問題唯一可解」（Donoho 2006, Candès &amp; Tao 2006）。</p>
+
+<h3>⑥ Convex NMF 與 Semi-NMF</h3>
+<p>Ding et al. (2010, IEEE TPAMI) 提出 Convex NMF — 限制 W 的 column 為原始 X column 的凸組合，即「prototypes 是真實樣本的加權平均」。Semi-NMF 放鬆 W 可正可負，僅要求 H ≥ 0。對 mixed-sign 資料適用。</p>
+
+<h3>⑦ 深度版本</h3>
+<p><strong>Deep NMF / hierarchical NMF (Trigeorgis 2017)：</strong>多層 NMF 堆疊；每層學上一層 H 的 sub-program。<strong>Deep ICA</strong>：把 ICA 視為單層 nonlinear ICA；Hyvärinen &amp; Morioka 2016 證明 nonlinear ICA 一般不可識別，但加 time / auxiliary variable 可（time-contrastive learning, permutation-contrastive learning）。</p>
+</div>
+
+<div data-lang="en">
+<h3>① NMF non-uniqueness</h3>
+<p>NMF is not unique: any invertible Q yields W' = WQ⁻¹, H' = QH with same product, provided non-negativity is preserved. <strong>Fixes:</strong> (i) sparsity penalty (uniqueness under conditions — Donoho &amp; Stodden 2003); (ii) consensus NMF (cNMF) over many runs; (iii) anchor-word / separability assumption (Arora 2012).</p>
+
+<h3>② Choosing rank k</h3>
+<ul>
+<li><strong>Cophenetic correlation (Brunet 2004, PNAS):</strong> multiple NMF runs per k; look at consensus-matrix clustering stability.</li>
+<li><strong>SVD spectrum gap:</strong> look for a gap in singular values.</li>
+<li><strong>Cross-validation:</strong> mask entries and measure reconstruction error.</li>
+<li><strong>ARD-NMF (Tan &amp; Févotte 2013):</strong> automatic relevance determination; unused components shrink to zero.</li>
+</ul>
+
+<h3>③ Beta-divergence NMF</h3>
+<p>Standard NMF uses Frobenius² (Gaussian noise). Counts → Poisson NLL (β = 1, KL); audio spectra → Itakura-Saito (β = 0). Févotte &amp; Idier (2011) unify these as β-divergence NMF. <strong>scRNA-seq prefers β = 1 (KL)</strong> since counts are Poisson.</p>
+
+<h3>④ ICA identifiability</h3>
+<p>ICA requires non-Gaussian sources — if all sources are Gaussian, ICA collapses to PCA + arbitrary rotation. Practical: use kurtosis / negentropy to check; sub-Gaussian (kurtosis &lt; 3) vs super-Gaussian (kurtosis &gt; 3) need different G functions.</p>
+
+<h3>⑤ Sparse coding vs compressed sensing</h3>
+<p>Sparse coding learns "dictionary + sparse coefficients". Compressed sensing assumes the dictionary is known (e.g. wavelet) and only recovers coefficients. Both rest on "sparsity makes underdetermined systems uniquely solvable" (Donoho 2006, Candès &amp; Tao 2006).</p>
+
+<h3>⑥ Convex NMF and Semi-NMF</h3>
+<p>Ding et al. (2010, IEEE TPAMI) — Convex NMF constrains W columns to be convex combinations of X columns ("prototypes are weighted real samples"). Semi-NMF relaxes W to be signed (keeps H ≥ 0) — good for mixed-sign data.</p>
+
+<h3>⑦ Deep variants</h3>
+<p><strong>Deep NMF / hierarchical NMF (Trigeorgis 2017):</strong> stacked NMF layers; each layer factors the previous H. <strong>Deep ICA / Nonlinear ICA</strong> (Hyvärinen &amp; Morioka 2016): generally non-identifiable, but identifiable with time/auxiliary variables (time-contrastive learning, permutation-contrastive learning).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="還能改良哪些任務？" data-en="What Else Could Be Improved?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 單細胞 multi-modal 整合 NMF</h3>
+<p>LIGER (iNMF) 已是雛形 — 但對 RNA + ATAC + spatial + protein 四模態 simultaneous NMF 仍少。<strong>提案：</strong>tensor-NMF（每模態一個 W^m, 共享 H）做四維 atlas。</p>
+
+<h3>🎯 2. Temporal NMF 用於 perturb-seq 動態</h3>
+<p>當前 cNMF 只看靜態 snapshot。<strong>提案：</strong>把 time-course Perturb-seq 用 dynamic NMF（program activation 隨時間變化）找出「擾動誘導的早晚期 program」。</p>
+
+<h3>🎯 3. ICA + diffusion model 的混合</h3>
+<p>diffusion 學的 latent 通常 entangled；用 ICA post-hoc disentangle latent，找到「獨立 semantic axes」。<strong>提案：</strong>iVAE 已類似，但配合 diffusion 還少有人嘗試。</p>
+
+<h3>🎯 4. K-SVD on scRNA-seq cell-type signatures</h3>
+<p>把 ~50k cell-type signature panel 看成 over-complete dictionary，每個 query cell 用 K-SVD-style sparse coding 找最契合 atoms。<strong>提案：</strong>新的 deconvolution / annotation tool。</p>
+
+<h3>🎯 5. 自監督 NMF 用 contrastive program loss</h3>
+<p>結合 SimCLR 風格的 contrastive loss 與 NMF 重建 loss — 同細胞型別 H 應接近、不同型別 H 應遠。<strong>提案：</strong>CL-NMF for stable cross-batch programs。</p>
+
+<h3>🎯 6. Mutation signature × clinical outcome 聯合 NMF</h3>
+<p>不只解 mutation context，還聯合 NMF on (mutation, treatment response, survival) — 找到「對某 signature 的 immunotherapy 反應特別好」這類臨床有用 program。<strong>提案：</strong>Bayesian supervised NMF。</p>
+
+<h3>🎯 7. NMF for chromatin signature discovery</h3>
+<p>對 ChIP-seq / CUT&amp;Tag 數十種 histone mark 做 NMF，發現「chromatin program」（如 H3K27me3 + H3K9me3 = constitutive heterochromatin）。<strong>提案：</strong>Cross-mark NMF + 表觀遺傳調控學。</p>
+
+<h3>🎯 8. NMF 與 LLM 聯合 — gene program 自動命名</h3>
+<p>cNMF 解出 gene program 後人工查 GSEA。<strong>提案：</strong>LLM 自動讀 program top genes + 生物 pathway 文獻，生成 program 名稱 + 證據 — 加速大規模 atlas 註釋。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Single-cell multi-modal NMF</h3>
+<p>LIGER (iNMF) is a start, but RNA + ATAC + spatial + protein simultaneous NMF is rare. <strong>Proposal:</strong> tensor-NMF (one W^m per modality, shared H) for 4-modality atlas.</p>
+
+<h3>🎯 2. Temporal NMF for Perturb-seq dynamics</h3>
+<p>Current cNMF is static. <strong>Proposal:</strong> apply dynamic NMF (program activation varying with time) to time-course Perturb-seq to discover early vs late perturbation programs.</p>
+
+<h3>🎯 3. ICA + diffusion hybrid</h3>
+<p>Diffusion latents are usually entangled; ICA post-hoc disentanglement finds independent semantic axes. <strong>Proposal:</strong> iVAE is related, but ICA-on-diffusion is under-explored.</p>
+
+<h3>🎯 4. K-SVD on scRNA-seq cell-type signatures</h3>
+<p>Treat a ~50k cell-type signature panel as an over-complete dictionary; K-SVD-style sparse coding selects the best atoms for each query cell. <strong>Proposal:</strong> new deconvolution / annotation tool.</p>
+
+<h3>🎯 5. Self-supervised NMF with contrastive program loss</h3>
+<p>Combine SimCLR-style contrastive loss with NMF reconstruction — same cell-type H close, different cell-type H far. <strong>Proposal:</strong> CL-NMF for cross-batch program stability.</p>
+
+<h3>🎯 6. Mutation signature × clinical outcome joint NMF</h3>
+<p>Beyond decomposing mutation contexts, jointly NMF (mutation, treatment response, survival) — discovers "signature X correlates with immunotherapy response". <strong>Proposal:</strong> Bayesian supervised NMF.</p>
+
+<h3>🎯 7. NMF for chromatin signature discovery</h3>
+<p>NMF on dozens of ChIP-seq / CUT&amp;Tag marks — discover "chromatin programs" (H3K27me3 + H3K9me3 = constitutive heterochromatin). <strong>Proposal:</strong> Cross-mark NMF for epigenetic regulation.</p>
+
+<h3>🎯 8. NMF + LLM — auto-name gene programs</h3>
+<p>After cNMF, humans manually GSEA the programs. <strong>Proposal:</strong> use an LLM to read top genes + pathway literature and auto-generate program names + supporting evidence — accelerates large atlas annotation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sk')">scikit-learn</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cnmf')">cNMF</button>
+<button class="code-tab-btn" onclick="switchTab(this,'spams')">SPAMS K-SVD</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / NMF</button>
+</div>
+
+<div class="code-tab-content active" id="sk"><pre><span class="comment"># NMF, ICA, Sparse Coding all in sklearn</span>
+<span class="keyword">from</span> sklearn.decomposition <span class="keyword">import</span> NMF, FastICA, MiniBatchDictionaryLearning
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+X = load_count_matrix()             <span class="comment"># shape (n_samples, n_features), &gt;= 0</span>
+
+<span class="comment"># --- NMF ---</span>
+nmf = NMF(n_components=<span class="num">10</span>, init=<span class="str">'nndsvda'</span>,
+          beta_loss=<span class="str">'kullback-leibler'</span>, solver=<span class="str">'mu'</span>,
+          max_iter=<span class="num">500</span>, random_state=<span class="num">0</span>)
+H = nmf.fit_transform(X)            <span class="comment"># activations</span>
+W = nmf.components_                 <span class="comment"># program × feature</span>
+
+<span class="comment"># --- ICA ---</span>
+ica = FastICA(n_components=<span class="num">20</span>, fun=<span class="str">'logcosh'</span>, random_state=<span class="num">0</span>)
+S = ica.fit_transform(X)            <span class="comment"># independent sources</span>
+A = ica.mixing_                     <span class="comment"># mixing matrix</span>
+
+<span class="comment"># --- Sparse / Dictionary Learning ---</span>
+dl = MiniBatchDictionaryLearning(n_components=<span class="num">100</span>,
+                                 alpha=<span class="num">1.0</span>, n_iter=<span class="num">1000</span>)
+codes = dl.fit_transform(X)         <span class="comment"># sparse codes</span>
+dictionary = dl.components_</pre></div>
+
+<div class="code-tab-content" id="cnmf"><pre><span class="comment"># cNMF for stable single-cell programs (Kotliar 2019)</span>
+<span class="comment"># pip install cnmf</span>
+<span class="keyword">from</span> cnmf <span class="keyword">import</span> cNMF
+
+cnmf_obj = cNMF(output_dir=<span class="str">'./cnmf_run'</span>, name=<span class="str">'pbmc'</span>)
+cnmf_obj.prepare(counts_fn=<span class="str">'pbmc_counts.h5ad'</span>,
+                 components=np.arange(<span class="num">5</span>, <span class="num">30</span>),
+                 n_iter=<span class="num">100</span>, total_workers=<span class="num">8</span>)
+cnmf_obj.factorize()                <span class="comment"># 100 NMF runs per k</span>
+cnmf_obj.combine()                  <span class="comment"># cluster factors</span>
+cnmf_obj.k_selection_plot()         <span class="comment"># pick k by stability + error</span>
+
+<span class="comment"># Get stable programs at chosen k</span>
+usage, spectra_tpm, spectra_score, top_genes = (
+    cnmf_obj.load_results(K=<span class="num">10</span>, density_threshold=<span class="num">0.1</span>))</pre></div>
+
+<div class="code-tab-content" id="spams"><pre><span class="comment"># pip install spams</span>
+<span class="keyword">import</span> spams, numpy <span class="keyword">as</span> np
+
+X = patches.astype(np.float32)      <span class="comment"># (d, n) image patches</span>
+
+<span class="comment"># Online dictionary learning (Mairal 2009)</span>
+D = spams.trainDL(X, K=<span class="num">256</span>,        <span class="comment"># 256 atoms</span>
+                  lambda1=<span class="num">0.15</span>, numThreads=<span class="num">4</span>,
+                  batchsize=<span class="num">512</span>, iter=<span class="num">1000</span>)
+
+<span class="comment"># Sparse encoding via Lasso/LARS</span>
+alpha = spams.lasso(X, D=D, lambda1=<span class="num">0.15</span>, mode=<span class="num">2</span>)
+<span class="comment"># alpha is sparse coefficient matrix (K x n)</span>
+
+<span class="comment"># K-SVD via scikit-image / pyksvd alternative</span>
+<span class="keyword">from</span> ksvd <span class="keyword">import</span> ApproximateKSVD
+ksvd = ApproximateKSVD(n_components=<span class="num">256</span>)
+ksvd.fit(X.T)
+D_ksvd = ksvd.components_</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># Bioconductor / CRAN NMF</span>
+<span class="keyword">library</span>(NMF)
+<span class="keyword">library</span>(MutationalPatterns)
+
+<span class="comment"># --- NMF for mutation signatures ---</span>
+mut_mat &lt;- mut_matrix(vcfs, ref_genome)   <span class="comment"># 96 contexts x samples</span>
+estimate &lt;- nmf(mut_mat, rank=<span class="num">2</span>:<span class="num">10</span>, nrun=<span class="num">30</span>)
+plot(estimate)                              <span class="comment"># cophenetic / dispersion</span>
+
+nmf_res &lt;- extract_signatures(mut_mat, rank=<span class="num">4</span>, nrun=<span class="num">100</span>)
+plot_96_profile(nmf_res$signatures)
+
+<span class="comment"># --- LIGER (iNMF) for scRNA-seq integration ---</span>
+<span class="keyword">library</span>(rliger)
+liger_obj &lt;- createLiger(list(donor1=mat1, donor2=mat2))
+liger_obj &lt;- normalize(liger_obj)
+liger_obj &lt;- selectGenes(liger_obj)
+liger_obj &lt;- runIntegration(liger_obj, k=<span class="num">20</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼 NMF 比 PCA 更適合分析 scRNA-seq 與 mutation count 資料？</p><p data-lang="en">Why is NMF preferred over PCA for scRNA-seq and mutation-count data?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. NMF 更快</span><span data-lang="en">A. NMF is faster</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 非負約束讓分解產生 parts-based、生物可解釋的 program；計數資料天然非負，PCA 的負 loading 無法物理解釋</span><span data-lang="en">B. Non-negativity gives parts-based, biologically interpretable programs; counts are inherently non-negative, and PCA's negative loadings can't be physically interpreted</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. NMF 一定收斂到全局最佳</span><span data-lang="en">C. NMF always converges globally</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. NMF 不需要選 k</span><span data-lang="en">D. NMF doesn't need rank selection</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">ICA 與 PCA 最關鍵的差異是什麼？</p><p data-lang="en">What is the key difference between ICA and PCA?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. ICA 用神經網路</span><span data-lang="en">A. ICA uses neural networks</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. PCA 是非線性的</span><span data-lang="en">B. PCA is non-linear</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. PCA 只用二階統計（uncorrelated）；ICA 用高階統計要求各源統計獨立且非高斯</span><span data-lang="en">C. PCA uses only 2nd-order statistics (uncorrelated); ICA uses higher-order to enforce independence + non-Gaussian sources</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. ICA 只能處理影像</span><span data-lang="en">D. ICA only works on images</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Olshausen &amp; Field (1996, Nature) 的 sparse coding 結果有什麼生物學意義？</p><p data-lang="en">What was the biological significance of Olshausen &amp; Field (1996, Nature)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 對自然影像做 sparse coding 自動學出 oriented edge filters，與 V1 simple cell receptive field 一致 — 暗示視覺皮層在做 sparse coding</span><span data-lang="en">A. Sparse coding on natural images yields oriented edge filters matching V1 simple cells — suggests visual cortex performs sparse coding</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 證明 NMF 等價於 PCA</span><span data-lang="en">B. Proved NMF equals PCA</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 發現 mutational signatures</span><span data-lang="en">C. Discovered mutational signatures</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 證明 ICA 不可行</span><span data-lang="en">D. Showed ICA infeasible</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="mixture-of-experts.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 47：Mixture of Experts" data-en="Ch 47: MoE">Ch 47：Mixture of Experts</span></a>
+<a href="tensor-networks.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 49：Tensor Networks" data-en="Ch 49: Tensor Networks">Ch 49：Tensor Networks</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive NMF / SVD low-rank approximation =====
+const SVG=document.getElementById('nmfSvg');
+const M=20, N=16, TRUE_K=4;
+
+// Build synthetic non-negative data: 4 ground-truth programs
+function seedRand(s){let x=s>>>0;return()=>{x=(x*1664525+1013904223)>>>0;return x/4294967296;};}
+const rnd=seedRand(7);
+function buildData(noise){
+  // 4 latent programs (length N), each highlighting different features
+  const Wt=[
+    Array.from({length:N},(_,j)=>(j>=0&&j<5)?0.8+rnd()*0.4:0.05*rnd()),
+    Array.from({length:N},(_,j)=>(j>=4&&j<9)?0.7+rnd()*0.4:0.05*rnd()),
+    Array.from({length:N},(_,j)=>(j>=8&&j<13)?0.9+rnd()*0.3:0.05*rnd()),
+    Array.from({length:N},(_,j)=>(j>=11&&j<16)?0.7+rnd()*0.4:0.05*rnd()),
+  ];
+  // sample activations H (M x K), then build X = H * W
+  const Ht=Array.from({length:M},(_,i)=>{
+    const a=Array(TRUE_K).fill(0);
+    // each sample loads strongly on ~2 programs
+    const prog1=i%TRUE_K, prog2=(i+1)%TRUE_K;
+    a[prog1]=0.5+0.5*rnd(); a[prog2]=0.3+0.4*rnd();
+    return a;
+  });
+  const X=[];
+  for(let i=0;i<M;i++){
+    const row=[];
+    for(let j=0;j<N;j++){
+      let v=0; for(let k=0;k<TRUE_K;k++)v+=Ht[i][k]*Wt[k][j];
+      v+=noise*(rnd()-0.5);
+      row.push(Math.max(0,v));
+    }
+    X.push(row);
+  }
+  return X;
+}
+
+// Simple NMF: multiplicative updates
+function nmf(X,k,iters=120){
+  const m=X.length,n=X[0].length;
+  let W=Array.from({length:m},()=>Array.from({length:k},()=>0.1+0.5*rnd()));
+  let H=Array.from({length:k},()=>Array.from({length:n},()=>0.1+0.5*rnd()));
+  const eps=1e-9;
+  for(let it=0;it<iters;it++){
+    // H update
+    const Wt=transpose(W);
+    const WtX=matmul(Wt,X);
+    const WtWH=matmul(matmul(Wt,W),H);
+    for(let a=0;a<k;a++)for(let b=0;b<n;b++)H[a][b]*=WtX[a][b]/(WtWH[a][b]+eps);
+    // W update
+    const Ht=transpose(H);
+    const XHt=matmul(X,Ht);
+    const WHHt=matmul(matmul(W,H),Ht);
+    for(let a=0;a<m;a++)for(let b=0;b<k;b++)W[a][b]*=XHt[a][b]/(WHHt[a][b]+eps);
+  }
+  return [W,H];
+}
+
+// Truncated SVD-like via power iteration (rough, for visualization)
+function svdLowRank(X,k){
+  const m=X.length,n=X[0].length;
+  const U=Array.from({length:m},()=>Array(k).fill(0));
+  const V=Array.from({length:n},()=>Array(k).fill(0));
+  let R=X.map(r=>r.slice());
+  for(let kk=0;kk<k;kk++){
+    let v=Array.from({length:n},()=>rnd()-0.5);
+    for(let it=0;it<40;it++){
+      // u = R v
+      const u=R.map(r=>r.reduce((s,a,j)=>s+a*v[j],0));
+      const nu=Math.hypot(...u)||1;
+      const un=u.map(x=>x/nu);
+      // v = R^T u
+      v=v.map((_,j)=>R.reduce((s,r,i)=>s+r[j]*un[i],0));
+      const nv=Math.hypot(...v)||1;
+      v=v.map(x=>x/nv);
+      // store last u
+      if(it===39){for(let i=0;i<m;i++)U[i][kk]=un[i]*nv;}
+    }
+    for(let j=0;j<n;j++)V[j][kk]=v[j];
+    // deflate
+    const sig=Math.hypot(...U.map(r=>r[kk]));
+    for(let i=0;i<m;i++)for(let j=0;j<n;j++)R[i][j]-=U[i][kk]*V[j][kk];
+  }
+  return [U,V];
+}
+
+function transpose(A){const m=A.length,n=A[0].length;const B=Array.from({length:n},()=>Array(m).fill(0));for(let i=0;i<m;i++)for(let j=0;j<n;j++)B[j][i]=A[i][j];return B;}
+function matmul(A,B){const m=A.length,p=A[0].length,n=B[0].length;const C=Array.from({length:m},()=>Array(n).fill(0));for(let i=0;i<m;i++)for(let kk=0;kk<p;kk++){const a=A[i][kk];for(let j=0;j<n;j++)C[i][j]+=a*B[kk][j];}return C;}
+
+function reconError(X,Xhat){let e=0,t=0;for(let i=0;i<X.length;i++)for(let j=0;j<X[0].length;j++){e+=(X[i][j]-Xhat[i][j])**2;t+=X[i][j]**2;}return Math.sqrt(e/t);}
+
+function drawHeatmap(svgX,svgY,bw,bh,A,minMaxColor,title){
+  const m=A.length,n=A[0].length;
+  let mn=Infinity,mx=-Infinity;
+  for(let i=0;i<m;i++)for(let j=0;j<n;j++){if(A[i][j]<mn)mn=A[i][j];if(A[i][j]>mx)mx=A[i][j];}
+  const rng=mx-mn||1;
+  let svg=`<text x="${svgX+bw*n/2}" y="${svgY-6}" text-anchor="middle" font-size="11" fill="#444" font-weight="600">${title}</text>`;
+  for(let i=0;i<m;i++)for(let j=0;j<n;j++){
+    const v=(A[i][j]-mn)/rng;
+    let col;
+    if(minMaxColor==='diverging'){
+      // for SVD which has signed values; map mn..0..mx
+      const zero=(0-mn)/rng;
+      if(v>=zero){const t=(v-zero)/(1-zero+1e-9);col=`rgb(${Math.round(255-t*200)},${Math.round(255-t*180)},${Math.round(255-t*40)})`;}
+      else{const t=(zero-v)/(zero+1e-9);col=`rgb(${Math.round(255-t*180)},${Math.round(255-t*120)},${Math.round(255-t*40)})`;}
+      // simpler: green-orange diverging
+      const r=Math.round(255*Math.min(1, v>zero?(v-zero)/(1-zero+1e-9):0));
+      const g=Math.round(180*Math.min(1, 1-Math.abs(v-zero)*2));
+      const b=Math.round(120*Math.min(1, v<zero?(zero-v)/(zero+1e-9):0));
+      col=`rgb(${100+r*1.2|0},${80+g|0},${100+b*1.5|0})`;
+    } else {
+      // sequential teal
+      const r=Math.round(240-v*210);
+      const g=Math.round(240-v*100);
+      const b=Math.round(225-v*120);
+      col=`rgb(${r},${g},${b})`;
+    }
+    svg+=`<rect x="${svgX+j*bw}" y="${svgY+i*bh}" width="${bw}" height="${bh}" fill="${col}" stroke="#fff" stroke-width="0.3"/>`;
+  }
+  svg+=`<rect x="${svgX-0.5}" y="${svgY-0.5}" width="${bw*n+1}" height="${bh*m+1}" fill="none" stroke="#999" stroke-width="0.8"/>`;
+  return svg;
+}
+
+function render(){
+  const k=+document.getElementById('sK').value;
+  const noise=+document.getElementById('sN').value;
+  const method=document.getElementById('method').value;
+  document.getElementById('vK').textContent=k;
+  document.getElementById('vN').textContent=noise.toFixed(2);
+
+  // rebuild data deterministically each time
+  const seed=42; let s=seed; const myRand=()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};
+  // override rnd with myRand
+  const origRand=Math.random;
+  // we already used module-scope rnd above; rebuild via fresh seeded:
+  let s2=42; const sr=()=>{s2=(s2*1664525+1013904223)>>>0;return s2/4294967296;};
+  // Build data inline with sr:
+  const Wt=[
+    Array.from({length:N},(_,j)=>(j>=0&&j<5)?0.8+sr()*0.4:0.05*sr()),
+    Array.from({length:N},(_,j)=>(j>=4&&j<9)?0.7+sr()*0.4:0.05*sr()),
+    Array.from({length:N},(_,j)=>(j>=8&&j<13)?0.9+sr()*0.3:0.05*sr()),
+    Array.from({length:N},(_,j)=>(j>=11&&j<16)?0.7+sr()*0.4:0.05*sr()),
+  ];
+  const Ht=Array.from({length:M},(_,i)=>{const a=Array(TRUE_K).fill(0);const p1=i%TRUE_K,p2=(i+1)%TRUE_K;a[p1]=0.5+0.5*sr();a[p2]=0.3+0.4*sr();return a;});
+  const X=[];
+  for(let i=0;i<M;i++){const row=[];for(let j=0;j<N;j++){let v=0;for(let kk=0;kk<TRUE_K;kk++)v+=Ht[i][kk]*Wt[kk][j];v+=noise*(sr()-0.5);row.push(Math.max(0,v));}X.push(row);}
+
+  let Xhat;
+  if(method==='nmf'){
+    const [W,H]=nmf(X,k,150);
+    Xhat=matmul(W,H);
+  } else {
+    const [U,V]=svdLowRank(X,k);
+    // Xhat = U V^T
+    Xhat=Array.from({length:M},(_,i)=>Array.from({length:N},(_,j)=>{let s=0;for(let kk=0;kk<k;kk++)s+=U[i][kk]*V[j][kk];return s;}));
+  }
+  const err=reconError(X,Xhat);
+
+  const bw=16, bh=12;
+  let svg='';
+  svg+=drawHeatmap(40,40,bw,bh,X,'seq','X (data)');
+  svg+=drawHeatmap(290,40,bw,bh,Xhat,method==='svd'?'diverging':'seq','X̂ (recon, k='+k+')');
+  const resid=X.map((r,i)=>r.map((v,j)=>v-Xhat[i][j]));
+  svg+=drawHeatmap(540,40,bw,bh,resid,'diverging','Residual');
+
+  // Add a small bar chart of program activations H (if NMF)
+  svg+=`<text x="350" y="320" text-anchor="middle" font-size="11" fill="#444">reconstruction error (rel.) = ${err.toFixed(4)}</text>`;
+  svg+=`<text x="350" y="340" text-anchor="middle" font-size="10.5" fill="#888">真實 rank = 4　|　當前 k = ${k}　|　方法 = ${method.toUpperCase()}</text>`;
+
+  SVG.innerHTML=svg;
+  const L=I18n.get();
+  const interp=k<TRUE_K?(L==='zh'?'欠擬合 — k 太小，無法表達 4 個真實 program':'underfit — k too small to express the 4 true programs')
+                :(k===TRUE_K?(L==='zh'?'剛好擬合 — 殘差最小':'optimal fit — minimum residual')
+                :(L==='zh'?'過擬合的開始 — 多餘 component 開始擬合雜訊':'overfit starting — extra components fit noise'));
+  document.getElementById('nmfInfo').innerHTML=L==='zh'?
+    `相對重建誤差 ≈ <strong>${err.toFixed(4)}</strong>　|　${interp}。<br>NMF（非負）給出的 X̂ 與殘差皆為非負；SVD 的 X̂ 可能含負值，殘差可正可負。在計數型資料上 SVD 的負值難以物理解釋——這正是 NMF 在生物資訊更受青睞的原因。`
+    :
+    `Relative reconstruction error ≈ <strong>${err.toFixed(4)}</strong>　|　${interp}.<br>NMF (non-negative) yields non-negative X̂ and residual; SVD's X̂ may be negative. For count data SVD's negatives are hard to interpret physically — that's why NMF is preferred in bioinformatics.`;
+}
+
+document.getElementById('sK').addEventListener('input',render);
+document.getElementById('sN').addEventListener('input',render);
+document.getElementById('method').addEventListener('change',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！NMF 非負約束帶來 parts-based 解釋性，且符合 count 資料本質。',
+  q1_n:'答案是 B。非負限制 → parts-based、生物可解釋；count 資料天然非負，PCA 的負 loading 物理意義不明。',
+  q2_y:'答對！PCA 二階統計 (uncorrelated)，ICA 高階統計 (independent + non-Gaussian)。',
+  q2_n:'答案是 C。PCA 用 covariance；ICA 用 negentropy/kurtosis 等高階統計強制獨立性。',
+  q3_y:'答對！sparse coding on natural images 解出 Gabor-like filters，與 V1 simple cells 一致。',
+  q3_n:'答案是 A。這個 1996 Nature 結果暗示視覺皮層的早期處理機制就是 sparse coding。'
+},en:{
+  q1_y:'Correct! NMF non-negativity gives parts-based interpretability matching count data.',
+  q1_n:'Answer is B. Non-negativity → parts-based, biologically interpretable; counts are non-negative, PCA negative loadings lack physical meaning.',
+  q2_y:'Correct! PCA uses 2nd-order (uncorrelated); ICA uses higher-order (independent + non-Gaussian).',
+  q2_n:'Answer is C. PCA uses covariance; ICA uses negentropy/kurtosis to enforce independence.',
+  q3_y:'Correct! Sparse coding on natural images yields Gabor-like filters matching V1 simple cells.',
+  q3_n:'Answer is A. This 1996 Nature result suggests early visual cortex performs sparse coding.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

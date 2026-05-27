@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Advanced Methods &amp; Algorithms — Interactive Tutorial</title>
+<meta name="description" content="Bilingual interactive tutorial on advanced methods and algorithms for scRNA-seq, spatial transcriptomics, multi-omics, and scLLMs.">
+<link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner">
+  <a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a>
+  <ul class="top-nav-links">
+    <li><a href="chatterjee.html">Chatterjee ξ</a></li>
+    <li><a href="hsic-dcor.html">HSIC/dCor</a></li>
+    <li><a href="mutual-information.html">MI</a></li>
+    <li><a href="optimal-transport.html">OT</a></li>
+    <li><a href="persistent-homology.html">TDA</a></li>
+    <li><a href="manifold-learning.html">Manifold</a></li>
+    <li><a href="rna-velocity.html">Velocity</a></li>
+    <li><a href="cycle-following.html">Cycle</a></li>
+    <li><a href="graph-signal-gnn.html">GSP/GNN</a></li>
+    <li><a href="spatial-statistics.html">Spatial</a></li>
+    <li><a href="variational-inference.html">VAE</a></li>
+    <li><a href="diffusion-models.html">Diffusion</a></li>
+    <li><a href="scllms.html">scLLMs</a></li>
+    <li><a href="causal-inference.html">Causal</a></li>
+    <li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+  </ul>
+</div></nav>
+
+<header class="hub-hero"><div style="position:relative;z-index:1;">
+<h1 data-zh="進階方法演算法 互動式教學" data-en="Advanced Methods &amp; Algorithms Interactive Tutorial">進階方法演算法 互動式教學</h1>
+<p data-lang="zh">收錄不會出現在教科書、但實際做 scRNA-seq / 空間轉錄體 / 多體學 / scLLMs 時很有殺傷力的數據方法與演算法——從 Chatterjee 相關性到 scLLM tokenization，14 個主題，附互動模擬與程式碼。</p>
+<p data-lang="en">A toolbox of advanced (often non-textbook) methods and algorithms for scRNA-seq, spatial transcriptomics, multi-omics, and scLLMs — from Chatterjee correlation to scLLM tokenization. 14 topics with interactive simulations and code examples.</p>
+</div></header>
+
+<h2 class="hub-section-title"><span>01</span> <span data-zh="現代相關性與依賴性偵測" data-en="Modern Correlation &amp; Dependence">現代相關性與依賴性偵測</span></h2>
+<div class="hub-steps-grid">
+  <a href="chatterjee.html" class="hub-card"><div class="hub-emoji">🔀</div><span class="step-num">Ch 1</span><h3 data-zh="Chatterjee 相關係數" data-en="Chatterjee's ξ Correlation">Chatterjee 相關係數</h3><p data-lang="zh">2021 年提出的新型秩相關係數，能偵測任意函數依賴關係——線性、非單調、振盪都看得到。</p><p data-lang="en">A 2021 rank-based correlation that detects any functional dependency — linear, non-monotonic, oscillatory alike.</p></a>
+  <a href="hsic-dcor.html" class="hub-card"><div class="hub-emoji">🌀</div><span class="step-num">Ch 2</span><h3 data-zh="HSIC 與 Distance Correlation" data-en="HSIC &amp; Distance Correlation">HSIC 與 dCor</h3><p data-lang="zh">基於核方法與能量距離的獨立性檢定，可推廣到高維與多模態變數。</p><p data-lang="en">Kernel-based and energy-distance independence tests, generalizable to high-dimensional and multimodal variables.</p></a>
+  <a href="mutual-information.html" class="hub-card"><div class="hub-emoji">📡</div><span class="step-num">Ch 3</span><h3 data-zh="互資訊估計" data-en="Mutual Information">互資訊估計</h3><p data-lang="zh">KSG、MINE、PIDC——非參數與神經網路兩派估計法，GRN 推論的關鍵工具。</p><p data-lang="en">KSG, MINE, PIDC — non-parametric and neural estimators, key tools for GRN inference.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>02</span> <span data-zh="最佳傳輸與拓撲方法" data-en="Optimal Transport &amp; Topology">最佳傳輸與拓撲方法</span></h2>
+<div class="hub-steps-grid">
+  <a href="optimal-transport.html" class="hub-card"><div class="hub-emoji">🚚</div><span class="step-num">Ch 4</span><h3 data-zh="最佳傳輸 (OT)" data-en="Optimal Transport">最佳傳輸 (OT)</h3><p data-lang="zh">Sinkhorn 演算法、Wasserstein 距離、Waddington-OT、MOSCOT——時間序列與空間對齊的數學基礎。</p><p data-lang="en">Sinkhorn algorithm, Wasserstein distance, Waddington-OT, MOSCOT — the math behind temporal and spatial alignment.</p></a>
+  <a href="persistent-homology.html" class="hub-card"><div class="hub-emoji">🍩</div><span class="step-num">Ch 5</span><h3 data-zh="持久同調 (TDA)" data-en="Persistent Homology (TDA)">持久同調 (TDA)</h3><p data-lang="zh">用拓撲不變量描述細胞狀態空間的「形狀」——孔洞、迴圈、分支結構一覽無遺。</p><p data-lang="en">Use topological invariants to describe the "shape" of cell-state space — voids, loops, and branches revealed.</p></a>
+  <a href="manifold-learning.html" class="hub-card"><div class="hub-emoji">🗺️</div><span class="step-num">Ch 6</span><h3 data-zh="進階流形學習" data-en="Manifold Learning">進階流形學習</h3><p data-lang="zh">Diffusion maps、PHATE、MDE——比 UMAP/t-SNE 更忠實保留全局結構與軌跡。</p><p data-lang="en">Diffusion maps, PHATE, MDE — more faithful to global structure and trajectories than UMAP/t-SNE.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>03</span> <span data-zh="動力學與軌跡" data-en="Dynamics &amp; Trajectories">動力學與軌跡</span></h2>
+<div class="hub-steps-grid">
+  <a href="rna-velocity.html" class="hub-card"><div class="hub-emoji">🏎️</div><span class="step-num">Ch 7</span><h3 data-zh="RNA 速度與動力系統" data-en="RNA Velocity &amp; Dynamics">RNA 速度與動力系統</h3><p data-lang="zh">spliced/unspliced 比值揭示細胞狀態瞬時方向，scVelo 與 Dynamo 推估向量場與 ODE。</p><p data-lang="en">Spliced/unspliced ratios reveal instantaneous cell-state direction. scVelo and Dynamo reconstruct vector fields and ODEs.</p></a>
+  <a href="cycle-following.html" class="hub-card"><div class="hub-emoji">🔁</div><span class="step-num">Ch 8</span><h3 data-zh="循環追蹤 (Cycle-following)" data-en="Cycle-following">循環追蹤</h3><p data-lang="zh">細胞週期、晝夜節律、振盪基因——非單向軌跡的循環假時間，Tricycle、Cyclum、reCAT。</p><p data-lang="en">Cell cycle, circadian rhythm, oscillatory genes — circular pseudotime for non-monotonic trajectories. Tricycle, Cyclum, reCAT.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>04</span> <span data-zh="圖訊號與空間統計" data-en="Graphs &amp; Spatial Statistics">圖訊號與空間統計</span></h2>
+<div class="hub-steps-grid">
+  <a href="graph-signal-gnn.html" class="hub-card"><div class="hub-emoji">🕸️</div><span class="step-num">Ch 9</span><h3 data-zh="圖訊號處理與 GNN" data-en="Graph Signal Processing &amp; GNN">圖訊號與 GNN</h3><p data-lang="zh">Laplacian 譜分析、GCN/GAT、SpaGCN、STAGATE——把細胞–細胞關係與空間鄰近結構納入模型。</p><p data-lang="en">Laplacian spectral analysis, GCN/GAT, SpaGCN, STAGATE — encode cell–cell and spatial neighborhood structure.</p></a>
+  <a href="spatial-statistics.html" class="hub-card"><div class="hub-emoji">📍</div><span class="step-num">Ch 10</span><h3 data-zh="空間自相關與 GP" data-en="Spatial Autocorrelation &amp; GP">空間自相關與 GP</h3><p data-lang="zh">Moran's I、Geary's C、SpatialDE、SPARK、nnSVG、BayesSpace——空間變異基因的統計骨幹。</p><p data-lang="en">Moran's I, Geary's C, SpatialDE, SPARK, nnSVG, BayesSpace — the statistical backbone of spatially variable genes.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>05</span> <span data-zh="生成模型與基礎模型" data-en="Generative &amp; Foundation Models">生成模型與基礎模型</span></h2>
+<div class="hub-steps-grid">
+  <a href="variational-inference.html" class="hub-card"><div class="hub-emoji">🎲</div><span class="step-num">Ch 11</span><h3 data-zh="變分推論與 VAE" data-en="Variational Inference &amp; VAE">變分推論與 VAE</h3><p data-lang="zh">ELBO、重參數技巧、scVI/totalVI/MultiVI——多體學整合與計數模型的機率骨架。</p><p data-lang="en">ELBO, reparameterization, scVI/totalVI/MultiVI — the probabilistic backbone of multi-omics integration and count modeling.</p></a>
+  <a href="diffusion-models.html" class="hub-card"><div class="hub-emoji">🌊</div><span class="step-num">Ch 12</span><h3 data-zh="擴散模型 (Diffusion)" data-en="Diffusion Models">擴散模型</h3><p data-lang="zh">DDPM、score-based、scDiffusion、EvoDiff——從圖像生成走進細胞與序列生成。</p><p data-lang="en">DDPM, score-based, scDiffusion, EvoDiff — from image generation to cell and sequence generation.</p></a>
+  <a href="scllms.html" class="hub-card"><div class="hub-emoji">🧬</div><span class="step-num">Ch 13</span><h3 data-zh="scLLMs 基礎" data-en="scLLMs Foundations">scLLMs 基礎</h3><p data-lang="zh">scGPT、Geneformer、scFoundation——tokenization 策略、預訓練目標、零樣本能力。</p><p data-lang="en">scGPT, Geneformer, scFoundation — tokenization strategies, pretraining objectives, zero-shot capabilities.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>06</span> <span data-zh="因果推論" data-en="Causal Inference">因果推論</span></h2>
+<div class="hub-steps-grid">
+  <a href="causal-inference.html" class="hub-card"><div class="hub-emoji">⚖️</div><span class="step-num">Ch 14</span><h3 data-zh="單細胞因果推論" data-en="Causal Inference in Single-cell">單細胞因果推論</h3><p data-lang="zh">DAG、do-calculus、Perturb-seq、CausalCell——從相關走向干預。</p><p data-lang="en">DAGs, do-calculus, Perturb-seq, CausalCell — moving beyond correlation to intervention.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>07</span> <span data-zh="退使雙曲與連續模型" data-en="Hyperbolic &amp; Continuous Models">退使雙曲與連續模型</span></h2>
+<div class="hub-steps-grid">
+  <a href="hyperbolic-embeddings.html" class="hub-card"><div class="hub-emoji">🌐</div><span class="step-num">Ch 15</span><h3 data-zh="退使雙曲嵌入" data-en="Hyperbolic Embeddings">退使雙曲嵌入</h3><p data-lang="zh">Poincaré disk 等負曲率空間天然容納樹/階層——細胞型別 ontology、phylogeny、分化階層的最佳幾何。</p><p data-lang="en">Negative-curvature spaces (Poincaré disk) natively host hierarchies — best geometry for cell-type ontology, phylogeny, lineage trees.</p></a>
+  <a href="neural-ode.html" class="hub-card"><div class="hub-emoji">🧮</div><span class="step-num">Ch 16</span><h3 data-zh="Neural ODE" data-en="Neural ODE">Neural ODE</h3><p data-lang="zh">把神經網路視為連續動力系統，scTour、Dynamo 背後的數學核心，適合連續細胞軌跡建模。</p><p data-lang="en">Networks as continuous dynamical systems — backbone of scTour, Dynamo; perfect for continuous cell trajectories.</p></a>
+  <a href="flow-matching.html" class="hub-card"><div class="hub-emoji">🌊</div><span class="step-num">Ch 17</span><h3 data-zh="Flow Matching 流匹配" data-en="Flow Matching">Flow Matching</h3><p data-lang="zh">2022 後 diffusion 的更簡單對手，AlphaFlow、FrameFlow 在蛋白質結構設計大放異彩。</p><p data-lang="en">Simpler post-2022 alternative to diffusion. AlphaFlow, FrameFlow shine in protein structure design.</p></a>
+  <a href="state-space-mamba.html" class="hub-card"><div class="hub-emoji">📜</div><span class="step-num">Ch 18</span><h3 data-zh="State Space / Mamba" data-en="State Space / Mamba">State Space / Mamba</h3><p data-lang="zh">Transformer 的長序列接班者。HyenaDNA、Mamba-DNA 處理 1M bp 基因組序列，效率遠超 Transformer。</p><p data-lang="en">Transformer's long-sequence successor. HyenaDNA, Mamba-DNA handle 1M-bp genome sequences far more efficiently.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>08</span> <span data-zh="不確定性、實驗設計、表徵原理" data-en="Uncertainty, Experiment Design, Representation">不確定性、實驗設計、表徵原理</span></h2>
+<div class="hub-steps-grid">
+  <a href="conformal-prediction.html" class="hub-card"><div class="hub-emoji">🎯</div><span class="step-num">Ch 19</span><h3 data-zh="Conformal Prediction" data-en="Conformal Prediction">保適預測</h3><p data-lang="zh">分布無關的不確定性量化——對臨床決策、藥物反應預測、cell type annotation 有覆蓋率保證的關鍵工具。</p><p data-lang="en">Distribution-free uncertainty with coverage guarantees — critical for clinical decisions, drug response, cell-type annotation.</p></a>
+  <a href="active-learning.html" class="hub-card"><div class="hub-emoji">🔬</div><span class="step-num">Ch 20</span><h3 data-zh="主動學習 / 貝氏最佳化" data-en="Active Learning / Bayesian Opt">主動學習 / 貝氏最佳化</h3><p data-lang="zh">指導實驗選擇——下一個 CRISPR perturbation 要打哪？下一個藥物 candidate 試哪個劑量？</p><p data-lang="en">Guide experiment selection — which CRISPR target next? Which drug dose to try? Bayesian optimization rules.</p></a>
+  <a href="information-bottleneck.html" class="hub-card"><div class="hub-emoji">🌐</div><span class="step-num">Ch 21</span><h3 data-zh="資訊瓶頸 Information Bottleneck" data-en="Information Bottleneck">資訊瓶頸</h3><p data-lang="zh">Tishby 表徵學習原理——讓 latent 只保留「與任務相關」訊息。IB-VAE 給 disentangled 與可解釋表徵。</p><p data-lang="en">Tishby's representation principle — latents keep only "task-relevant" info. IB-VAE delivers disentangled, interpretable embeddings.</p></a>
+  <a href="tensor-decomposition.html" class="hub-card"><div class="hub-emoji">🧊</div><span class="step-num">Ch 22</span><h3 data-zh="張量分解" data-en="Tensor Decompositions">張量分解</h3><p data-lang="zh">CP / Tucker / TT——個人 × 細胞 × 基因 × 時間 4D 資料的原生語言，MOFA、LIGER、Tensor-cell2cell 都是。</p><p data-lang="en">CP / Tucker / TT — native language for 4D data (person × cell × gene × time). MOFA, LIGER, Tensor-cell2cell.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>09</span> <span data-zh="前沿表徵與幾何" data-en="Frontier Representations &amp; Geometry">前沿表徵與幾何</span></h2>
+<div class="hub-steps-grid">
+  <a href="contrastive-learning.html" class="hub-card"><div class="hub-emoji">🔀</div><span class="step-num">Ch 23</span><h3 data-zh="自監督對比學習" data-en="Self-supervised Contrastive">自監督對比學習</h3><p data-lang="zh">SimCLR / MoCo / BYOL / VICReg / CLIP——scLLM 預訓練的關鍵 trick，scCLIP、Concerto 等用來學跨模態表徵。</p><p data-lang="en">SimCLR / MoCo / BYOL / VICReg / CLIP — key trick behind scLLM pretraining. scCLIP, Concerto for cross-modal embeddings.</p></a>
+  <a href="symbolic-regression.html" class="hub-card"><div class="hub-emoji">🔣</div><span class="step-num">Ch 24</span><h3 data-zh="符號回歸" data-en="Symbolic Regression">符號回歸</h3><p data-lang="zh">從資料反推「方程式」——SINDy、PySR 從 scRNA-seq 軌跡發現 ODE，從 GWAS 反推遺傳互動式。</p><p data-lang="en">Reverse-engineer "equations" from data — SINDy, PySR discover ODEs from trajectories, infer epistasis from GWAS.</p></a>
+  <a href="sheaf-cellular.html" class="hub-card"><div class="hub-emoji">📐</div><span class="step-num">Ch 25</span><h3 data-zh="Sheaf 與 Cellular Sheaves" data-en="Sheaves &amp; Cellular Sheaves">Sheaf 與細胞 sheaf</h3><p data-lang="zh">廣義拓撲——處理「多模態間不一致對應」的數學工具，sheaf Laplacian 在 multi-omics 與空間整合中興起。</p><p data-lang="en">Generalized topology — math for "inconsistent multi-modal correspondences." Sheaf Laplacian rising in multi-omics and spatial.</p></a>
+  <a href="geometric-dl.html" class="hub-card"><div class="hub-emoji">🧬</div><span class="step-num">Ch 26</span><h3 data-zh="幾何深度學習" data-en="Geometric Deep Learning">幾何深度學習</h3><p data-lang="zh">SE(3)-equivariant、Riemannian、Lie group 神經網路——蛋白質、分子、3D 結構設計的中心。AlphaFold3 的根。</p><p data-lang="en">SE(3)-equivariant, Riemannian, Lie group nets — center of protein, molecule, 3D structure design. The root of AlphaFold3.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>10</span> <span data-zh="記憶、能量、決策" data-en="Memory, Energy, Decision">記憶、能量、決策</span></h2>
+<div class="hub-steps-grid">
+  <a href="modern-hopfield.html" class="hub-card"><div class="hub-emoji">🧠</div><span class="step-num">Ch 27</span><h3 data-zh="Modern Hopfield Networks" data-en="Modern Hopfield Networks">Modern Hopfield</h3><p data-lang="zh">Ramsauer 2021 證明 attention ≡ modern Hopfield。HopfieldRepertoire、DeepRC 用於 TCR/BCR 免疫倉庫變單檢索。</p><p data-lang="en">Ramsauer 2021 showed attention ≡ modern Hopfield. HopfieldRepertoire, DeepRC use it for TCR/BCR immune repertoire retrieval.</p></a>
+  <a href="energy-based-dca.html" class="hub-card"><div class="hub-emoji">⚡</div><span class="step-num">Ch 28</span><h3 data-zh="Energy-Based Models &amp; DCA" data-en="Energy-Based Models &amp; DCA">EBM &amp; DCA</h3><p data-lang="zh">Direct Coupling Analysis 是 AlphaFold MSA-based contact 預測的根。預測蛋白接觸、藥物結合點。</p><p data-lang="en">Direct Coupling Analysis is the root of AlphaFold's MSA-based contact prediction. Forecast protein contacts, binding sites.</p></a>
+  <a href="hawkes-point-processes.html" class="hub-card"><div class="hub-emoji">⏱️</div><span class="step-num">Ch 29</span><h3 data-zh="Hawkes 與點過程" data-en="Hawkes &amp; Point Processes">Hawkes 點過程</h3><p data-lang="zh">自激發點過程——體細胞突變時序、神經元 spike、免疫激活、CRISPR 變異事件微規。</p><p data-lang="en">Self-exciting point processes — somatic mutation timing, neural spikes, immune activation, CRISPR variant micro-events.</p></a>
+  <a href="reinforcement-learning.html" class="hub-card"><div class="hub-emoji">🎮</div><span class="step-num">Ch 30</span><h3 data-zh="生物強化學習" data-en="Reinforcement Learning for Bio">RL for Bio</h3><p data-lang="zh">REINVENT 藥物設計、蛋白質設計、藥物雞金優化、多步實驗認接。</p><p data-lang="en">REINVENT for drug design, protein design, drug dose optimization, multi-step experiment guidance.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>11</span> <span data-zh="幾何、多尺度、稀疏" data-en="Geometry, Multi-scale, Sparse">幾何、多尺度、稀疏</span></h2>
+<div class="hub-steps-grid">
+  <a href="random-matrix-theory.html" class="hub-card"><div class="hub-emoji">🎲</div><span class="step-num">Ch 31</span><h3 data-zh="隨機矩陣理論" data-en="Random Matrix Theory">Random Matrix Theory</h3><p data-lang="zh">Marchenko-Pastur 定理——GRN 推論中的「噪訊 vs 真信號」門檻。Eigengene、MEFISTO、CovEdit 背後數學。</p><p data-lang="en">Marchenko-Pastur theorem — the "noise vs signal" threshold in GRN inference. Math behind Eigengene, MEFISTO, CovEdit.</p></a>
+  <a href="sliced-wasserstein.html" class="hub-card"><div class="hub-emoji">🚄</div><span class="step-num">Ch 32</span><h3 data-zh="Sliced-Wasserstein 快速 OT" data-en="Sliced-Wasserstein / Fast OT">Sliced-W / Fast OT</h3><p data-lang="zh">「只算一維投影的 OT」——比 Sinkhorn 快 100×，適合 atlas-scale single-cell。SW-AE、SW-PD 都是。</p><p data-lang="en">"OT via 1D projections" — 100× faster than Sinkhorn, fits atlas-scale single-cell. SW-AE, SW-PD.</p></a>
+  <a href="compressed-sensing.html" class="hub-card"><div class="hub-emoji">📡</div><span class="step-num">Ch 33</span><h3 data-zh="壓縮感測" data-en="Compressed Sensing">壓縮感測</h3><p data-lang="zh">L1 稀疏恢復。Cell painting、MERFISH、CITE-seq 以少量探針重建完整表現裝照。LASSO-genetic 也是。</p><p data-lang="en">L1 sparse recovery. Cell painting, MERFISH, CITE-seq reconstruct full profiles from few probes. LASSO-genetic too.</p></a>
+  <a href="wavelets-multires.html" class="hub-card"><div class="hub-emoji">〰️</div><span class="step-num">Ch 34</span><h3 data-zh="小波與多尺度分析" data-en="Wavelets &amp; Multi-resolution">小波與多尺度</h3><p data-lang="zh">多尺度時頻分析。細胞週期、晝夜週心、信號學、spatial multi-scale hot 結構偏移。</p><p data-lang="en">Multi-scale time-frequency analysis. Cell cycle, circadian, neuroscience, spatial multi-scale hot structures.</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>12</span> <span data-zh="抽樣、隱式、多層次" data-en="Sampling, Implicit, Multi-way">抽樣、隱式、多層次</span></h2>
+<div class="hub-steps-grid">
+  <a href="implicit-neural-rep.html" class="hub-card"><div class="hub-emoji">∞</div><span class="step-num">Ch 35</span><h3 data-zh="隱式神經表徵 (SIREN/NeRF)" data-en="Implicit Neural Representations">隱式神經表徵</h3><p data-lang="zh">以坐標 → 值的連續函式表示。cryo-EM 重建、連續空間轉錄體提高解析度。</p><p data-lang="en">Continuous coordinate→value functions. cryo-EM reconstruction, continuous spatial transcriptomics upscaling.</p></a>
+  <a href="dpp.html" class="hub-card"><div class="hub-emoji">⚄</div><span class="step-num">Ch 36</span><h3 data-zh="決定性點過程 (DPP)" data-en="Determinantal Point Processes">決定性點過程</h3><p data-lang="zh">取「多元且互不重複」的樣本——marker gene 選取、多模體 panel 設計、active learning 用抽樣。</p><p data-lang="en">Sample "diverse and non-redundant" subsets — marker selection, multi-modal panel design, active-learning sampling.</p></a>
+  <a href="federated-learning.html" class="hub-card"><div class="hub-emoji">🔐</div><span class="step-num">Ch 37</span><h3 data-zh="聯邦學習" data-en="Federated Learning">聯邦學習</h3><p data-lang="zh">隱私保護多醫院預測（各醫院重作產、不共享原始學銘）。BiogenoFL 這三年起來。</p><p data-lang="en">Privacy-preserving multi-hospital prediction (no raw data sharing). BiogenoFL has gained traction recently.</p></a>
+  <a href="hypergraph-learning.html" class="hub-card"><div class="hub-emoji">🕸️</div><span class="step-num">Ch 38</span><h3 data-zh="超圖學習" data-en="Hypergraph Learning">超圖學習</h3><p data-lang="zh">「一條邊接多個點」的推廣 — 適合 multi-omics、藥物 × 規復× 基因、L-R complex (multimer signaling)。</p><p data-lang="en">"One edge connects many nodes" generalization — fits multi-omics, drug × pathway × gene, L-R complex (multimer signaling).</p></a>
+</div>
+
+<h2 class="hub-section-title"><span>13</span> <span data-zh="延伸學習" data-en="Further Learning">延伸學習</span></h2>
+<div class="hub-steps-grid">
+  <a href="references/index.html" class="hub-card"><div class="hub-emoji">📚</div><span class="step-num">References</span><h3 data-zh="參考資料與論文" data-en="References &amp; Papers">參考資料與論文</h3><p data-lang="zh">14 個主題的核心論文、軟體套件、教學影片與最新 benchmark，附 DOI / arXiv 連結。</p><p data-lang="en">Core papers, software packages, tutorials, and recent benchmarks for all 14 topics — with DOI / arXiv links.</p></a>
+  <a href="quiz/index.html" class="hub-card" target="_blank" rel="noopener"><div class="hub-emoji">📝</div><span class="step-num">Quiz</span><h3 data-zh="互動式考題" data-en="Interactive Quiz">互動式考題</h3><p data-lang="zh">涵蓋 14 主題的觀念題、應用題與是非題，內建錯題複習與隨機練習。</p><p data-lang="en">Concept, application, and true/false questions across 14 topics, with wrong-answer review and random practice.</p></a>
+</div>
+<div style="height:60px"></div>
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+</body></html>

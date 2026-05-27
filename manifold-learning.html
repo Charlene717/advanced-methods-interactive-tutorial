@@ -1,0 +1,446 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Manifold Learning — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html" class="active">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 6 / 14</div><h1 data-zh="進階流形學習" data-en="Advanced Manifold Learning">進階流形學習</h1>
+<p class="subtitle" data-lang="zh">UMAP / t-SNE 的局限與替代——Diffusion Maps、PHATE、MDE 等方法在保留全局結構與軌跡連續性上更勝一籌。</p>
+<p class="subtitle" data-lang="en">Beyond UMAP / t-SNE — Diffusion Maps, PHATE, MDE preserve global structure and trajectory continuity more faithfully.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="UMAP / t-SNE 的隱藏代價" data-en="Hidden Costs of UMAP / t-SNE">UMAP / t-SNE 的隱藏代價</h2>
+<div data-lang="zh">
+<p>t-SNE 與 UMAP 擅長分群視覺化，但它們的目標函數本質上 <strong>強調局部結構</strong>，犧牲了全局距離與軌跡連續性。Chari & Pachter (2023, PLOS Comp Biol)「The specious art of single-cell genomics」明確指出：UMAP/t-SNE 投影可能誤導生物學結論，特別是在軌跡推論與細胞型別距離比較上。</p>
+<p>替代方案的共同目標：<strong>保留全局結構（global structure preservation）</strong> 與 <strong>連續軌跡（trajectory continuity）</strong>。</p>
+</div>
+<div data-lang="en">
+<p>t-SNE and UMAP excel at cluster visualization, but their objectives <strong>emphasize local structure</strong> at the cost of global distance and trajectory continuity. Chari & Pachter (2023, PLOS Comp Biol) "The specious art of single-cell genomics" warns that UMAP/t-SNE projections can mislead biological conclusions, especially for trajectory inference and cell-type distance comparison.</p>
+<p>Alternatives share the goal of <strong>preserving global structure</strong> and <strong>trajectory continuity</strong>.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="主要方法" data-en="METHODS">主要方法</h2>
+<h2 data-zh="四種替代方案" data-en="Four Alternatives">四種替代方案</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>Diffusion Maps</h4><p data-lang="zh">Coifman & Lafon (2006)：用「擴散過程」定義細胞間距離（隨機漫步多步後的轉移機率）。優點：在連續發育軌跡上保留全局距離；缺點：對噪音較敏感。</p><p data-lang="en">Coifman & Lafon (2006): define cell distance via diffusion (multi-step random walk transition probabilities). Preserves global distance on continuous trajectories; sensitive to noise.</p></div>
+<div class="card"><h4>PHATE (Moon 2019)</h4><p data-lang="zh">把 diffusion maps 升級——用 potential of heat-diffusion 變換 + MDS，<strong>同時</strong> 保留分群與軌跡，在發育資料表現特別好。</p><p data-lang="en">Upgrades diffusion maps with potential of heat-diffusion + MDS, preserving <strong>both</strong> clusters and trajectories — excels on developmental data.</p></div>
+<div class="card"><h4>MDE (PyMDE, 2021)</h4><p data-lang="zh">Minimum-Distortion Embedding：把降維視為通用最佳化問題，可指定「保留 k-NN」、「保留全局距離」等不同 distortion 函數。彈性極高。</p><p data-lang="en">Minimum-Distortion Embedding: treats dim reduction as a general optimization with customizable distortion (preserve k-NN, preserve global distances, etc.). Very flexible.</p></div>
+<div class="card"><h4>ForceAtlas2 / SPRING</h4><p data-lang="zh">用力導向圖佈局——細胞–細胞 kNN 圖直接視覺化，邊權當作彈簧。SPRING (Weinreb 2018) 在血液系統發育上廣為使用。</p><p data-lang="en">Force-directed layout — cell–cell kNN graph visualized directly with edges as springs. SPRING (Weinreb 2018) widely used in hematopoiesis.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法核心" data-en="ALGORITHM">演算法核心</div>
+<h2 data-zh="Diffusion Maps 的數學骨幹" data-en="Math Backbone of Diffusion Maps">Diffusion Maps 的數學骨幹</h2>
+<div data-lang="zh">
+<ol>
+<li><strong>建立相似性矩陣：</strong>k(x<sub>i</sub>, x<sub>j</sub>) = exp(−‖x<sub>i</sub> − x<sub>j</sub>‖² / 2σ²)</li>
+<li><strong>歸一化為轉移矩陣：</strong>P = D⁻¹ K，其中 D 為對角度矩陣</li>
+<li><strong>特徵分解：</strong>P 的特徵向量 ψ<sub>1</sub>, ψ<sub>2</sub>, ... 即為新坐標；特徵值 λ<sub>i</sub> 衡量重要性</li>
+<li><strong>嵌入：</strong>Φ(x) = (λ<sub>1</sub>ψ<sub>1</sub>(x), λ<sub>2</sub>ψ<sub>2</sub>(x), ...) — 投影到前幾維</li>
+</ol>
+<p><strong>數學魔力：</strong>嵌入空間的歐式距離 ≈ 原空間的 diffusion distance — 即「需要多少步隨機漫步才能從 i 到 j 的機率變化」。這個距離天然忽略噪音、強調連通結構。</p>
+</div>
+<div data-lang="en">
+<ol>
+<li><strong>Build affinity matrix:</strong> k(x<sub>i</sub>, x<sub>j</sub>) = exp(−‖x<sub>i</sub> − x<sub>j</sub>‖² / 2σ²)</li>
+<li><strong>Row-normalize to transition matrix:</strong> P = D⁻¹ K, with D diagonal degrees</li>
+<li><strong>Eigendecompose:</strong> eigenvectors ψ<sub>1</sub>, ψ<sub>2</sub>, ... give new coordinates; eigenvalues λ<sub>i</sub> indicate importance</li>
+<li><strong>Embed:</strong> Φ(x) = (λ<sub>1</sub>ψ<sub>1</sub>(x), λ<sub>2</sub>ψ<sub>2</sub>(x), ...)</li>
+</ol>
+<p><strong>The math magic:</strong> Euclidean distance in embedding ≈ diffusion distance in original space — robust to noise and emphasizes connectivity.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="兩種方法的對比" data-en="Method Comparison">兩種方法的對比</h2>
+<div data-lang="zh"><p>同一個合成 dataset（兩條交會的軌跡），用 PCA、t-SNE-like、Diffusion 三種方法視覺化。觀察哪個方法保留了真實連續軌跡。</p></div>
+<div data-lang="en"><p>Same synthetic dataset (two intersecting trajectories) visualized by PCA, t-SNE-like, and Diffusion. Watch which method preserves true continuity.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="方法" data-en="Method">方法</label>
+<select id="mlMet" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);">
+<option value="pca">PCA</option>
+<option value="tsne">t-SNE-like</option>
+<option value="diff" selected>Diffusion-like</option>
+</select></div>
+<div class="slider-group"><label data-zh="噪音" data-en="Noise">噪音 <span id="mlVn">0.10</span></label><input type="range" id="mlN" min="0" max="0.5" value="0.10" step="0.02"></div>
+<svg id="mlSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div id="mlMsg" style="margin-top:10px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="實務建議" data-en="Practical Recommendations">實務建議</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="軌跡推論首選" data-en="For trajectories">軌跡推論首選</h4><p data-lang="zh">Diffusion maps 或 PHATE > UMAP — 前者保留軌跡的真實幾何，後者把連續軌跡切碎成「假群」。</p><p data-lang="en">Diffusion maps / PHATE > UMAP — they preserve true trajectory geometry; UMAP fragments continuous trajectories into spurious clusters.</p></div>
+<div class="card"><h4 data-zh="多體學整合" data-en="Multi-omics integration">多體學整合</h4><p data-lang="zh">MDE 可自訂 distortion → 強制不同模態的細胞在同一空間。比 UMAP 更穩定。</p><p data-lang="en">MDE allows custom distortion → align modalities in shared space. More stable than UMAP.</p></div>
+<div class="card"><h4 data-zh="細胞型別距離" data-en="Cell-type distance">細胞型別距離</h4><p data-lang="zh">不要直接量 UMAP 上的歐式距離當細胞型別差異——用 Wasserstein 或 diffusion distance 更合理。</p><p data-lang="en">Don't use Euclidean distances on UMAP as cell-type differences — use Wasserstein or diffusion distance.</p></div>
+<div class="card"><h4 data-zh="空間轉錄體" data-en="Spatial transcriptomics">空間轉錄體</h4><p data-lang="zh">在空間鄰近圖上跑 diffusion maps（或 graph Laplacian 嵌入）能同時整合空間與表現訊息。</p><p data-lang="en">Run diffusion maps (or graph Laplacian embedding) on spatial neighbor graphs to fuse spatial + expression info.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析流形學習：數學、超參數、評估與最新方法" data-en="Deep Dive: Math, Hyperparameters, Evaluation, and Modern Methods">深入解析流形學習：數學、超參數、評估與最新方法</h2>
+
+<div data-lang="zh">
+<h3>① Diffusion Maps 的 multi-scale 性質與時間參數 t</h3>
+<p>Diffusion map 的核心是「在資料圖上做隨機漫步」。轉移矩陣 P 的特徵值 λ<sub>k</sub> 對應第 k 個 diffusion direction，diffusion distance D<sub>t</sub>(x,y) = √Σ λ<sub>k</sub><sup>2t</sup> (φ<sub>k</sub>(x)−φ<sub>k</sub>(y))²。</p>
+<ul>
+<li><strong>t 小（如 t=1）：</strong>近距離主導——看到 local 結構（細粒度群、bursty subpopulation）。</li>
+<li><strong>t 中等（t=10–100）：</strong>看到 fate branches、developmental trajectories。</li>
+<li><strong>t 大（t→∞）：</strong>只剩平穩分布——所有點趨於相同 diffusion distance。</li>
+</ul>
+<p>實務技巧：對同一資料跑多個 t 值，做 multi-resolution analysis——這正是 Palantir、PHATE 的核心想法。</p>
+
+<h3>② PHATE 演算法的完整步驟（Moon 2019, Nature Biotech）</h3>
+<p>PHATE 是 diffusion + information geometry 的巧妙結合，比 t-SNE/UMAP 更能保留 global trajectory。詳細步驟：</p>
+<ol>
+<li><strong>kNN graph：</strong>對 PCA 後的資料建 k-nearest neighbors（adaptive bandwidth）。</li>
+<li><strong>Transition matrix P：</strong>對 distance 用 adaptive kernel α-decay K(x,y) = exp(−(d/ε(x))<sup>α</sup>)，row-normalize 得到 P。</li>
+<li><strong>選最佳 t：</strong>對 P<sup>t</sup> 的 von Neumann entropy H(t) = −Σ λ<sub>k</sub><sup>t</sup> log λ<sub>k</sub><sup>t</sup> 求一階差分，找「彎折處」——這是 noise vs signal 的最佳分隔點。</li>
+<li><strong>Potential distance：</strong>把 P<sup>t</sup> row 取 −log，得到 "potential of heat diffusion"——log 轉換放大遠距差異（這是 PHATE 比 diffusion map 強在保留 global 的關鍵）。</li>
+<li><strong>MDS embedding：</strong>對 potential distance 跑 metric MDS 或 NLDR → 2D / 3D 可視化。</li>
+</ol>
+<p>結果：在 hematopoiesis、reprogramming 等資料上，PHATE 同時保留 trunk 與 branches，t-SNE/UMAP 常把 branches 折斷或重疊。</p>
+
+<h3>③ t-SNE 數學：KL 散度、perplexity、學習率</h3>
+<p>t-SNE 最小化 KL(P‖Q)，其中 P 是高維 Gaussian 親近度、Q 是低維 t-distribution 親近度。重要細節：</p>
+<ul>
+<li><strong>Perplexity（5–50）：</strong>等效於「考慮多少鄰居」。小 perplexity 強調 local、大強調 global。Wattenberg 2016 在 distill.pub 強調：<strong>同一資料的 t-SNE 結果在不同 perplexity 下差異巨大</strong>，正確做法是跑多個 perplexity 比較穩定的結構。</li>
+<li><strong>學習率：</strong>傳統預設 200，但 Belkina 2019 (Nature Comms) 證明對大資料（n &gt; 10k）應改為 n/12——可避免 t-SNE 在大資料上「散開」。</li>
+<li><strong>Early exaggeration：</strong>前 250 iter 把 P 放大 12 倍，迫使 cluster 分離；之後關閉避免過度聚集。</li>
+<li><strong>「Cluster sizes 不可信」：</strong>t-SNE 會把所有 cluster 拉到相似大小（t-distribution 的長尾），所以「大 cluster vs 小 cluster」不能直接從圖讀出。</li>
+</ul>
+
+<h3>④ UMAP 數學：fuzzy simplicial sets + cross-entropy</h3>
+<p>UMAP 的數學基礎是 fuzzy topology：把資料視為「fuzzy simplicial set」，high-dim 與 low-dim 的 fuzzy 集合用 cross-entropy 對齊。實務超參數：</p>
+<ul>
+<li><strong>n_neighbors（5–100）：</strong>類似 t-SNE perplexity。小 = local 結構，大 = global trajectory。</li>
+<li><strong>min_dist（0.0–0.99）：</strong>控制低維點之間的最小距離。<strong>min_dist=0 + 大 n_neighbors</strong> 適合 trajectory；min_dist=0.5 + 小 n_neighbors 適合 cluster 可視化。</li>
+<li><strong>UMAP vs t-SNE：</strong>UMAP 用 cross-entropy 而非 KL，所以「保留 global」較好；但 Damrich & Hamprecht (2021) 指出 UMAP 的 global 並不真正反映 high-dim 距離——只是不同的扭曲方式。</li>
+</ul>
+
+<h3>⑤ PaCMAP, TriMap：用三元組平衡 local/global</h3>
+<p>Wang 2021 系列方法核心觀念：t-SNE/UMAP 只看「正向 pair」（鄰居），不利於保留 global。改用三元組 (anchor, near, far)，最小化「anchor 與 near 距離 &lt; anchor 與 far 距離」的 hinge loss。</p>
+<ul>
+<li><strong>TriMap (Amid & Warmuth 2019)：</strong>對每個點抽 10 個 far、5 個 mid、5 個 near，optimize triplet loss——比 t-SNE 在 global 保留上勝。</li>
+<li><strong>PaCMAP (Wang 2021)：</strong>進一步動態調整 mid-pair 數量隨 iter 變化，前期重 global，後期重 local。在 single-cell benchmark 上常打敗 UMAP。</li>
+<li><strong>適用情境：</strong>當你既要看 trajectory（global）又要看 cluster（local）時，PaCMAP 是首選。</li>
+</ul>
+
+<h3>⑥ DensMAP：保留 local density 訊息</h3>
+<p>Narayan, Berger, Cho (2021, Nature Biotech) 指出：UMAP/t-SNE 把所有 cluster 拉到「均勻密度」，丟失了「哪個 cluster 比較緻密」的訊號。DensMAP 在 UMAP loss 上加 density-preservation term：每個點的 local density 估計（用 kNN 距離倒數）要在 high-dim 與 low-dim 一致。</p>
+<p>單細胞應用：能保留「rare cell types 在 UMAP 上呈現稀疏」的特徵——對 CITE-seq、Perturb-seq 中尋找 rare subpop 特別有用。</p>
+
+<h3>⑦ Anchor-based 大規模降維：LandmarkMDS、Ivis</h3>
+<p>當 n &gt; 1M 時，t-SNE/UMAP 即使 GPU 也跑不動。解法：</p>
+<ul>
+<li><strong>LandmarkMDS：</strong>先 random pick 或 farthest-first 選 k 個 landmark，計算 landmark 間 MDS embedding，再把其他點透過「triangulation」放入空間。</li>
+<li><strong>Ivis (Szubert 2019, Sci Reports)：</strong>用 Siamese network + triplet loss 做降維——訓練後 embedding 可泛化到新樣本（不像 t-SNE/UMAP 要重跑）。對 1M+ mass cytometry 資料是首選。</li>
+<li><strong>OpenAI/Atlas-style：</strong>用 transformer encoder 預訓練，把 embedding 直接降為 2D——可處理 100M+ data points。</li>
+</ul>
+
+<h3>⑧ 評估指標：trustworthiness、continuity、MRRE、RNX</h3>
+<p>「UMAP 比 t-SNE 好嗎？」是錯誤問題——應該量化「local 還是 global 保留得好」。指標：</p>
+<ul>
+<li><strong>Trustworthiness：</strong>低維鄰居中，多少在高維也是鄰居？衡量「假鄰居 false positives」。</li>
+<li><strong>Continuity：</strong>高維鄰居中，多少在低維也是鄰居？衡量「漏鄰居 false negatives」。</li>
+<li><strong>MRRE (Mean Relative Rank Error)：</strong>對每個點的 k 個鄰居計算 rank 差異——越小越好。</li>
+<li><strong>RNX curve (Lee &amp; Verleysen 2013)：</strong>從 k=1 到 k=n 連續評估，得到一條曲線——曲線下面積 (AUC<sub>RNX</sub>) 給出綜合分數。</li>
+</ul>
+<p>實務：在挑降維方法時跑這些指標而非「看圖好不好看」。</p>
+
+<h3>⑨ Manifold hypothesis 在 scRNA-seq 是否成立？</h3>
+<p>核心問題：「高維表現空間真的是低維流形嗎？」要回答需估計 intrinsic dimensionality (ID)：</p>
+<ul>
+<li><strong>Levina–Bickel (2004)：</strong>對每個點看 k 個最近鄰距離的比率，用 MLE 估 ID。</li>
+<li><strong>TwoNN (Facco 2017)：</strong>更穩健——只用第 1、第 2 近鄰的距離比 μ = r₂/r₁，分布滿足 Pareto，可直接擬合。</li>
+<li><strong>實證：</strong>scRNA-seq 在 PBMC 約 ID = 8–12；hematopoiesis 約 ID = 15–25；reprogramming 早期甚至 &gt; 50。<strong>所以 manifold 假設大致成立，但 ID 比預期高</strong>——這也是 t-SNE 強制 2D 必然丟訊息的根源。</li>
+<li><strong>Chari &amp; Pachter (2023, PLOS Comp Bio)：</strong>嚴厲批評 2D 視覺化——展示同一資料用不同 perplexity/seed 得到截然不同的「故事」。建議：把 2D plot 視為「圖示」而非「分析工具」。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① Multi-scale diffusion maps and the time parameter t</h3>
+<p>Diffusion maps run a random walk on the data graph. Eigenvalues λ<sub>k</sub> of the transition matrix P give the k-th diffusion direction; diffusion distance D<sub>t</sub>(x,y) = √Σ λ<sub>k</sub><sup>2t</sup> (φ<sub>k</sub>(x)−φ<sub>k</sub>(y))².</p>
+<ul>
+<li><strong>Small t (t=1):</strong> local structure dominates — fine-grained clusters, bursty subpopulations.</li>
+<li><strong>Medium t (t=10–100):</strong> fate branches, developmental trajectories.</li>
+<li><strong>Large t (t→∞):</strong> stationary distribution — all points equidistant.</li>
+</ul>
+<p>Tip: run multiple t values for multi-resolution analysis — the core idea of Palantir and PHATE.</p>
+
+<h3>② Full PHATE algorithm (Moon 2019, Nature Biotech)</h3>
+<p>PHATE elegantly fuses diffusion + information geometry, retaining global trajectory better than t-SNE/UMAP. Steps:</p>
+<ol>
+<li><strong>kNN graph:</strong> build k-NN on PCA-reduced data with adaptive bandwidth.</li>
+<li><strong>Transition matrix P:</strong> α-decay kernel K(x,y) = exp(−(d/ε(x))<sup>α</sup>), row-normalize.</li>
+<li><strong>Pick optimal t:</strong> minimize first difference of von Neumann entropy H(t) = −Σ λ<sub>k</sub><sup>t</sup> log λ<sub>k</sub><sup>t</sup> — find the elbow separating noise from signal.</li>
+<li><strong>Potential distance:</strong> take −log of P<sup>t</sup> rows — "potential of heat diffusion" — log amplifies distant differences (the key over plain diffusion maps).</li>
+<li><strong>MDS embedding:</strong> metric MDS or NLDR on potential distances → 2D / 3D.</li>
+</ol>
+<p>Result: on hematopoiesis, reprogramming, PHATE preserves both trunk and branches, where t-SNE/UMAP fragment or overlap them.</p>
+
+<h3>③ t-SNE math: KL divergence, perplexity, learning rate</h3>
+<p>t-SNE minimizes KL(P‖Q), with P high-dim Gaussian affinities and Q low-dim t-distribution affinities. Key details:</p>
+<ul>
+<li><strong>Perplexity (5–50):</strong> effective neighborhood size. Wattenberg 2016 (distill.pub) emphasized: <strong>same data, different perplexities → wildly different layouts</strong>. Best practice: scan multiple perplexities for stable structure.</li>
+<li><strong>Learning rate:</strong> default 200 — Belkina 2019 (Nat Comm) proved that for n &gt; 10k, use n/12 — avoids the "fragmentation" issue on large datasets.</li>
+<li><strong>Early exaggeration:</strong> first 250 iters multiply P by 12 to force cluster separation, then turn off.</li>
+<li><strong>"Cluster sizes are unreliable":</strong> t-SNE's t-distribution tails pull all clusters to similar size — never read cluster size from the plot.</li>
+</ul>
+
+<h3>④ UMAP math: fuzzy simplicial sets + cross-entropy</h3>
+<p>UMAP treats data as a fuzzy simplicial set; cross-entropy aligns high-dim and low-dim fuzzy sets. Key hyperparameters:</p>
+<ul>
+<li><strong>n_neighbors (5–100):</strong> like t-SNE perplexity. Small = local, large = global trajectory.</li>
+<li><strong>min_dist (0.0–0.99):</strong> minimum point spacing. <strong>min_dist=0 + large n_neighbors</strong> for trajectory; min_dist=0.5 + small n_neighbors for cluster vis.</li>
+<li><strong>UMAP vs t-SNE:</strong> cross-entropy preserves global better; but Damrich & Hamprecht (2021) showed UMAP's global doesn't truly reflect high-dim distance — just a different kind of distortion.</li>
+</ul>
+
+<h3>⑤ PaCMAP, TriMap: triplet-based local/global balance</h3>
+<p>Wang 2021 series core idea: t-SNE/UMAP only use positive pairs (neighbors), hurting global. Use triplets (anchor, near, far) with hinge loss "anchor-near < anchor-far."</p>
+<ul>
+<li><strong>TriMap (Amid & Warmuth 2019):</strong> per point, sample 10 far + 5 mid + 5 near, optimize triplet loss — beats t-SNE on global preservation.</li>
+<li><strong>PaCMAP (Wang 2021):</strong> dynamically anneals mid-pair count across iters — global early, local late. Often beats UMAP on single-cell benchmarks.</li>
+<li><strong>Use case:</strong> when you need both trajectory and cluster — PaCMAP is the go-to.</li>
+</ul>
+
+<h3>⑥ DensMAP: preserving local density</h3>
+<p>Narayan, Berger, Cho (2021, Nat Biotech) showed UMAP/t-SNE flatten cluster densities — losing "which cluster is denser." DensMAP adds a density-preservation term: per-point local density (1/kNN distance) must match between high and low dim.</p>
+<p>Single-cell use: preserves "rare cell types appear sparse on UMAP" — useful for CITE-seq and Perturb-seq rare subpopulation hunting.</p>
+
+<h3>⑦ Anchor-based large-scale reduction: LandmarkMDS, Ivis</h3>
+<p>For n &gt; 1M, even GPU t-SNE/UMAP struggles. Solutions:</p>
+<ul>
+<li><strong>LandmarkMDS:</strong> random or farthest-first pick of k landmarks, MDS on landmarks, triangulate remaining points.</li>
+<li><strong>Ivis (Szubert 2019, Sci Rep):</strong> Siamese network + triplet loss — generalizes to new samples (unlike t-SNE/UMAP, no need to refit). First choice for 1M+ mass cytometry.</li>
+<li><strong>OpenAI/Atlas-style:</strong> pretrained transformer encoders that directly output 2D — scales to 100M+ points.</li>
+</ul>
+
+<h3>⑧ Evaluation: trustworthiness, continuity, MRRE, RNX</h3>
+<p>"Is UMAP better than t-SNE?" is the wrong question. Quantify local vs. global preservation:</p>
+<ul>
+<li><strong>Trustworthiness:</strong> fraction of low-dim neighbors that are also high-dim neighbors (false positives).</li>
+<li><strong>Continuity:</strong> fraction of high-dim neighbors retained in low dim (false negatives).</li>
+<li><strong>MRRE:</strong> mean relative rank error over k-NN — smaller is better.</li>
+<li><strong>RNX curve (Lee & Verleysen 2013):</strong> evaluate across all k; AUC<sub>RNX</sub> gives a single score.</li>
+</ul>
+<p>Practice: run these metrics rather than judging by visual appearance.</p>
+
+<h3>⑨ Does the manifold hypothesis hold for scRNA-seq?</h3>
+<p>Key question: is the high-dim expression space really a low-dim manifold? Requires intrinsic dimensionality (ID) estimation:</p>
+<ul>
+<li><strong>Levina–Bickel (2004):</strong> MLE on kNN distance ratios.</li>
+<li><strong>TwoNN (Facco 2017):</strong> more robust — use only the ratio μ = r₂/r₁ of first two NN distances; follows a Pareto and fits in closed form.</li>
+<li><strong>Empirical:</strong> PBMC scRNA-seq has ID ≈ 8–12; hematopoiesis ID ≈ 15–25; early reprogramming &gt; 50. <strong>The manifold hypothesis roughly holds, but ID is higher than expected</strong> — explaining why forcing 2D loses information.</li>
+<li><strong>Chari & Pachter (2023, PLOS Comp Bio):</strong> harsh critique of 2D visualization — same data with different perplexity/seed gives different "stories." Recommendation: treat 2D plots as illustrations, not analysis tools.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="流形學習在生物資訊的具體案例" data-en="Concrete Manifold-Learning Applications">流形學習在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：PHATE on Hematopoiesis (Moon et al. 2019, Nature Biotechnology)</h3>
+<p>PHATE 的旗艦應用。對人類 bone marrow CD34+ scRNA-seq 跑 PHATE，同時呈現「主幹（multipotent progenitor）→ 分支（myeloid vs lymphoid vs erythroid）」結構。比較對照組：t-SNE 把分支折斷成獨立 islands；UMAP 把 trunk 拉成不自然的弧形。PHATE 也用於 embryoid body 分化、iPSC reprogramming，皆顯示其 trajectory-preserving 優勢。</p>
+
+<h3>🧬 案例 2：Palantir (Setty et al. 2019, Nature Biotechnology)</h3>
+<p>建立在 diffusion maps 上推 fate probability。對 CD34+ HSPC 資料：(1) 跑 diffusion maps 找 multi-scale fates；(2) 用 random walk 在 diffusion graph 上計算「給定 cell，到達各 terminal state 的機率」；(3) 對每個 fate 量「entropy」識別決定點。發現 GATA1 早期上升是 erythroid commitment 的關鍵。已成為 fate analysis 標準工具之一。</p>
+
+<h3>🧬 案例 3：Diffusion Pseudotime (Haghverdi et al. 2016, Nature Methods)</h3>
+<p>DPT 是 pseudotime 領域的奠基論文之一。核心：對 cell-cell similarity 跑 diffusion map，取 root cell 與其他 cell 的 diffusion distance 為 pseudotime。對 monocle1 (ICA-based)、Wanderlust (kNN graph) 等前期方法的進步：對 branching 結構穩健。已整合進 Scanpy 的 <code>sc.tl.dpt</code>。</p>
+
+<h3>🧬 案例 4：ForceAtlas2 + SPRING (Weinreb et al. 2018, PNAS)</h3>
+<p>SPRING 用 force-directed layout 在 kNN graph 上做降維——physical simulation 把連通分量拉開、cluster 內部聚緊。在小鼠 hematopoiesis 與 Drosophila gastrulation 上顯示比 t-SNE 更能保留「lineage continuity」。其輕量級 web tool 是早期 single-cell 教學的標配。</p>
+
+<h3>🧬 案例 5：TriMap 在大規模 single-cell viral discovery</h3>
+<p>2023 年數個論文用 TriMap 對 SARS-CoV-2、Influenza 的 RNA-seq 序列空間做降維，找到傳統 phylogenetic tree 漏掉的「跨亞型重組事件」——TriMap 的 global preservation 保留遠緣樣本間的真實 distance，比 UMAP 更不易把不同 clade 的樣本混在一起。</p>
+
+<h3>🧬 案例 6：PaCMAP 在 cell atlas 規模</h3>
+<p>HCA (Human Cell Atlas) 1.5M cells 資料上，PaCMAP 比 UMAP 更能同時保留 organ-level structure 與 cell-type-level resolution。Tabula Sapiens 後續分析（2023）顯示 PaCMAP 上能直接讀出「同一細胞類型跨組織的相似度」，UMAP 上則被 batch effect 強制分離。</p>
+
+<h3>🧬 案例 7：Chari & Pachter (2023, PLOS Comp Bio) — 重要綜述</h3>
+<p>「The specious art of single-cell genomics」直接挑戰 UMAP/t-SNE 在 single-cell 的地位。展示：同樣的 PBMC 資料用 11 個不同 random seed 的 UMAP 給出 11 個「視覺上明顯不同」的圖。建議：把 2D plot 當作 sanity check，定量分析還是要在 high-dim 空間做。對整個 single-cell community 引發「降維方法選擇要更謹慎」的反省。</p>
+
+<h3>🧬 案例 8：BBKNN + UMAP for batch correction (Polański et al. 2019)</h3>
+<p>BBKNN（batch-balanced kNN）在建 kNN graph 時強制每個 batch 都有等量鄰居——把 batch effect 在 kNN level 消除，再跑 UMAP 得到 batch-mixed embedding。在 Tabula Muris、HLCA 等 cross-batch atlas 上是 baseline 方法之一。</p>
+
+<h3>🧬 案例 9：Ivis 在 mass cytometry</h3>
+<p>CyTOF 資料常 1–10M cells × 40+ markers。Ivis 用 Siamese network 訓練 embedding，新樣本可直接 inference（不必重訓）——這對 clinical pipeline 至關重要（每個病人來都不能重跑全部資料）。Szubert 2019 在 Sci Reports 比較 ivis vs UMAP vs t-SNE，在 generalization 與 speed 上顯著勝出。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: PHATE on Hematopoiesis (Moon et al. 2019, Nature Biotechnology)</h3>
+<p>PHATE's flagship application. On human bone-marrow CD34+ scRNA-seq, PHATE simultaneously shows the trunk (MPP) and the branches (myeloid, lymphoid, erythroid). Comparison: t-SNE fragments branches into islands; UMAP bends the trunk into an unnatural arc. PHATE also handles embryoid-body differentiation and iPSC reprogramming, demonstrating trajectory preservation.</p>
+
+<h3>🧬 Case 2: Palantir (Setty et al. 2019, Nature Biotechnology)</h3>
+<p>Diffusion-map based fate probability inference. On CD34+ HSPCs: (1) diffusion maps for multi-scale fates; (2) random walks on the diffusion graph compute "probability a cell reaches each terminal state"; (3) per-fate entropy locates decision points. Identified early GATA1 rise as the erythroid commitment driver. Now a standard fate analysis tool.</p>
+
+<h3>🧬 Case 3: Diffusion Pseudotime (Haghverdi et al. 2016, Nature Methods)</h3>
+<p>DPT is a foundational pseudotime paper. Core: diffusion map on cell-cell similarity, pseudotime = diffusion distance from root cell. Advance over Monocle1 (ICA) and Wanderlust (kNN): robust to branching. Integrated into Scanpy as <code>sc.tl.dpt</code>.</p>
+
+<h3>🧬 Case 4: ForceAtlas2 + SPRING (Weinreb et al. 2018, PNAS)</h3>
+<p>SPRING runs force-directed layout on the kNN graph — physical simulation separates components and tightens clusters. On mouse hematopoiesis and Drosophila gastrulation, beats t-SNE at preserving lineage continuity. The lightweight web tool became standard in single-cell tutorials.</p>
+
+<h3>🧬 Case 5: TriMap for large-scale viral discovery</h3>
+<p>Several 2023 papers used TriMap on SARS-CoV-2 and influenza RNA-seq sequence space, finding cross-subtype recombination events missed by phylogenetic trees. TriMap's global preservation keeps distal samples truly distal, avoiding UMAP's tendency to mix distant clades.</p>
+
+<h3>🧬 Case 6: PaCMAP at cell atlas scale</h3>
+<p>On HCA's 1.5M cells, PaCMAP preserves both organ-level structure and cell-type-level resolution better than UMAP. Tabula Sapiens follow-up (2023) showed PaCMAP reveals cross-tissue similarity of the same cell type, while UMAP forces batch-driven separation.</p>
+
+<h3>🧬 Case 7: Chari & Pachter (2023, PLOS Comp Bio) — Pivotal Critique</h3>
+<p>"The specious art of single-cell genomics" challenged UMAP/t-SNE's dominance. Showed the same PBMC data under 11 different random seeds gives 11 visually different UMAPs. Recommendation: treat 2D plots as sanity checks; do quantitative analysis in high dim. Sparked community-wide reflection on dimensionality reduction choices.</p>
+
+<h3>🧬 Case 8: BBKNN + UMAP for batch correction (Polański et al. 2019)</h3>
+<p>BBKNN (batch-balanced kNN) forces each batch to contribute equally to a cell's neighborhood — eliminating batch effect at the kNN level before UMAP. A baseline method on Tabula Muris, HLCA, and other cross-batch atlases.</p>
+
+<h3>🧬 Case 9: Ivis on mass cytometry</h3>
+<p>CyTOF data: 1–10M cells × 40+ markers. Ivis uses a Siamese network to learn an embedding that generalizes to new samples without refitting — crucial for clinical pipelines. Szubert 2019 (Sci Rep) showed Ivis beats UMAP/t-SNE on generalization and speed.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="流形學習還能改良 / 新解決哪些任務？" data-en="What Else Could Manifold Learning Improve?">流形學習還能改良 / 新解決哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Multi-scale diffusion 做 multi-resolution clustering</h3>
+<p>當前 Leiden 在單一 resolution 下分群——對「巢狀結構」（如 T cell 大群內含多個亞群）難以同時呈現。<strong>提案：</strong>對 diffusion map 跑多個 t 值（t=1, 5, 20, 100），對每個 t 做 spectral clustering，建立 hierarchical 結構。比現有 hierarchical clustering 強：t 參數有明確物理意義（時間尺度），且 multi-scale 結構是 data-driven 而非超參數選的。應用：腫瘤異質性、免疫 repertoire 階層分析。</p>
+
+<h3>🎯 2. PHATE + RNA velocity 整合可視化</h3>
+<p>scVelo 在 UMAP 上畫向量箭頭，但 UMAP 不保留 trajectory，velocity 方向常與真實 fate 不符。<strong>提案：</strong>把 RNA velocity 視為「修正 transition matrix」的訊號——P̃(i→j) = P(i→j) · exp(α · cos(velocity<sub>i</sub>, position<sub>j</sub>−position<sub>i</sub>))，再跑 PHATE。預期得到「velocity-aware PHATE embedding」，箭頭與軌跡形狀一致。對 hematopoiesis、neurogenesis 等系統可大幅改善 fate prediction 解讀性。</p>
+
+<h3>🎯 3. 跨切片 spatial PHATE</h3>
+<p>連續切片的 spatial transcriptomics（Visium、Stereo-seq）目前對每片獨立分析；跨切片的「3D 流形」建構困難。<strong>提案：</strong>把所有切片的 spots 視為點雲，距離 = α · spatial_distance（含切片 z 軸）+ (1−α) · expression_distance。跑 PHATE 得到 3D embedding，可同時呈現組織形態學與表現分群。應用：肝臟 zonation 3D 重建、發育胚胎 organogenesis 連續切片整合。</p>
+
+<h3>🎯 4. 多模態 PHATE — RNA + ATAC 共同 manifold</h3>
+<p>多模態整合（MOFA、totalVI）給出 joint latent，但通常用 linear factorization 找。<strong>提案：</strong>對 RNA kNN graph 與 ATAC kNN graph 做 weighted graph fusion（如 SNF, Wang 2014），再跑 diffusion + PHATE。優勢：(a) 非線性整合；(b) 對缺失模態 robust（partial modality 也可加入）；(c) 同時保留兩模態的 trajectory 訊號。</p>
+
+<h3>🎯 5. 跨物種 manifold 對應</h3>
+<p>把人類 hematopoiesis manifold 與小鼠 hematopoiesis manifold 對齊——目前用 SCENIC 找 conserved TF，但 manifold-level 比較未充分發展。<strong>提案：</strong>對兩物種分別跑 PHATE，得到 2D coordinates；用 Gromov–Wasserstein (見第 4 章 OT) 對齊兩個 manifold——找「結構對應」而非「點對點對應」。能識別人類特有 lineage branches、跨物種保守的 fate decision points。</p>
+
+<h3>🎯 6. scLLM embedding 後的「真實 manifold」評估</h3>
+<p>scGPT、Geneformer 的 latent space 號稱「保留生物結構」，但驗證方式多停留在 cell-type ARI。<strong>提案：</strong>對 ground-truth 資料（如有 lineage tracing 的 zebrafish embryo）的「原始表現空間」與「scLLM latent」分別跑 PHATE，用 trustworthiness/continuity 量化 latent 是否真的保留了 manifold 結構。可作為 scLLM 的新 benchmark，補充 cell-type 分類 accuracy。</p>
+
+<h3>🎯 7. Disease vs healthy 的 manifold geodesic</h3>
+<p>單細胞病理學常比較 disease vs healthy 的「平均表現」——但兩者在 manifold 上的「結構性差異」常被忽略。<strong>提案：</strong>對 healthy 與 disease 樣本合併跑 manifold 學習，計算每個 disease cell 在 manifold 上到「最近 healthy cell」的 geodesic distance（沿 manifold 而非歐式距離）。可量化「這個細胞偏離正常多遠」、識別「病理特有 fate branches」。應用：cancer progression、autoimmune disease cell states。</p>
+
+<h3>🎯 8. Perturbation 在 manifold 上的軌跡</h3>
+<p>Perturb-seq 量「擾動前後表現變化」，但傳統 DE 看不到「擾動把細胞推向哪個 fate」。<strong>提案：</strong>對 control 細胞建立 manifold，把 perturbed 細胞「投影」到 manifold 上，計算 (a) projection 偏移向量；(b) 沿 manifold 移動的 geodesic 路徑。比 differential expression 提供更多「動力學」訊息——能識別「哪個 perturbation 把細胞推向 erythroid，哪個推向 myeloid」。</p>
+
+<h3>🎯 9. 用 manifold curvature 找 transition states</h3>
+<p>Waddington landscape 上的「saddle point」對應 fate decision——這在 manifold 上對應 high curvature 區域。<strong>提案：</strong>對 diffusion-map 嵌入估計局部 Ricci curvature（Ollivier-Ricci on graph）。高 curvature 區域 = potential transition states。比現有的「pseudotime entropy peak」更穩健，且有明確幾何意義。應用：找 EMT transition states、HSC commitment points、neuronal fate decisions。</p>
+
+<h3>🎯 10. 主題模型 (topic models) + manifold 整合</h3>
+<p>scHPF、LDA 等主題模型給「軟分群」（每個細胞是 topics 的混合），但缺乏 trajectory 概念。<strong>提案：</strong>把 topic proportions 視為 simplex 上的點（K-1 維），跑 simplex-aware manifold learning（如 Aitchison geometry-based diffusion）。能同時保留「軟分群」與「軌跡」訊息——特別適合 reprogramming 等 intermediate state 多的系統。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Multi-scale diffusion for multi-resolution clustering</h3>
+<p>Leiden runs at one resolution — nested structures (e.g. a T-cell macro-cluster with subclusters) are hard to show together. <strong>Proposal:</strong> diffusion map at multiple t (1, 5, 20, 100), spectral cluster each, build a hierarchy. Better than standard hierarchical clustering: t has clear physical meaning (time scale), and the hierarchy is data-driven, not hyperparameter-chosen. Applications: tumor heterogeneity, immune repertoire hierarchy.</p>
+
+<h3>🎯 2. PHATE + RNA velocity integrated visualization</h3>
+<p>scVelo arrows are drawn on UMAP — but UMAP distorts trajectory, so arrows often mismatch real fate. <strong>Proposal:</strong> use RNA velocity to correct the transition matrix — P̃(i→j) = P(i→j) · exp(α · cos(velocity<sub>i</sub>, pos<sub>j</sub>−pos<sub>i</sub>)) — then run PHATE. Get a "velocity-aware PHATE" where arrows align with trajectory shape. Big win for hematopoiesis, neurogenesis fate interpretation.</p>
+
+<h3>🎯 3. Cross-section spatial PHATE</h3>
+<p>Serial-section spatial transcriptomics is currently analyzed per slide — 3D manifold reconstruction is hard. <strong>Proposal:</strong> all spots as point cloud with distance = α · spatial_distance (including z) + (1−α) · expression_distance. PHATE gives a 3D embedding co-displaying tissue morphology and expression. Applications: 3D liver zonation, embryonic organogenesis from serial sections.</p>
+
+<h3>🎯 4. Multi-modal PHATE — joint RNA + ATAC manifold</h3>
+<p>MOFA, totalVI give joint latents via linear factorization. <strong>Proposal:</strong> fuse RNA kNN and ATAC kNN graphs (SNF, Wang 2014) and run diffusion + PHATE. Advantages: nonlinear integration; robust to missing modalities; preserves trajectory in both.</p>
+
+<h3>🎯 5. Cross-species manifold correspondence</h3>
+<p>Aligning human and mouse hematopoiesis manifolds is currently done via conserved TFs (SCENIC) — manifold-level comparison is undeveloped. <strong>Proposal:</strong> run PHATE per species for 2D coords; align by Gromov–Wasserstein (Ch 4 OT) — structural matching, not point-to-point. Identifies human-specific branches and conserved fate decisions.</p>
+
+<h3>🎯 6. Evaluating the "true manifold" in scLLM embeddings</h3>
+<p>scGPT, Geneformer claim to preserve structure — usually only validated via cell-type ARI. <strong>Proposal:</strong> on a ground-truth dataset (e.g. zebrafish with lineage tracing), run PHATE on raw vs. scLLM latent; trustworthiness/continuity quantify true manifold preservation. A new scLLM benchmark.</p>
+
+<h3>🎯 7. Disease-vs-healthy manifold geodesic</h3>
+<p>Pathology usually compares mean expression — ignoring manifold-level structural difference. <strong>Proposal:</strong> co-embed healthy + disease, compute per disease cell the geodesic distance (along manifold, not Euclidean) to the nearest healthy cell. Quantifies "how far this cell deviates" and reveals disease-specific fate branches. Applications: cancer progression, autoimmune cell states.</p>
+
+<h3>🎯 8. Perturbation trajectories on the manifold</h3>
+<p>Perturb-seq measures pre/post expression but doesn't show which fate the perturbation pushes cells toward. <strong>Proposal:</strong> build a manifold on control cells; project perturbed cells; compute (a) projection offset vector and (b) geodesic path. Provides kinetic info beyond DE — distinguishes "this perturbation pushes erythroid, that one pushes myeloid."</p>
+
+<h3>🎯 9. Manifold curvature for transition states</h3>
+<p>Waddington saddle points = fate decisions = high curvature regions. <strong>Proposal:</strong> estimate Ollivier-Ricci curvature on the diffusion graph. High curvature = transition state candidates. More robust than "pseudotime entropy peak" with clear geometric meaning. Applications: EMT, HSC commitment, neuronal fate decisions.</p>
+
+<h3>🎯 10. Topic models + manifold integration</h3>
+<p>scHPF, LDA topic models give soft cluster assignments but no trajectory. <strong>Proposal:</strong> topic proportions live on a simplex (K-1 dim); run simplex-aware manifold learning (Aitchison-geometry diffusion). Co-preserves soft clusters and trajectory — ideal for reprogramming and other intermediate-state-rich systems.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'dm')">Python / scanpy</button>
+<button class="code-tab-btn" onclick="switchTab(this,'phate')">PHATE</button>
+<button class="code-tab-btn" onclick="switchTab(this,'mde')">PyMDE</button>
+</div>
+<div class="code-tab-content active" id="dm"><pre><span class="keyword">import</span> scanpy <span class="keyword">as</span> sc
+sc.pp.neighbors(adata, n_neighbors=<span class="num">30</span>)
+sc.tl.diffmap(adata, n_comps=<span class="num">15</span>)
+sc.pl.diffmap(adata, color=<span class="str">"celltype"</span>)</pre></div>
+<div class="code-tab-content" id="phate"><pre><span class="keyword">import</span> phate
+phate_op = phate.PHATE(knn=<span class="num">30</span>, t=<span class="str">"auto"</span>, decay=<span class="num">40</span>)
+Y = phate_op.fit_transform(adata.X)
+adata.obsm[<span class="str">"X_phate"</span>] = Y
+sc.pl.embedding(adata, <span class="str">"phate"</span>, color=<span class="str">"celltype"</span>)</pre></div>
+<div class="code-tab-content" id="mde"><pre><span class="keyword">import</span> pymde
+emb = pymde.preserve_neighbors(
+    adata.obsm[<span class="str">"X_pca"</span>],
+    constraint=pymde.Standardized(),
+    embedding_dim=<span class="num">2</span>
+).embed()</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Chari & Pachter (2023) 的主要警告是？</p><p data-lang="en">What did Chari & Pachter (2023) warn about?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. PCA 不可靠</span><span data-lang="en">A. PCA is unreliable</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. UMAP/t-SNE 視覺化可能誤導生物學解讀</span><span data-lang="en">B. UMAP/t-SNE plots can mislead biological interpretation</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. scRNA-seq 不準確</span><span data-lang="en">C. scRNA-seq is inaccurate</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. R 不適合單細胞</span><span data-lang="en">D. R unfit for single-cell</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Diffusion maps 嵌入空間的歐式距離近似於原空間的哪種距離？</p><p data-lang="en">Euclidean distance in diffusion maps embedding approximates which distance in original space?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Manhattan 距離</span><span data-lang="en">A. Manhattan distance</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Hamming 距離</span><span data-lang="en">B. Hamming distance</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Diffusion distance（隨機漫步多步轉移機率）</span><span data-lang="en">C. Diffusion distance (multi-step random walk transition)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Cosine 距離</span><span data-lang="en">D. Cosine distance</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="persistent-homology.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 5：TDA</span></a>
+<a href="rna-velocity.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 7：RNA velocity" data-en="Ch 7: RNA Velocity">Ch 7：RNA velocity</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// Synthetic two-trajectory dataset
+function genML(noise){const pts=[];const N=50;for(let i=0;i<N;i++){const t=i/(N-1);pts.push({t,branch:0,x:t*5,y:0.3*Math.sin(t*Math.PI*2)});}
+for(let i=0;i<N;i++){const t=i/(N-1);pts.push({t,branch:1,x:t*5,y:1+0.3*Math.cos(t*Math.PI*2)});}
+return pts.map(p=>({...p,x:p.x+(Math.random()-0.5)*noise,y:p.y+(Math.random()-0.5)*noise}));}
+
+function render(){const m=document.getElementById('mlMet').value;const noise=+document.getElementById('mlN').value;document.getElementById('mlVn').textContent=noise.toFixed(2);const pts=genML(noise);let X=pts.map(p=>p.x),Y=pts.map(p=>p.y);let cX,cY;
+if(m==='pca'){cX=X;cY=Y;}
+else if(m==='tsne'){cX=X.map((x,i)=>x+(pts[i].branch===0?-2:2)+(Math.random()-0.5)*0.5);cY=Y.map(y=>y+(Math.random()-0.5)*0.5);}
+else {cX=X;cY=pts.map(p=>p.branch===0?-0.5+0.1*p.t:0.5+0.1*p.t);}
+const xMin=Math.min(...cX),xMax=Math.max(...cX),yMin=Math.min(...cY),yMax=Math.max(...cY);const W=600,H=280;
+let svg='';for(let i=0;i<pts.length;i++){const px=40+((cX[i]-xMin)/(xMax-xMin+1e-9))*(W-80);const py=30+((cY[i]-yMin)/(yMax-yMin+1e-9))*(H-60);const color=pts[i].branch===0?'#1A6B5A':'#C8633C';svg+=`<circle cx="${px}" cy="${py}" r="3.5" fill="${color}" opacity="0.8"/>`;}
+document.getElementById('mlSvg').innerHTML=svg;
+const L=I18n.get();const msgs={pca:{zh:'PCA — 線性投影，兩條軌跡保留了相對位置與連續性。',en:'PCA — linear projection retains relative position and continuity.'},tsne:{zh:'t-SNE-like — 兩條軌跡被「擠」成兩團，連續結構消失了！這就是 UMAP/t-SNE 的常見扭曲。',en:'t-SNE-like — trajectories collapsed into two blobs; continuity is lost. Typical UMAP/t-SNE distortion.'},diff:{zh:'Diffusion — 軌跡的連續結構與分支點都被保留。',en:'Diffusion — continuity and branch points are preserved.'}};document.getElementById('mlMsg').innerHTML=msgs[m][L];}
+document.getElementById('mlMet').addEventListener('change',render);document.getElementById('mlN').addEventListener('input',render);document.addEventListener('langchange',render);render();
+
+window._QF={zh:{q1_y:'答對！這篇論文影響了整個 scRNA-seq 視覺化文化。',q1_n:'答案是 B。Chari & Pachter 警告 UMAP/t-SNE 可能誤導。',q2_y:'答對！這是 diffusion maps 的核心數學保證。',q2_n:'答案是 C。Diffusion distance 是 diffusion maps 的本質。'},en:{q1_y:'Correct! Hugely influential on scRNA-seq viz culture.',q1_n:'Answer is B. Chari & Pachter warn UMAP/t-SNE can mislead.',q2_y:'Correct! Core guarantee of diffusion maps.',q2_n:'Answer is C. Diffusion distance is the essence.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

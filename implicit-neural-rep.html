@@ -1,0 +1,571 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Implicit Neural Representations — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html" class="active">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 35 / 38</div><h1 data-zh="隱式神經表示 (Implicit Neural Representations)" data-en="Implicit Neural Representations (SIREN / NeRF)">隱式神經表示 (Implicit Neural Representations)</h1>
+<p class="subtitle" data-lang="zh">把一張影像、一個 3D 場、或一段蛋白質序列當作「座標 → 值」的函數，並讓神經網路自己學會這個函數——這就是 INR。SIREN (Sitzmann 2020) 用 sine activation、NeRF (Mildenhall 2020) 開啟 3D 重建新時代。解析度連續、記憶體緊湊、可微分——是 cryo-EM、spatial transcriptomics 的下一代表示。</p>
+<p class="subtitle" data-lang="en">Treat an image, 3D scene, or protein sequence as a function "coordinate → value", and let a neural net learn it — that's INR. SIREN (Sitzmann 2020) used sine activations; NeRF (Mildenhall 2020) opened a new era of 3D reconstruction. Continuous resolution, compact memory, fully differentiable — the next-generation representation for cryo-EM and spatial transcriptomics.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 grid 到 function：INR 的根本轉換" data-en="From Grids to Functions: The INR Shift">從 grid 到 function：INR 的根本轉換</h2>
+<div data-lang="zh">
+<p><strong>傳統表示 (explicit)：</strong>影像 = pixel grid（H × W × C）、3D 體 = voxel grid、protein = atom 座標 list。<strong>固定解析度</strong>，記憶體與解析度同步爆炸，且離散不可微。</p>
+<p><strong>INR (implicit) 表示：</strong>學一個 MLP f_θ : ℝ^d → ℝ^k，把座標 x 映到值（顏色、密度、SDF、表現量等）。<strong>整個資料 = 神經網路的權重 θ</strong>。</p>
+<ul>
+<li>任意解析度：可在任何 x 查詢——「512×512」與「4K」用相同 θ。</li>
+<li>記憶體緊湊：常見 MLP 約 0.5–5 MB，可比原始資料壓縮 10–100×。</li>
+<li>連續可微：可直接做 gradient、Laplacian——對物理約束、PDE-aware 應用很重要。</li>
+</ul>
+<p><strong>關鍵挑戰：標準 ReLU MLP 偏低頻 (spectral bias, Rahaman 2019)。</strong>用普通 MLP 學影像會得到模糊版——因為 ReLU 對高頻訊號收斂極慢。三個突破：</p>
+<ol>
+<li><strong>Positional encoding (NeRF, Mildenhall 2020, ECCV)：</strong>把座標 x 用 γ(x) = [sin(2^k π x), cos(2^k π x)]_{k=0..L} 映射到高頻 Fourier feature。</li>
+<li><strong>Fourier features (Tancik 2020, NeurIPS)：</strong>用隨機 Gaussian B 矩陣作 γ(x) = [sin(B x), cos(B x)]——Bandwidth 由 B 的方差控制。</li>
+<li><strong>SIREN (Sitzmann 2020, NeurIPS)：</strong>不用 positional encoding，直接把 activation 換成 sin(ω₀ · Wx + b)，配合特殊初始化。可同時表現高頻 + 連續導數，<strong>能解 PDE</strong>（如 wave / Helmholtz equation）。</li>
+</ol>
+</div>
+<div data-lang="en">
+<p><strong>Traditional (explicit) representation:</strong> image = pixel grid (H × W × C); 3D volume = voxel grid; protein = atom coordinate list. <strong>Fixed resolution</strong>; memory scales with resolution; discrete and non-differentiable.</p>
+<p><strong>INR (implicit) representation:</strong> learn an MLP f_θ : ℝ^d → ℝ^k mapping coordinate x to value (color, density, SDF, expression, etc.). <strong>The entire dataset = network weights θ.</strong></p>
+<ul>
+<li>Arbitrary resolution: queryable at any x — "512×512" and "4K" use the same θ.</li>
+<li>Compact memory: typical MLPs are 0.5–5 MB — 10–100× compression over raw data.</li>
+<li>Continuous, differentiable: direct access to gradients, Laplacians — important for physics-aware / PDE applications.</li>
+</ul>
+<p><strong>Key challenge: standard ReLU MLPs are biased toward low frequencies (spectral bias, Rahaman 2019).</strong> A plain MLP yields blurry images. Three breakthroughs:</p>
+<ol>
+<li><strong>Positional encoding (NeRF, Mildenhall 2020, ECCV):</strong> map x to γ(x) = [sin(2^k π x), cos(2^k π x)]_{k=0..L} — high-frequency Fourier features.</li>
+<li><strong>Fourier features (Tancik 2020, NeurIPS):</strong> random Gaussian matrix B, γ(x) = [sin(B x), cos(B x)] — bandwidth controlled by var(B).</li>
+<li><strong>SIREN (Sitzmann 2020, NeurIPS):</strong> drop positional encoding, replace activation with sin(ω₀ · Wx + b) with special initialization. Represents high frequencies + continuous derivatives — <strong>can solve PDEs</strong> (wave, Helmholtz).</li>
+</ol>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">∞</div><h4 data-zh="解析度無關" data-en="Resolution-free">解析度無關</h4><p data-lang="zh">在任意 x 查詢——一份權重支援任何解析度。</p><p data-lang="en">Query at any x — one model, all resolutions.</p></div>
+  <div class="card"><div class="card-icon">🗜️</div><h4 data-zh="壓縮表示" data-en="Compact memory">壓縮表示</h4><p data-lang="zh">神經權重 = 整個資料，常壓縮 10–100×。</p><p data-lang="en">Net weights are the data — 10–100× compression.</p></div>
+  <div class="card"><div class="card-icon">∂</div><h4 data-zh="連續可微" data-en="Differentiable">連續可微</h4><p data-lang="zh">可直接取 gradient / Laplacian，做 physics-aware 任務。</p><p data-lang="en">Direct gradient / Laplacian — physics-aware tasks.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="SIREN、NeRF、Hash grid、解 PDE" data-en="SIREN, NeRF, Hash Grids, Solving PDEs">SIREN、NeRF、Hash grid、解 PDE</h2>
+<div data-lang="zh">
+<p><strong>① NeRF (Mildenhall 2020)：</strong>把 5D 座標 (x, y, z, θ, φ)（3D 位置 + 視角）映到 (RGB, σ)（顏色 + density）。給定多張影像，沿視線做 volume rendering：</p>
+<p style="text-align:center;font-family:Georgia,serif;">C(r) = ∫ T(t) σ(r(t)) c(r(t), d) dt,   T(t) = exp(−∫_0^t σ ds)</p>
+<p>對 rendered C 與 ground truth pixel 比 MSE，反傳訓練 MLP。結果：從 ~100 張照片重建完整 3D 場景。生物應用：CryoDRGN 重建 cryo-EM 異質構象。</p>
+<p><strong>② SIREN (Sitzmann 2020)：</strong>activation = sin(ω₀ · Wx + b)，ω₀ ≈ 30。初始化：first layer W ~ U(−1/n, 1/n)、後續層 W ~ U(−√(6/n)/ω₀, √(6/n)/ω₀)——確保 forward signal 保持 N(0, 1)。SIREN 不僅表現高頻，<strong>導數也是 SIREN</strong>，可用 supervise 各階梯度（如 Eikonal equation: ‖∇f‖ = 1 學 SDF）。</p>
+<p><strong>③ Hash grid encoding (Müller et al. 2022, SIGGRAPH; Instant-NGP)：</strong>NeRF 訓練 hours~days；hash grid 用多解析度 spatial hash table 儲存 trainable feature vector，MLP 變成 tiny（2-layer）。<strong>訓練從 hours 縮短到秒級</strong>。原理：把 spectral bias 問題轉嫁給 hash grid（不同 hash resolution 對應不同頻率）。</p>
+<p><strong>④ Solving PDEs with INR (Physics-Informed NN, PINN, Raissi 2019; SIREN PDE)：</strong>把解 u(x, t) 表為 SIREN，loss = data fitting + PDE residual ‖∂u/∂t − F(u, ∇u)‖²。INR 的連續可微性讓 ∇u, Δu 直接由 autodiff 取得——無需 grid finite-difference。</p>
+<p><strong>⑤ Latent INR / Hyper-network：</strong>單一 INR 只能編一個信號。若有 N 個信號（如 N 張影像、N 個 cryo-EM particle），可用 hyper-network 預測 θ_i = h_φ(z_i)，z_i 為 latent code。CryoDRGN 即此架構，學連續異質性。</p>
+</div>
+<div data-lang="en">
+<p><strong>① NeRF (Mildenhall 2020):</strong> map 5D coordinate (x, y, z, θ, φ) (3D position + view) to (RGB, σ) (color + density). Given posed images, volume-render along rays:</p>
+<p style="text-align:center;font-family:Georgia,serif;">C(r) = ∫ T(t) σ(r(t)) c(r(t), d) dt,   T(t) = exp(−∫_0^t σ ds)</p>
+<p>MSE between rendered C and ground-truth pixels back-propagates through the MLP. Result: full 3D reconstruction from ~100 photos. Bio: CryoDRGN for heterogeneous cryo-EM.</p>
+<p><strong>② SIREN (Sitzmann 2020):</strong> activation = sin(ω₀ · Wx + b), ω₀ ≈ 30. Initialization: first layer W ~ U(−1/n, 1/n); deeper W ~ U(−√(6/n)/ω₀, √(6/n)/ω₀) — keeps forward signals N(0,1). SIREN represents high frequencies, and <strong>its derivatives are SIREN too</strong> — supervise any-order gradients (e.g., Eikonal ‖∇f‖ = 1 to learn SDFs).</p>
+<p><strong>③ Hash grid encoding (Müller et al. 2022, SIGGRAPH; Instant-NGP):</strong> NeRF takes hours-days; hash grids store trainable feature vectors in multi-resolution spatial hash tables, making the MLP tiny (2-layer). <strong>Training drops from hours to seconds.</strong> The spectral bias is delegated to the hash grid (different hash resolutions → different frequencies).</p>
+<p><strong>④ Solving PDEs with INR (PINN, Raissi 2019; SIREN PDE):</strong> represent u(x, t) as SIREN, loss = data fitting + PDE residual ‖∂u/∂t − F(u, ∇u)‖². INR continuity lets autodiff compute ∇u, Δu — no finite-difference grid needed.</p>
+<p><strong>⑤ Latent INR / hyper-networks:</strong> a single INR encodes one signal. For N signals (N images, N cryo-EM particles), a hyper-network predicts θ_i = h_φ(z_i) with z_i a latent code. CryoDRGN uses this for continuous heterogeneity.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為何 sine activation 行得通？</strong>(1) sin 的任意階導數仍是 sin（差個相位），所以高階導數可學習；(2) sin 是 oscillatory，可表現高頻；(3) Sitzmann 證明 SIREN 是 universal approximator——理論上等同 ReLU MLP。實務上 SIREN 對影像 PSNR 比 ReLU + PE 高 5–10 dB。</div>
+<div data-lang="en"><strong>Why does sine activation work?</strong> (1) Derivatives of sin are sin (phase-shifted), so higher-order derivatives stay trainable; (2) sin is oscillatory, captures high frequencies; (3) Sitzmann proved SIREN is a universal approximator — theoretically on par with ReLU. In practice SIREN beats ReLU+PE by 5–10 dB PSNR on images.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="2D 影像 INR：sample 點越多越像" data-en="2D Image INR: More Samples, Sharper Reconstruction">2D 影像 INR：sample 點越多越像</h2>
+<div data-lang="zh"><p>下方為簡化 INR：學一個 f(x, y) → 灰階值 的函數，逼近一張模式影像（同心環 + 斜線 + spot）。我們用 random Fourier features + 線性回歸（ridge）近似 SIREN/NeRF 行為。<strong>調整取樣數 M 與頻寬 B</strong>，觀察重建解析度。M 太少 → 模糊；B 太小 → 平滑；B 太大 → 過擬合。</p></div>
+<div data-lang="en"><p>Simplified INR below: learn f(x, y) → grayscale, fitting a pattern (concentric rings + diagonal + spot). Uses random Fourier features + ridge regression to approximate SIREN/NeRF behavior. <strong>Adjust the sample count M and bandwidth B</strong> — too few M is blurry; small B is over-smooth; large B over-fits.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="取樣點數 M" data-en="Samples M">M <span id="vM">300</span></label><input type="range" id="sM" min="40" max="1500" value="300" step="20"></div>
+<div class="slider-group"><label data-zh="Fourier 頻寬 B (σ)" data-en="Fourier bandwidth B (σ)">B <span id="vB">6.0</span></label><input type="range" id="sB" min="0.5" max="20" value="6" step="0.5"></div>
+<div class="slider-group"><label data-zh="Fourier features 數 K" data-en="# Fourier features K">K <span id="vK">64</span></label><input type="range" id="sK" min="8" max="128" value="64" step="8"></div>
+<button id="reseed" style="margin:8px 0 12px;padding:6px 14px;font-size:.85rem;border:1px solid var(--c-border);background:#fff;border-radius:6px;cursor:pointer;" data-zh="🎲 重抽 features" data-en="🎲 Re-sample features">🎲 重抽 features</button>
+<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;justify-content:center;">
+  <div style="text-align:center;"><div style="font-size:.85rem;color:var(--c-ink-light);margin-bottom:4px;" data-zh="真實影像 (target)" data-en="Target image">真實影像 (target)</div><canvas id="cvT" width="128" height="128" style="width:180px;height:180px;border:1px solid var(--c-border);image-rendering:pixelated;border-radius:4px;"></canvas></div>
+  <div style="text-align:center;"><div style="font-size:.85rem;color:var(--c-ink-light);margin-bottom:4px;" data-zh="取樣點 (training data)" data-en="Sample points">取樣點 (training data)</div><canvas id="cvS" width="128" height="128" style="width:180px;height:180px;border:1px solid var(--c-border);image-rendering:pixelated;border-radius:4px;"></canvas></div>
+  <div style="text-align:center;"><div style="font-size:.85rem;color:var(--c-ink-light);margin-bottom:4px;" data-zh="INR 重建" data-en="INR reconstruction">INR 重建</div><canvas id="cvR" width="128" height="128" style="width:180px;height:180px;border:1px solid var(--c-border);image-rendering:pixelated;border-radius:4px;"></canvas></div>
+</div>
+<div id="inrInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 INR？" data-en="When to use INR?">什麼時候用 INR？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>需要任意解析度</strong>——super-resolution、cryo-EM 連續解析、3D atlas 對齊。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>資料記憶體爆炸</strong>——4D fMRI、cryo-ET tomogram、whole-slide 影像。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>要做 physics-aware / PDE 約束</strong>——蛋白質動力學、化學反應動力 PDE。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>(1) 資料天然離散且無連續結構（如 SNP 表）；(2) 每個樣本都要重訓 INR——速度不夠（除非用 hyper-network）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Need arbitrary resolution</strong> — super-resolution, continuous cryo-EM, 3D atlas alignment.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Memory-explosive data</strong> — 4D fMRI, cryo-ET tomograms, whole-slide images.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Physics-aware / PDE constraints</strong> — protein dynamics, chemical kinetics PDEs.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>(1) Inherently discrete data with no continuous structure (e.g. SNP table); (2) Per-sample retraining is too slow (unless using a hyper-network).</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="INR 在 cryo-EM、空間轉錄體與分子" data-en="INR in Cryo-EM, Spatial Transcriptomics, Molecular">INR 在 cryo-EM、空間轉錄體與分子</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="CryoDRGN — 連續異質構象" data-en="CryoDRGN — continuous heterogeneity">CryoDRGN — 連續異質構象</h4>
+<p data-lang="zh">Zhong et al. (2021, Nature Methods) 把每個 cryo-EM particle 視為從 latent z 條件化的 INR 3D 密度：f(x | z) → density。相比 RELION 的 3D classification 必須離散切分，CryoDRGN 學連續構象空間——對 ribosome 動態、剪接體中間態極有用。</p>
+<p data-lang="en">Zhong et al. (2021, Nature Methods) treat each cryo-EM particle as an INR-conditioned 3D density: f(x | z) → density. Unlike RELION's discrete 3D classification, CryoDRGN learns continuous conformational space — invaluable for ribosomes, spliceosomes.</p></div>
+
+<div class="card"><h4 data-zh="iSTAR — spatial transcriptomics super-resolution" data-en="iSTAR — ST super-resolution">iSTAR — spatial transcriptomics super-resolution</h4>
+<p data-lang="zh">Ge et al. (2024, Nature Biotechnology) 把 Visium 的 55 μm spot 結合組織病理 H&amp;E 影像，學 f(x, y) → gene expression 的 INR，重建到 single-cell 解析度——突破光學限制。</p>
+<p data-lang="en">Ge et al. (2024, Nature Biotechnology) combine Visium 55 μm spots with H&amp;E histology to learn an INR f(x, y) → gene expression at single-cell resolution — breaking the optical limit.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質連續構象" data-en="Continuous protein conformation">蛋白質連續構象</h4>
+<p data-lang="zh">Jin et al. (2023, ICML), AlphaFold-3 (Abramson 2024, Nature) 都使用 INR-like 連續結構表示。把 protein 視為「殘基 index → 3D 座標」的函數，可學習 continuous backbone deformation——比離散原子座標 list 更可微、便於分子動力學整合。</p>
+<p data-lang="en">Jin et al. (2023, ICML), AlphaFold-3 (Abramson 2024, Nature) use INR-like continuous structural representations. Treating protein as "residue index → 3D coordinate" learns continuous backbone deformation — more differentiable than discrete atom lists, easier MD integration.</p></div>
+
+<div class="card"><h4 data-zh="4D 醫學影像壓縮" data-en="4D medical imaging compression">4D 醫學影像壓縮</h4>
+<p data-lang="zh">Sun et al. (2022) 與 NeuralCT (Reed 2021) 把 4D cardiac CT / dynamic MRI 表為 f(x, y, z, t) → density。比 H.265 影片壓縮率高、且可任意 time / spatial resampling，對 motion correction、low-dose CT 重建有顯著優勢。</p>
+<p data-lang="en">Sun et al. (2022) and NeuralCT (Reed 2021) represent 4D cardiac CT / dynamic MRI as f(x, y, z, t) → density. Higher compression than H.265, arbitrary time/space resampling — significant gains for motion correction and low-dose CT.</p></div>
+
+<div class="card"><h4 data-zh="NeRF microscopy reconstruction" data-en="NeRF microscopy reconstruction">NeRF microscopy reconstruction</h4>
+<p data-lang="zh">µ-NeRF / DeepFocus (Park 2022, Nat Methods) 把 light-field / focal-stack 微影像視為視角集合，用 NeRF 重建 3D 樣本（活體胚胎、organoid）。免去機械式 z-stack 掃描，速度與解析度同步提升。</p>
+<p data-lang="en">µ-NeRF / DeepFocus (Park 2022, Nat Methods) treat light-field / focal-stack microscopy as a view collection, NeRF-reconstructs 3D samples (live embryos, organoids). Skips mechanical z-stack, faster and higher resolution.</p></div>
+
+<div class="card"><h4 data-zh="Anatomic atlas 連續對齊" data-en="Continuous anatomic atlas">Anatomic atlas 連續對齊</h4>
+<p data-lang="zh">DEMIST / NeuroINR (Liu 2023) 把 atlas 表為 INR f(x) → tissue label，再透過 deformation INR φ(x; subject) 對齊每位 patient——比傳統 ANTs 線性 + B-spline 對齊更平滑、解析度更高。</p>
+<p data-lang="en">DEMIST / NeuroINR (Liu 2023) represent atlases as INRs f(x) → tissue label, with deformation INR φ(x; subject) per patient — smoother and higher-res than ANTs linear + B-spline.</p></div>
+
+<div class="card"><h4 data-zh="連續細胞軌跡 (cell trajectory)" data-en="Continuous cell trajectory">連續細胞軌跡 (cell trajectory)</h4>
+<p data-lang="zh">把 scRNA-seq trajectory pseudotime → expression 視為 INR f(t) → gene vector，可平滑插值缺漏 timepoint。Lopez et al. (2023, biorXiv) 結合 INR + VI 學連續細胞發育過程。</p>
+<p data-lang="en">Treat scRNA-seq pseudotime → expression as an INR f(t) → gene vector — smoothly interpolates missing timepoints. Lopez et al. (2023, bioRxiv) combine INR + VI to learn continuous development.</p></div>
+
+<div class="card"><h4 data-zh="Protein INR / SE(3) 表示" data-en="Protein INR / SE(3) representation">Protein INR / SE(3) 表示</h4>
+<p data-lang="zh">RFdiffusion (Watson 2023, Nature)、Chroma (Ingraham 2023, Nature) 把 protein 結構在 SE(3) INR 上表示，配合 diffusion model 做 de novo 設計——把 INR 從「scalar field」推到「SE(3) field」的延伸。</p>
+<p data-lang="en">RFdiffusion (Watson 2023, Nature), Chroma (Ingraham 2023, Nature) represent protein structure on SE(3) INR with diffusion for de novo design — extending INR from scalar to SE(3) fields.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="INR 的進階主題" data-en="Advanced INR Topics">INR 的進階主題</h2>
+<div data-lang="zh">
+<h3>① Spectral bias 與緩解策略</h3>
+<p>Rahaman et al. (2019, ICML) 證明 ReLU MLP 收斂高頻訊號比低頻慢很多。對影像、3D scene 都是致命缺陷。三條解方：(1) NeRF positional encoding；(2) SIREN sine activation；(3) hash grid。SIREN 同時解高頻 + 高階導數，但對非 oscillatory 場景（如 SDF 邊界）有時不如 hash grid 穩定。</p>
+
+<h3>② Neural Tangent Kernel (NTK) 視角</h3>
+<p>Tancik et al. (2020) 用 NTK 證明：positional encoding 等價於把網路 NTK 從低通變寬頻，因此學高頻變快。SIREN 的 NTK 更像 sinc——本質上是 ideal low-pass with sharp cutoff，所以高頻 / 低頻同樣學得快。</p>
+
+<h3>③ Hash grid vs 純 MLP</h3>
+<p>Müller (2022) Instant-NGP 用多解析度 (16 levels) hash grid + 2-layer MLP，把 NeRF 訓練時間從 hours → 秒級。代價：模型體積增大（hash table）、稍微 less 連續（hash 衝突）。實務：對速度敏感用 hash grid；對連續性敏感用 SIREN。</p>
+
+<h3>④ Generalizable INR (meta-learning)</h3>
+<p>單一 INR 只代表一個信號；要泛化到「N 個新樣本」需 meta-learn。MetaSDF (Sitzmann 2020)、Functa (Dupont 2022, ICML) 用 MAML / hyper-network 預測 INR 權重，使新樣本只需 few-shot 微調。</p>
+
+<h3>⑤ Diffusion + INR</h3>
+<p>HyperDiffusion (Erkoç 2023, ICCV) 直接在 INR 權重空間做 diffusion——生成新 3D 物體、protein 結構。與「在 voxel grid 上 diffusion」相比，模型更 compact、解析度可任意。</p>
+
+<h3>⑥ 解 PDE 的 PINN</h3>
+<p>Raissi, Perdikaris &amp; Karniadakis (2019, J Comput Phys) 提出 PINN：把 PDE 解 u(x, t) 表為 MLP，loss = data + PDE residual。INR 的可微性讓 ∇u, Δu autodiff 取得。生物應用：reaction-diffusion 模擬 morphogen 梯度、心臟電生理。SIREN 比 ReLU PINN 在高頻 PDE 收斂更好。</p>
+
+<h3>⑦ INR for inverse problems</h3>
+<p>當量測 y = A x + noise，把 x 表為 INR θ，最佳化 ‖A f_θ − y‖² 即可。對 MRI / CT / cryo-EM reconstruction 已成標配——比學習式 (supervised) 方法更具 generalization、無需大量配對訓練資料。</p>
+
+<h3>⑧ 缺點與失敗模式</h3>
+<p>(1) 訓練慢（除非 hash grid）；(2) 每個樣本 separate 訓練——不易 batch；(3) extrapolation 差——在 training coordinate 範圍外給出 unpredictable 值；(4) discrete event（如 cell boundary）邊緣可能模糊化。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Spectral bias and mitigations</h3>
+<p>Rahaman et al. (2019, ICML) showed ReLU MLPs converge to high frequencies much slower — fatal for images/3D scenes. Three fixes: (1) NeRF positional encoding; (2) SIREN sine activation; (3) hash grid. SIREN solves high frequencies + high-order derivatives but can be less stable than hash grids on non-oscillatory targets (e.g., SDFs).</p>
+
+<h3>② Neural Tangent Kernel (NTK) view</h3>
+<p>Tancik et al. (2020) prove via NTK that positional encoding broadens the network's NTK from low-pass to broadband — high frequencies learn faster. SIREN's NTK resembles a sinc — essentially an ideal low-pass with sharp cutoff, so high and low frequencies learn at similar rates.</p>
+
+<h3>③ Hash grid vs pure MLP</h3>
+<p>Müller (2022) Instant-NGP uses multi-resolution (16 levels) hash grid + 2-layer MLP, cutting NeRF training from hours to seconds. Trade: larger model (hash table), slight discontinuity (hash collisions). Rule: hash grid for speed; SIREN for continuity.</p>
+
+<h3>④ Generalizable INR (meta-learning)</h3>
+<p>One INR encodes one signal; for N new samples, meta-learn. MetaSDF (Sitzmann 2020), Functa (Dupont 2022, ICML) use MAML / hyper-networks to predict INR weights — new samples need only few-shot fine-tune.</p>
+
+<h3>⑤ Diffusion + INR</h3>
+<p>HyperDiffusion (Erkoç 2023, ICCV) runs diffusion in INR weight space — generates new 3D objects, protein structures. More compact and resolution-free than voxel-grid diffusion.</p>
+
+<h3>⑥ PDE-solving with PINN</h3>
+<p>Raissi, Perdikaris &amp; Karniadakis (2019, J Comput Phys): represent PDE solutions u(x, t) as MLPs, loss = data + PDE residual. INR's differentiability gives ∇u, Δu via autodiff. Bio: morphogen reaction-diffusion, cardiac electrophysiology. SIREN converges better than ReLU PINN on high-frequency PDEs.</p>
+
+<h3>⑦ INR for inverse problems</h3>
+<p>Given y = A x + noise, represent x as INR θ, optimize ‖A f_θ − y‖². Standard for MRI / CT / cryo-EM — better generalization than supervised methods, no paired training data needed.</p>
+
+<h3>⑧ Failure modes</h3>
+<p>(1) Slow training (unless hash grid); (2) per-sample training, hard to batch; (3) poor extrapolation outside training coordinates; (4) discrete events (cell boundaries) may blur.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="INR 還能改良哪些任務？" data-en="What Else Could INR Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. INR-based whole-slide image 壓縮 + 病理 AI</h3>
+<p>Whole-slide image 動輒 100 GB。<strong>提案：</strong>每張 slide 訓練 INR (≈ 50 MB)，做壓縮儲存、任意縮放查看；下游病理 AI 直接在 INR weight space 做 classification。</p>
+
+<h3>🎯 2. 連續多解析度單細胞圖譜</h3>
+<p>Cell Atlas 累計上百萬細胞。<strong>提案：</strong>學 f(x, type, age) → expression INR，做連續細胞圖譜——可在任意 cell-type embedding 點查詢預期表現量。</p>
+
+<h3>🎯 3. INR + diffusion 做 de novo small molecule</h3>
+<p>分子座標連續可微，但離散 SMILES 不易直接 diffusion。<strong>提案：</strong>用 SE(3) INR + diffusion 在連續分子場上生成新藥分子，配合 docking score 條件控制。</p>
+
+<h3>🎯 4. 連續 spatial-omics integration</h3>
+<p>Visium、Xenium、CODEX 解析度不同。<strong>提案：</strong>用統一 INR 表示 spatial multi-modal，每模態走自己的 head，學連續對齊。</p>
+
+<h3>🎯 5. 4D protein dynamics INR</h3>
+<p>MD trajectories 龐大但連續。<strong>提案：</strong>INR f(residue, t) → 3D 座標 壓縮 trajectory + 平滑插值，比 cluster 法保留更多連續構象。</p>
+
+<h3>🎯 6. INR-driven federated medical imaging</h3>
+<p>各醫院 imaging 量大且 privacy 敏感。<strong>提案：</strong>本地訓練 INR、只分享 INR weights（小）做聯邦學習，比共享 raw image 更隱私安全。</p>
+
+<h3>🎯 7. INR as biological PDE solver</h3>
+<p>Reaction-diffusion (Turing pattern)、tumor growth PDE、心臟電生理。<strong>提案：</strong>SIREN PINN 直接學動態解 + 物理約束，可用 sparse 病人資料微調，比 finite-element solver 更靈活。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. INR-based whole-slide compression + pathology AI</h3>
+<p>WSIs are 100 GB+. <strong>Proposal:</strong> train per-slide INRs (~50 MB) for compression + arbitrary-zoom viewing; downstream pathology AI runs directly in INR weight space.</p>
+
+<h3>🎯 2. Continuous multi-resolution single-cell atlas</h3>
+<p>Atlases reach millions of cells. <strong>Proposal:</strong> learn f(x, type, age) → expression INR — query expected expression at any point in cell-type embedding.</p>
+
+<h3>🎯 3. INR + diffusion for de novo small molecules</h3>
+<p>Molecular coordinates are continuous; discrete SMILES is hard to diffuse. <strong>Proposal:</strong> SE(3) INR + diffusion in continuous molecular fields, with docking-score conditioning.</p>
+
+<h3>🎯 4. Continuous spatial-omics integration</h3>
+<p>Visium, Xenium, CODEX differ in resolution. <strong>Proposal:</strong> a unified INR for spatial multi-modal, per-modality heads, continuous alignment.</p>
+
+<h3>🎯 5. 4D protein dynamics INR</h3>
+<p>MD trajectories are huge but continuous. <strong>Proposal:</strong> INR f(residue, t) → 3D coordinate compresses trajectory + smooth interpolation, preserving continuous states.</p>
+
+<h3>🎯 6. INR-driven federated medical imaging</h3>
+<p>Hospital imaging is large and privacy-sensitive. <strong>Proposal:</strong> train INRs locally, federate only small INR weights — more private than raw image sharing.</p>
+
+<h3>🎯 7. INR as biological PDE solver</h3>
+<p>Reaction-diffusion (Turing), tumor growth, cardiac electrophysiology. <strong>Proposal:</strong> SIREN PINNs learn dynamics + physics, fine-tuneable from sparse patient data — more flexible than finite-element solvers.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / SIREN (PyTorch)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / Fourier features</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / tiny-cuda-nn hash</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py4')">Python / SIREN PDE (PINN)</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install torch siren-pytorch</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> siren_pytorch <span class="keyword">import</span> SirenNet
+
+<span class="comment"># SIREN: f(x, y) -&gt; RGB (3 channels)</span>
+net = SirenNet(
+    dim_in = <span class="num">2</span>,           <span class="comment"># 2D coord</span>
+    dim_hidden = <span class="num">256</span>,
+    dim_out = <span class="num">3</span>,          <span class="comment"># RGB</span>
+    num_layers = <span class="num">5</span>,
+    w0_initial = <span class="num">30.</span>      <span class="comment"># SIREN omega_0</span>
+)
+
+<span class="comment"># Train: image as (coord, color) supervised pairs</span>
+H, W = <span class="num">256</span>, <span class="num">256</span>
+ys, xs = torch.meshgrid(torch.linspace(-<span class="num">1</span>,<span class="num">1</span>,H), torch.linspace(-<span class="num">1</span>,<span class="num">1</span>,W), indexing=<span class="str">'ij'</span>)
+coords = torch.stack([xs, ys], dim=-<span class="num">1</span>).reshape(-<span class="num">1</span>, <span class="num">2</span>)
+target = image.reshape(-<span class="num">1</span>, <span class="num">3</span>)
+
+opt = torch.optim.Adam(net.parameters(), lr=<span class="num">1e-4</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">5000</span>):
+    out = net(coords)
+    loss = ((out - target)**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()
+
+<span class="comment"># Query at any resolution (e.g. 1024x1024) using same weights!</span></pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> FourierFeatures(nn.Module):
+    <span class="str">"""Tancik 2020: Gaussian RFF"""</span>
+    <span class="keyword">def</span> __init__(self, d_in, n_feat=<span class="num">128</span>, sigma=<span class="num">10.</span>):
+        super().__init__()
+        self.B = nn.Parameter(torch.randn(d_in, n_feat) * sigma,
+                              requires_grad=<span class="keyword">False</span>)   <span class="comment"># fixed!</span>
+    <span class="keyword">def</span> forward(self, x):
+        proj = <span class="num">2</span> * torch.pi * x @ self.B
+        <span class="keyword">return</span> torch.cat([torch.sin(proj), torch.cos(proj)], -<span class="num">1</span>)
+
+<span class="keyword">class</span> INR(nn.Module):
+    <span class="keyword">def</span> __init__(self):
+        super().__init__()
+        self.ff = FourierFeatures(<span class="num">2</span>, <span class="num">128</span>, sigma=<span class="num">10.</span>)
+        self.mlp = nn.Sequential(
+            nn.Linear(<span class="num">256</span>, <span class="num">256</span>), nn.ReLU(),
+            nn.Linear(<span class="num">256</span>, <span class="num">256</span>), nn.ReLU(),
+            nn.Linear(<span class="num">256</span>, <span class="num">3</span>))
+    <span class="keyword">def</span> forward(self, x):
+        <span class="keyword">return</span> self.mlp(self.ff(x))</pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="comment"># pip install tinycudann (NVIDIA Instant-NGP)</span>
+<span class="keyword">import</span> tinycudann <span class="keyword">as</span> tcnn
+
+<span class="comment"># Multi-resolution hash grid encoding + tiny MLP</span>
+model = tcnn.NetworkWithInputEncoding(
+    n_input_dims=<span class="num">3</span>,        <span class="comment"># (x, y, z) for NeRF</span>
+    n_output_dims=<span class="num">4</span>,       <span class="comment"># RGB + density</span>
+    encoding_config={
+        <span class="str">"otype"</span>: <span class="str">"HashGrid"</span>,
+        <span class="str">"n_levels"</span>: <span class="num">16</span>,
+        <span class="str">"n_features_per_level"</span>: <span class="num">2</span>,
+        <span class="str">"log2_hashmap_size"</span>: <span class="num">19</span>,
+        <span class="str">"base_resolution"</span>: <span class="num">16</span>,
+        <span class="str">"per_level_scale"</span>: <span class="num">1.5</span>},
+    network_config={
+        <span class="str">"otype"</span>: <span class="str">"FullyFusedMLP"</span>,
+        <span class="str">"activation"</span>: <span class="str">"ReLU"</span>,
+        <span class="str">"output_activation"</span>: <span class="str">"None"</span>,
+        <span class="str">"n_neurons"</span>: <span class="num">64</span>,
+        <span class="str">"n_hidden_layers"</span>: <span class="num">2</span>})
+
+<span class="comment"># Trains in seconds, not hours</span></pre></div>
+
+<div class="code-tab-content" id="py4"><pre><span class="comment"># Solving 1D wave equation with SIREN PINN</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> siren_pytorch <span class="keyword">import</span> SirenNet
+
+net = SirenNet(dim_in=<span class="num">2</span>, dim_hidden=<span class="num">128</span>, dim_out=<span class="num">1</span>, num_layers=<span class="num">5</span>, w0_initial=<span class="num">30.</span>)
+
+<span class="keyword">def</span> wave_residual(xt):
+    xt.requires_grad_(<span class="keyword">True</span>)
+    u = net(xt)
+    g = torch.autograd.grad(u.sum(), xt, create_graph=<span class="keyword">True</span>)[<span class="num">0</span>]
+    u_x, u_t = g[..., <span class="num">0</span>:<span class="num">1</span>], g[..., <span class="num">1</span>:<span class="num">2</span>]
+    u_xx = torch.autograd.grad(u_x.sum(), xt, create_graph=<span class="keyword">True</span>)[<span class="num">0</span>][..., <span class="num">0</span>:<span class="num">1</span>]
+    u_tt = torch.autograd.grad(u_t.sum(), xt, create_graph=<span class="keyword">True</span>)[<span class="num">0</span>][..., <span class="num">1</span>:<span class="num">2</span>]
+    c = <span class="num">1.0</span>
+    <span class="keyword">return</span> (u_tt - c**<span class="num">2</span> * u_xx)**<span class="num">2</span>      <span class="comment"># wave equation residual</span>
+
+<span class="comment"># Loss = data fit + PDE residual + BC/IC</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">隱式神經表示 (INR) 把資料表示為什麼？</p><p data-lang="en">What does an Implicit Neural Representation (INR) represent data as?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 一個固定 H×W grid</span><span data-lang="en">A. A fixed H×W grid</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 一個 sparse JSON</span><span data-lang="en">B. A sparse JSON</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 一個從座標到值的可學函數 f_θ(x)</span><span data-lang="en">C. A learned function f_θ(x) from coordinates to values</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 一個 random forest 集合</span><span data-lang="en">D. A random forest ensemble</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼 SIREN 用 sine activation 比 ReLU 好？</p><p data-lang="en">Why is SIREN's sine activation better than ReLU?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. sin 比 ReLU 計算便宜</span><span data-lang="en">A. sin is cheaper than ReLU</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. sin 表現高頻 + 任意階導數仍是 sin，可學高頻 + 監督任意階梯度</span><span data-lang="en">B. sin captures high frequencies + its derivatives stay sin, enabling high-freq learning and high-order gradient supervision</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. sin 不需要訓練</span><span data-lang="en">C. sin doesn't need training</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. sin 是非線性、ReLU 是線性</span><span data-lang="en">D. sin is nonlinear, ReLU is linear</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">CryoDRGN (Zhong 2021) 如何用 INR 改良 cryo-EM？</p><p data-lang="en">How does CryoDRGN (Zhong 2021) use INR to improve cryo-EM?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 用 latent-conditioned INR 學連續構象空間，而非離散 3D classes</span><span data-lang="en">A. Uses latent-conditioned INR to learn continuous conformational space, not discrete 3D classes</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 用 INR 加速 PCR amplification</span><span data-lang="en">B. Uses INR to accelerate PCR amplification</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 用 INR 取代質譜儀</span><span data-lang="en">C. Replaces mass spec with INR</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. INR 與 cryo-EM 無關</span><span data-lang="en">D. INR has nothing to do with cryo-EM</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="wavelets-multires.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 34：Wavelets" data-en="Ch 34: Wavelets">Ch 34：Wavelets</span></a>
+<a href="dpp.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 36：DPP" data-en="Ch 36: DPP">Ch 36：DPP</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: 2D image INR with random Fourier features + ridge regression =====
+const PX=128;
+
+// Target image: concentric rings + diagonal stripe + corner spot
+function targetVal(x,y){
+  // x,y in [-1,1]
+  const r=Math.hypot(x,y);
+  const rings=0.5+0.5*Math.cos(8*Math.PI*r);
+  const diag=Math.exp(-((x-y)*(x-y))*8)*0.8;
+  const spot=Math.exp(-(((x-0.55)**2+(y+0.45)**2))*40);
+  const v=0.45*rings+0.35*diag+0.5*spot;
+  return Math.max(0,Math.min(1,v));
+}
+
+function drawTarget(){
+  const c=document.getElementById('cvT');const ctx=c.getContext('2d');
+  const img=ctx.createImageData(PX,PX);
+  for(let j=0;j<PX;j++)for(let i=0;i<PX;i++){
+    const x=(i/(PX-1))*2-1,y=(j/(PX-1))*2-1;
+    const v=Math.round(targetVal(x,y)*255);
+    const k=4*(j*PX+i);
+    img.data[k]=v;img.data[k+1]=v;img.data[k+2]=v;img.data[k+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+}
+drawTarget();
+
+let B=null;  // Fourier feature matrix shape (K x 2)
+let phases=null; // length K (random b)
+let lastK=null,lastSigma=null;
+function reseedFeat(){
+  const K=+document.getElementById('sK').value;
+  const sigma=+document.getElementById('sB').value;
+  B=[];phases=[];
+  // Gaussian
+  function g(){const u=Math.random()||1e-9,v=Math.random()||1e-9;return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+  for(let k=0;k<K;k++){B.push([g()*sigma,g()*sigma]);phases.push(Math.random()*2*Math.PI);}
+  lastK=K;lastSigma=sigma;
+}
+reseedFeat();
+
+function feat(x,y){
+  // [cos(B x + b), sin(B x + b), 1]
+  const phi=new Array(2*B.length+1);
+  for(let k=0;k<B.length;k++){
+    const a=B[k][0]*x+B[k][1]*y+phases[k];
+    phi[2*k]=Math.cos(a);
+    phi[2*k+1]=Math.sin(a);
+  }
+  phi[2*B.length]=1;
+  return phi;
+}
+
+// Solve ridge regression for weight vector w
+function ridgeSolve(X, y, lam){
+  // X: M x D, y: M; returns w: D
+  const M=X.length, D=X[0].length;
+  // A = X^T X + lam I, b = X^T y
+  const A=Array.from({length:D},()=>new Array(D).fill(0));
+  const b=new Array(D).fill(0);
+  for(let m=0;m<M;m++){
+    const xm=X[m],ym=y[m];
+    for(let i=0;i<D;i++){
+      const xi=xm[i];
+      b[i]+=xi*ym;
+      for(let j=i;j<D;j++)A[i][j]+=xi*xm[j];
+    }
+  }
+  for(let i=0;i<D;i++){for(let j=i+1;j<D;j++)A[j][i]=A[i][j];A[i][i]+=lam;}
+  // Solve via Gaussian elimination
+  for(let i=0;i<D;i++){
+    let piv=i;for(let p=i+1;p<D;p++)if(Math.abs(A[p][i])>Math.abs(A[piv][i]))piv=p;
+    if(piv!==i){[A[i],A[piv]]=[A[piv],A[i]];[b[i],b[piv]]=[b[piv],b[i]];}
+    const d=A[i][i];if(Math.abs(d)<1e-12)continue;
+    for(let j=i;j<D;j++)A[i][j]/=d;b[i]/=d;
+    for(let p=0;p<D;p++)if(p!==i){const f=A[p][i];for(let j=i;j<D;j++)A[p][j]-=f*A[i][j];b[p]-=f*b[i];}
+  }
+  return b;
+}
+
+let lastSamples=null;
+function render(){
+  const M=+document.getElementById('sM').value;
+  const K=+document.getElementById('sK').value;
+  const sigma=+document.getElementById('sB').value;
+  document.getElementById('vM').textContent=M;
+  document.getElementById('vB').textContent=sigma.toFixed(1);
+  document.getElementById('vK').textContent=K;
+
+  if(K!==lastK||sigma!==lastSigma)reseedFeat();
+
+  // Sample M points uniformly in [-1,1]^2
+  const X=[],y=[],pts=[];
+  for(let i=0;i<M;i++){
+    const xx=Math.random()*2-1,yy=Math.random()*2-1;
+    pts.push([xx,yy]);
+    X.push(feat(xx,yy));
+    y.push(targetVal(xx,yy));
+  }
+  lastSamples=pts;
+
+  // Ridge regression
+  const w=ridgeSolve(X,y,0.01);
+
+  // Render INR
+  const cR=document.getElementById('cvR').getContext('2d');
+  const imgR=cR.createImageData(PX,PX);
+  let mse=0,n=0;
+  for(let j=0;j<PX;j++)for(let i=0;i<PX;i++){
+    const x=(i/(PX-1))*2-1,yy=(j/(PX-1))*2-1;
+    const phi=feat(x,yy);
+    let v=0;for(let k=0;k<phi.length;k++)v+=phi[k]*w[k];
+    const tv=targetVal(x,yy);
+    mse+=(v-tv)*(v-tv);n++;
+    v=Math.max(0,Math.min(1,v));
+    const px=Math.round(v*255);
+    const kk=4*(j*PX+i);
+    imgR.data[kk]=px;imgR.data[kk+1]=px;imgR.data[kk+2]=px;imgR.data[kk+3]=255;
+  }
+  cR.putImageData(imgR,0,0);
+
+  // Render sample points (on target grayscale background, light)
+  const cS=document.getElementById('cvS').getContext('2d');
+  const imgS=cS.createImageData(PX,PX);
+  for(let j=0;j<PX;j++)for(let i=0;i<PX;i++){
+    const kk=4*(j*PX+i);
+    imgS.data[kk]=245;imgS.data[kk+1]=242;imgS.data[kk+2]=232;imgS.data[kk+3]=255;
+  }
+  pts.forEach(p=>{
+    const xi=Math.round((p[0]+1)/2*(PX-1));
+    const yi=Math.round((p[1]+1)/2*(PX-1));
+    const v=Math.round(targetVal(p[0],p[1])*255);
+    for(let dj=-1;dj<=1;dj++)for(let di=-1;di<=1;di++){
+      const ii=xi+di,jj=yi+dj;
+      if(ii<0||ii>=PX||jj<0||jj>=PX)continue;
+      const kk=4*(jj*PX+ii);
+      imgS.data[kk]=v;imgS.data[kk+1]=v;imgS.data[kk+2]=v;imgS.data[kk+3]=255;
+    }
+  });
+  cS.putImageData(imgS,0,0);
+
+  mse/=n;
+  const psnr=10*Math.log10(1/Math.max(mse,1e-10));
+
+  const L=I18n.get();
+  document.getElementById('inrInfo').innerHTML=L==='zh'?
+    `用 ${M} 個座標-值對訓練，${K} 個 Fourier features（頻寬 σ = ${sigma.toFixed(1)}）。<br>重建 PSNR ≈ <strong>${psnr.toFixed(2)} dB</strong>，MSE ≈ <strong>${mse.toFixed(5)}</strong>。<br>觀察：(1) M 增加→ INR 學到更多細節；(2) B 太小→ 高頻丟失（模糊）；(3) B 太大→ 過擬合 / 雜訊化。這就是 NeRF / SIREN 必須要平衡的「spectral bias」trade-off。`
+    :
+    `Trained on ${M} (coord, value) pairs with ${K} Fourier features (bandwidth σ = ${sigma.toFixed(1)}).<br>Reconstruction PSNR ≈ <strong>${psnr.toFixed(2)} dB</strong>, MSE ≈ <strong>${mse.toFixed(5)}</strong>.<br>Observations: (1) more M → more detail; (2) too small B → high-freq lost (blur); (3) too large B → over-fit / noisy. This is exactly the "spectral bias" trade-off NeRF / SIREN balance.`;
+}
+
+document.getElementById('sM').addEventListener('input',render);
+document.getElementById('sB').addEventListener('input',render);
+document.getElementById('sK').addEventListener('input',render);
+document.getElementById('reseed').addEventListener('click',()=>{reseedFeat();render();});
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！INR 把資料表為從座標到值的函數，由神經網路權重編碼。',
+  q1_n:'答案是 C。INR 學一個函數 f_θ(x)，資料 = 網路權重。',
+  q2_y:'答對！sin 既能表現高頻、又有可微的高階導數。',
+  q2_n:'答案是 B。sin 對高頻訊號收斂快，且任意階導數仍是 sin，可監督高階梯度。',
+  q3_y:'答對！CryoDRGN 用 latent-conditioned INR 學連續構象。',
+  q3_n:'答案是 A。CryoDRGN 把 cryo-EM 重建從離散 class 推到連續構象空間。'
+},en:{
+  q1_y:'Correct! INR encodes data as a learned function f_θ(x).',
+  q1_n:'Answer is C. INR learns f_θ(x); the data IS the network weights.',
+  q2_y:'Correct! sin captures high frequencies and has differentiable derivatives.',
+  q2_n:'Answer is B. sin converges to high-frequency signals fast and its derivatives stay sin — enabling high-order gradient supervision.',
+  q3_y:'Correct! CryoDRGN uses latent-conditioned INR to learn continuous conformations.',
+  q3_n:'Answer is A. CryoDRGN shifts cryo-EM reconstruction from discrete classes to continuous conformational space.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

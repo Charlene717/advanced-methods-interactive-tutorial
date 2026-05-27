@@ -1,0 +1,606 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Active Learning / Bayesian Optimization — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html" class="active">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 20 / 26</div><h1 data-zh="主動學習 / 貝氏優化" data-en="Active Learning / Bayesian Optimization">主動學習 / 貝氏優化</h1>
+<p class="subtitle" data-lang="zh">當每次實驗都很貴 — Perturb-seq、藥物 screen、CRISPR library — 用 GP + acquisition function 智慧地選下一個要做的實驗。從 100 次標記學會傳統需要 10,000 次的內容。</p>
+<p class="subtitle" data-lang="en">When each experiment is expensive — Perturb-seq, drug screens, CRISPR libraries — use GP + acquisition functions to intelligently choose the next experiment. Learn from 100 labels what would normally need 10,000.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="昂貴函數的最佳化問題" data-en="Optimization of Expensive Functions">昂貴函數的最佳化問題</h2>
+<div data-lang="zh">
+<p>給定一個昂貴函數 f: X → ℝ（每次 query 可能要 $5000 或一週實驗），目標 argmax<sub>x</sub> f(x)，同時最小化 query 次數。傳統 grid search、random search 在 d ≥ 5 維就完全失效。</p>
+<p><strong>貝氏優化（Bayesian Optimization, BO）</strong>的精神：</p>
+<ol>
+<li><strong>Surrogate model：</strong>用便宜的代理模型（通常是 Gaussian Process）擬合到目前已測過的點。GP 給出每個 x 的「預測均值 μ(x)」+「不確定性 σ(x)」。</li>
+<li><strong>Acquisition function：</strong>α(x) 決定下一個該 query 哪個 x。結合 exploitation（μ 高的地方）與 exploration（σ 高的地方）。</li>
+<li><strong>迭代：</strong>選 x* = argmax α(x)，做實驗得 y*，更新 GP，重複。</li>
+</ol>
+<p><strong>主動學習（Active Learning, AL）</strong>是同一精神的不同包裝：給有限 label budget，每次選「最有資訊量」的樣本去標記。BO 是針對「找最大值」的特例；AL 更廣（找最大不確定性、最大模型改進等）。</p>
+</div>
+<div data-lang="en">
+<p>Given expensive f: X → ℝ (each query costs $5000 or a week), find argmax<sub>x</sub> f(x) with minimum queries. Grid / random search fail at d ≥ 5.</p>
+<p><strong>Bayesian Optimization (BO)</strong>:</p>
+<ol>
+<li><strong>Surrogate model:</strong> cheap proxy (typically a Gaussian Process) fit to measured points. GP gives predicted mean μ(x) + uncertainty σ(x).</li>
+<li><strong>Acquisition function:</strong> α(x) decides next query — balances exploitation (high μ) and exploration (high σ).</li>
+<li><strong>Iterate:</strong> select x* = argmax α(x), measure y*, update GP, repeat.</li>
+</ol>
+<p><strong>Active Learning (AL)</strong> is the same idea: with a limited label budget, query the most informative samples. BO is the special case for finding maxima; AL is broader (max uncertainty, max model improvement).</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">💰</div><h4 data-zh="樣本效率" data-en="Sample efficiency">樣本效率</h4><p data-lang="zh">10–100× 少的 query 達到同等優化效果。</p><p data-lang="en">10–100× fewer queries for the same optimization result.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="探索 ↔ 開發" data-en="Explore ↔ Exploit">探索 ↔ 開發</h4><p data-lang="zh">acquisition function 智慧平衡兩者。</p><p data-lang="en">Acquisition function balances both intelligently.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="不確定量化" data-en="Uncertainty">不確定量化</h4><p data-lang="zh">GP 給每個 x 的 μ + σ，是真正的 calibrated uncertainty。</p><p data-lang="en">GP provides calibrated μ + σ at every x — real uncertainty quantification.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="GP 與 Acquisition Functions" data-en="GP and Acquisition Functions">GP 與 Acquisition Functions</h2>
+<div data-lang="zh">
+<h3>① Gaussian Process Regression</h3>
+<p>GP 假設 f(x) 在任意有限點集上服從多元高斯分布。給定 kernel k(x, x')（衡量相似度，常用 RBF/Matérn），看過資料 D = {(x<sub>i</sub>, y<sub>i</sub>)} 後，對新點 x* 的後驗：</p>
+<p style="text-align:center;font-family:Georgia,serif;">μ(x*) = k* · (K + σ²I)<sup>−1</sup> y</p>
+<p style="text-align:center;font-family:Georgia,serif;">σ²(x*) = k(x*,x*) − k* · (K + σ²I)<sup>−1</sup> k*<sup>T</sup></p>
+<p>其中 K<sub>ij</sub> = k(x<sub>i</sub>, x<sub>j</sub>)，k* = [k(x*, x<sub>1</sub>), ..., k(x*, x<sub>n</sub>)]。複雜度 O(n³) 因矩陣反轉——大樣本要用 sparse GP、inducing points 等技巧。</p>
+
+<h3>② 主要 Acquisition Functions</h3>
+<ul>
+<li><strong>Expected Improvement (EI)：</strong>EI(x) = E[max(0, f(x) − f*)] 其中 f* 為目前已知最佳。封閉解：EI(x) = σ(x) · [Z·Φ(Z) + φ(Z)], Z = (μ(x) − f*)/σ(x)。</li>
+<li><strong>Upper Confidence Bound (UCB)：</strong>UCB(x) = μ(x) + β·σ(x)。β 控制 exploration 強度，理論上 β ∝ √log(t) 給 sublinear regret 保證 (Srinivas 2010, ICML)。</li>
+<li><strong>Thompson Sampling (TS)：</strong>從 GP 後驗抽樣一個 f̃，取 argmax f̃。自然的隨機探索，在多 batch 場景表現好。</li>
+<li><strong>Probability of Improvement (PI)：</strong>PI(x) = Φ((μ(x) − f*)/σ(x))。簡單但偏 exploitation。</li>
+<li><strong>Knowledge Gradient (KG)：</strong>考慮「knowing y will help future decisions」。理論上最 sample-efficient，但計算很貴。</li>
+</ul>
+
+<h3>③ Batch BO（並行 query）</h3>
+<p>當實驗可以並行（96-well plate、Perturb-seq batch），需要選 q 個 query 點。難點：選同一批 q 個點不能太相似。</p>
+<ul>
+<li><strong>q-EI (Wang & Clark 2016)：</strong>多點期望改進的 Monte Carlo 估計。</li>
+<li><strong>Local penalization (Gonzalez 2016)：</strong>已選點周圍 penalize acquisition。</li>
+<li><strong>DPP-based diverse selection：</strong>用 determinantal point process 強制多樣性。</li>
+</ul>
+
+<h3>④ Multi-objective BO（Pareto front）</h3>
+<p>實際生物 task 常有多目標：efficacy + toxicity + cost。MOBO 找 Pareto front 而非單點：</p>
+<ul>
+<li><strong>ParEGO：</strong>scalarize 多目標為單目標。</li>
+<li><strong>EHVI (Expected Hypervolume Improvement)：</strong>直接最大化 Pareto front 覆蓋面積。</li>
+<li><strong>qEHVI：</strong>batch 版本（Daulton 2020, NeurIPS）。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>① Gaussian Process Regression</h3>
+<p>GP assumes f(x) is jointly Gaussian over any finite set. With kernel k(x, x') (RBF/Matérn typically) and data D = {(x<sub>i</sub>, y<sub>i</sub>)}, posterior for new x*:</p>
+<p style="text-align:center;font-family:Georgia,serif;">μ(x*) = k* · (K + σ²I)<sup>−1</sup> y</p>
+<p style="text-align:center;font-family:Georgia,serif;">σ²(x*) = k(x*,x*) − k* · (K + σ²I)<sup>−1</sup> k*<sup>T</sup></p>
+<p>where K<sub>ij</sub> = k(x<sub>i</sub>, x<sub>j</sub>), k* = [k(x*, x<sub>1</sub>), ..., k(x*, x<sub>n</sub>)]. O(n³) for inversion — large n needs sparse GP, inducing points.</p>
+
+<h3>② Major Acquisition Functions</h3>
+<ul>
+<li><strong>Expected Improvement (EI):</strong> EI(x) = E[max(0, f(x) − f*)] with f* current best. Closed form: EI(x) = σ(x) · [Z·Φ(Z) + φ(Z)], Z = (μ(x) − f*)/σ(x).</li>
+<li><strong>Upper Confidence Bound (UCB):</strong> UCB(x) = μ(x) + β·σ(x). β controls exploration; β ∝ √log(t) gives sublinear regret (Srinivas 2010, ICML).</li>
+<li><strong>Thompson Sampling (TS):</strong> sample f̃ from GP posterior, take argmax. Natural stochastic exploration, excels in batch settings.</li>
+<li><strong>Probability of Improvement (PI):</strong> PI(x) = Φ((μ(x) − f*)/σ(x)). Simple but exploitation-biased.</li>
+<li><strong>Knowledge Gradient (KG):</strong> "knowing y will help future decisions". Most sample-efficient theoretically but expensive.</li>
+</ul>
+
+<h3>③ Batch BO (parallel queries)</h3>
+<p>When experiments parallelize (96-well plate, Perturb-seq batch), select q points. Challenge: q points must not be too similar.</p>
+<ul>
+<li><strong>q-EI (Wang & Clark 2016):</strong> Monte Carlo multi-point EI.</li>
+<li><strong>Local penalization (Gonzalez 2016):</strong> penalize acquisition near already-selected points.</li>
+<li><strong>DPP-based diverse selection:</strong> determinantal point process enforces diversity.</li>
+</ul>
+
+<h3>④ Multi-objective BO (Pareto front)</h3>
+<p>Real biology has multi-objectives: efficacy + toxicity + cost. MOBO finds the Pareto front:</p>
+<ul>
+<li><strong>ParEGO:</strong> scalarize to single objective.</li>
+<li><strong>EHVI:</strong> directly maximize Pareto front hypervolume.</li>
+<li><strong>qEHVI:</strong> batch version (Daulton 2020, NeurIPS).</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="1D BO 動畫：看 GP + Acquisition 找最大值" data-en="1D BO Animation: GP + Acquisition Finding the Max">1D BO 動畫：看 GP + Acquisition 找最大值</h2>
+<div data-lang="zh"><p>真實函數（虛線）未知，BO 從少量初始點開始，每次依 acquisition 選下一個 query 點。觀察 GP 的不確定區域（陰影）如何縮小，新點如何往最大值靠近。可切換不同 acquisition function。</p></div>
+<div data-lang="en"><p>True function (dashed) is unknown; BO starts from few initial points and uses acquisition to pick the next query. Watch the GP uncertainty band (shaded) shrink as new points zoom in on the maximum. Try different acquisition functions.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="Acquisition function" data-en="Acquisition function">Acquisition function</label>
+  <select id="acqType" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="ei" selected>Expected Improvement (EI)</option>
+    <option value="ucb">UCB (β=2)</option>
+    <option value="pi">Probability of Improvement (PI)</option>
+    <option value="ts">Thompson Sampling</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="已選 query 數" data-en="Queries made">已選 query 數 <span id="vN">3</span></label><input type="range" id="sN" min="3" max="20" value="3" step="1"></div>
+<svg id="boSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div style="display:flex;gap:14px;margin-top:8px;font-size:.85rem;flex-wrap:wrap;">
+  <span><span style="display:inline-block;width:16px;height:3px;background:#1a6b5a;vertical-align:middle;"></span> GP mean μ(x)</span>
+  <span><span style="display:inline-block;width:16px;height:10px;background:rgba(26,107,90,0.2);vertical-align:middle;"></span> ±2σ uncertainty</span>
+  <span><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #c0392b;vertical-align:middle;"></span> True f(x)</span>
+  <span><span style="display:inline-block;width:16px;height:3px;background:#7c3aed;vertical-align:middle;"></span> Acquisition α(x)</span>
+  <span style="color:#000;">● query points &nbsp; ★ next pick</span>
+</div>
+<div id="boInfo" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="BO / AL 在生命科學的應用" data-en="BO / AL in Life Sciences">BO / AL 在生命科學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="LaMBO — 蛋白質設計 (Stanton 2022, ICML)" data-en="LaMBO — Protein Design (Stanton 2022, ICML)">LaMBO</h4>
+<p data-lang="zh">用 BO + denoising autoencoder 在離散序列空間做 protein optimization。在 GFP brightness、antibody binding 上以 100× 少實驗達到 wet lab 等同效能。後續 LaMBO-2 (2023) 加入 multi-objective（folding stability + binding）。</p>
+<p data-lang="en">BO + denoising autoencoder for protein optimization in discrete sequence space. 100× fewer experiments to match wet-lab efficacy on GFP brightness, antibody binding. LaMBO-2 (2023) adds multi-objective (folding stability + binding).</p></div>
+
+<div class="card"><h4 data-zh="BoTorch + GPyTorch" data-en="BoTorch + GPyTorch">BoTorch + GPyTorch</h4>
+<p data-lang="zh">Meta/Stanford 出品的 BO 工業框架 — Ax 是其 UX 層。已被 Pfizer、Genentech 用於 reaction optimization、drug screening、bioprocess optimization。配合 PyTorch 後端可擴展至 GP 之外的代理模型。</p>
+<p data-lang="en">Meta/Stanford industrial BO framework; Ax is the UX layer. Used by Pfizer, Genentech for reaction optimization, drug screening, bioprocess optimization. PyTorch backend supports non-GP surrogates.</p></div>
+
+<div class="card"><h4 data-zh="COMETS — Combinatorial CRISPR" data-en="COMETS — Combinatorial CRISPR">COMETS</h4>
+<p data-lang="zh">在組合 CRISPR screen 中，可能 sgRNA 對數為 ⁾20000²/2 ≈ 2億，wet lab 跑不完。COMETS (Najm 2024, Nat Biotech) 用 BO 主動學習 epistasis，從 10⁴ 組合預測 10⁸ 中真實 synergy。</p>
+<p data-lang="en">Combinatorial CRISPR screens have ~200M possible pairs. COMETS (Najm 2024, Nat Biotech) uses BO to actively learn epistasis — predicts synergy across 10⁸ pairs from just 10⁴ measurements.</p></div>
+
+<div class="card"><h4 data-zh="主動 Perturb-seq 設計" data-en="Active Perturb-seq Design">主動 Perturb-seq 設計</h4>
+<p data-lang="zh">下一個 Perturb-seq 該打哪些基因？Roohani et al. (2024, Nat Biotech) 提出 active learning framework：用現有 perturbation 資料訓模型，acquisition 選「最有資訊量」的 gene perturbation，10× 減少實驗成本。</p>
+<p data-lang="en">Which genes to perturb next? Roohani et al. (2024, Nat Biotech): active-learning framework using existing perturbation data; acquisition picks "most informative" gene perturbations — 10× cost reduction.</p></div>
+
+<div class="card"><h4 data-zh="Adaptive Drug Screening" data-en="Adaptive Drug Screening">Adaptive Drug Screening</h4>
+<p data-lang="zh">Ahuja et al. (2024) 在 NCI-60 cancer cell line panel 上用 BO 主動選 drug × cell line 配對 — 預測 cross-cell-line synergy。配合 PRISM 大型 screen，從 1% 標記學會 80% 的 IC50 landscape。</p>
+<p data-lang="en">Ahuja et al. (2024) on NCI-60 cancer panel: BO actively selects drug × cell line pairs to predict cross-cell synergy. With PRISM data, learns 80% of IC50 landscape from 1% labeled.</p></div>
+
+<div class="card"><h4 data-zh="Spatial 主動成像" data-en="Spatial active imaging">Spatial 主動成像</h4>
+<p data-lang="zh">MERFISH、Visium 全切片成像耗時 + 昂貴。主動式：先掃 10% 區域，BO 選下一個要掃的「資訊密集」區域。對 sparse signal (rare cell types in tissue) 特別有效。</p>
+<p data-lang="en">MERFISH/Visium whole-slide imaging is slow + expensive. Active version: scan 10% first, BO picks next "information-dense" region. Especially powerful for sparse signals (rare cell types in tissue).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="BO 的進階主題與最新動向" data-en="Advanced BO Topics &amp; Latest">BO 的進階主題與最新動向</h2>
+
+<div data-lang="zh">
+<h3>① 高維 BO 的挑戰</h3>
+<p>GP 在 d ≥ 20 維上不靈光（curse of dimensionality）。解決方案：</p>
+<ul>
+<li><strong>REMBO / LineBO：</strong>假設 f 有 low-dim active subspace，BO 在投影空間進行。</li>
+<li><strong>TuRBO (Eriksson 2019, NeurIPS)：</strong>trust region BO，在局部小區域擬合 GP。</li>
+<li><strong>SAASBO (Eriksson 2021, AISTATS)：</strong>用 sparse axis-aligned subspace prior，自動選 important dims。</li>
+<li><strong>Deep Kernel Learning：</strong>NN 學 embedding，GP 在 embedding 上做。對 protein, molecule 等結構化輸入有效。</li>
+</ul>
+
+<h3>② 離散與結構化空間</h3>
+<p>蛋白質序列、SMILES、CRISPR sgRNA 都是離散字串，無法直接做 GP。方案：</p>
+<ul>
+<li><strong>Latent Space BO：</strong>VAE 學 continuous latent，BO 在 latent 進行（LaMBO、ChemBO）。</li>
+<li><strong>String kernel：</strong>直接在序列上定義 kernel（k-mer overlap、edit distance）。</li>
+<li><strong>Surrogate ≠ GP：</strong>用 NN ensemble、Bayesian NN 作為代理。對大型離散空間更實用。</li>
+</ul>
+
+<h3>③ 隨成本變化的 BO（Cost-aware BO）</h3>
+<p>真實實驗中 query 成本未必相等：高分辨率 MERFISH 比低分辨率貴 10×；某些 CRISPR target 比其他更難 clone。<strong>Cost-aware BO</strong> (Snoek 2012, Lee 2020) 加入成本模型，最大化 expected improvement per unit cost。</p>
+
+<h3>④ Multi-fidelity BO</h3>
+<p>有 cheap proxy（模擬、in silico screen）與 expensive ground truth（wet lab）時。<strong>BOCA、qMF-EI</strong> 用低保真度資料加速優化，只在關鍵點用 expensive query。對 drug discovery 至關重要——分子 docking 廉價，cell-based assay 昂貴。</p>
+
+<h3>⑤ Safe BO</h3>
+<p>實驗失敗可能很貴（病人試藥）。Safe BO 在 query 前驗證「機率 ≥ 1−δ 安全」(Sui 2015, ICML)。對 clinical trial design 與 robot lab 都重要。</p>
+
+<h3>⑥ 與 Reinforcement Learning 的關係</h3>
+<p>BO ≈ 連續 stateless bandit；RL ≈ stateful bandit。對 sequential experimental design（每次實驗影響下一個的 state），可用 model-based RL 取代純 BO。Bagchi (2024) 展示 RL-based experiment design 在 multi-step Perturb-seq 表現勝 BO。</p>
+
+<h3>⑦ GP 之外的代理模型</h3>
+<ul>
+<li><strong>Deep Ensemble：</strong>多個 NN 的 std 作為 uncertainty。對大數據與高維輸入更實用。</li>
+<li><strong>Bayesian NN：</strong>Stochastic Weight Averaging Gaussian (SWAG)、Hamiltonian MC 等。</li>
+<li><strong>Random Forest with quantile regression：</strong>樹模型 + 分位數估計做不確定性。</li>
+</ul>
+
+<h3>⑧ Active Learning 的不同 query strategies</h3>
+<p>除 BO 的「找最大值」外，AL 有其他策略：</p>
+<ul>
+<li><strong>Uncertainty sampling：</strong>選最不確定樣本標記。</li>
+<li><strong>Query by Committee：</strong>多個模型最不一致的樣本。</li>
+<li><strong>Expected Model Change：</strong>標記後模型參數變化最大的樣本。</li>
+<li><strong>Core-set selection：</strong>能代表整個資料分布的最小子集。</li>
+<li><strong>BALD (Houlsby 2011)：</strong>Bayesian Active Learning by Disagreement — 在 Bayesian NN 框架下衡量 information gain。</li>
+</ul>
+
+<h3>⑨ 與 Conformal 的結合</h3>
+<p>用 conformal prediction 給 BO 的 surrogate 加 calibrated uncertainty — 替代 GP 的 Gaussian 假設。Stanton et al. (2023) 提出 conformal Bayesian optimization，對 misspecified prior 更穩健。</p>
+</div>
+
+<div data-lang="en">
+<h3>① High-Dimensional BO Challenges</h3>
+<p>GPs struggle at d ≥ 20 (curse of dimensionality). Remedies:</p>
+<ul>
+<li><strong>REMBO / LineBO:</strong> assume f has low-dim active subspace; BO in projection.</li>
+<li><strong>TuRBO (Eriksson 2019, NeurIPS):</strong> trust-region BO, local GP fit.</li>
+<li><strong>SAASBO (Eriksson 2021, AISTATS):</strong> sparse axis-aligned subspace prior; auto-select important dims.</li>
+<li><strong>Deep Kernel Learning:</strong> NN learns embedding, GP on embedding. Effective for protein, molecule inputs.</li>
+</ul>
+
+<h3>② Discrete and Structured Spaces</h3>
+<p>Protein sequences, SMILES, CRISPR sgRNAs are discrete — can't run GP directly. Solutions:</p>
+<ul>
+<li><strong>Latent Space BO:</strong> VAE learns continuous latent; BO in latent (LaMBO, ChemBO).</li>
+<li><strong>String kernels:</strong> kernel defined on sequences (k-mer overlap, edit distance).</li>
+<li><strong>Surrogate ≠ GP:</strong> NN ensemble or Bayesian NN — more practical for huge discrete spaces.</li>
+</ul>
+
+<h3>③ Cost-aware BO</h3>
+<p>Real query costs vary: high-res MERFISH costs 10× low-res; some CRISPR targets are harder to clone. Cost-aware BO (Snoek 2012, Lee 2020) adds a cost model, maximizes expected improvement per unit cost.</p>
+
+<h3>④ Multi-fidelity BO</h3>
+<p>Cheap proxy (simulation, in silico screen) + expensive ground truth (wet lab). BOCA, qMF-EI use low-fidelity data to accelerate optimization — critical for drug discovery (cheap docking, expensive cell assays).</p>
+
+<h3>⑤ Safe BO</h3>
+<p>Failed experiments can be costly (patient trials). Safe BO (Sui 2015, ICML) verifies "≥ 1−δ probability safe" before query — important for clinical trial design and robotic labs.</p>
+
+<h3>⑥ Connection to Reinforcement Learning</h3>
+<p>BO ≈ continuous stateless bandit; RL ≈ stateful bandit. For sequential experimental design where each experiment changes state, model-based RL can replace pure BO. Bagchi (2024) shows RL-based experiment design beats BO on multi-step Perturb-seq.</p>
+
+<h3>⑦ Beyond GP Surrogates</h3>
+<ul>
+<li><strong>Deep Ensemble:</strong> NN ensemble's std as uncertainty. Better for big-data, high-dim inputs.</li>
+<li><strong>Bayesian NN:</strong> SWAG, Hamiltonian MC, etc.</li>
+<li><strong>RF + quantile regression:</strong> tree models with quantile-based uncertainty.</li>
+</ul>
+
+<h3>⑧ Active Learning Query Strategies</h3>
+<p>Beyond BO's max-finding, AL has other strategies:</p>
+<ul>
+<li><strong>Uncertainty sampling:</strong> pick most uncertain samples.</li>
+<li><strong>Query by Committee:</strong> samples where multiple models disagree most.</li>
+<li><strong>Expected Model Change:</strong> samples whose label would shift parameters most.</li>
+<li><strong>Core-set selection:</strong> smallest set representing the full distribution.</li>
+<li><strong>BALD (Houlsby 2011):</strong> Bayesian Active Learning by Disagreement — info gain in BNN.</li>
+</ul>
+
+<h3>⑨ Combining with Conformal</h3>
+<p>Conformal prediction provides calibrated uncertainty to BO surrogates — replaces GP's Gaussian assumption. Stanton et al. (2023) propose conformal Bayesian optimization, robust to misspecified priors.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="BO/AL 還能改良哪些任務？" data-en="What Else Can BO/AL Improve?">BO/AL 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 下一個 Perturb-seq 該打哪些基因？</h3>
+<p>有 ~2 萬個 protein-coding gene，但只能打 ~1000 個。用 BO 從現有 Perturb-seq 資料學 surrogate，selectively pick next batch of targets that maximize information about gene regulatory network structure。<strong>提案：</strong>active Perturb-seq pipeline，與 scGen 等 prediction model 結合。</p>
+
+<h3>🎯 2. 下一個藥物候選與劑量</h3>
+<p>給定 chemical space + ADMET constraints + efficacy target，用 multi-objective BO 找 Pareto-optimal candidates。<strong>提案：</strong>integrated drug discovery loop — in silico screen → BO → wet lab → iterate。</p>
+
+<h3>🎯 3. 最有資訊量的 Patient Sample</h3>
+<p>Biobank 有 50 萬樣本但只能 deep-profile 5000 個。BO 主動選「最會改善現有模型」的 sample — 偏重邊界 case、minority populations、phenotype outliers。提升 polygenic risk model 跨人種 calibration。</p>
+
+<h3>🎯 4. Rare Cell Type Discovery via Active Outlier Detection</h3>
+<p>用 BO 引導的 outlier detection — 在 atlas-scale scRNA-seq 中主動探索 "uncertain" 區域。每次發現新 rare cell type 後更新 surrogate，繼續找其他 hidden populations。</p>
+
+<h3>🎯 5. Optimal Experimental Design 跨組織 Atlas</h3>
+<p>給定 tissue × condition × technology 的 3D budget grid，BO 選下一個該做的組合 — 最大化整個 atlas 的 coverage 與 quality。<strong>提案：</strong>HuBMAP / HCA 的 adaptive sampling scheduler。</p>
+
+<h3>🎯 6. CRISPR sgRNA Library Design</h3>
+<p>對 genome-wide library 用 BO 主動選 sgRNA：考慮 efficacy prediction + off-target risk + sequence diversity。比 random library 少 50% 數量達同等 hit rate。</p>
+
+<h3>🎯 7. Protein Engineering 的 Directed Evolution</h3>
+<p>取代隨機 mutagenesis，用 BO 在序列空間導航。LaMBO 已展示，但可推廣到 antibody affinity maturation、enzyme thermostability optimization 等任務。</p>
+
+<h3>🎯 8. Spatial Transcriptomics 主動採樣</h3>
+<p>稀疏 spatial omics（如 single-cell Hi-C）無法 full coverage。BO 從 sparse scan 預測「最有資訊量的下一個 cell/location」。對 patient biopsy 樣本特別重要（樣本量有限）。</p>
+
+<h3>🎯 9. Multi-Omics Modality Selection</h3>
+<p>給定 RNA、ATAC、protein、methylation 四種模態，每種預算不同。BO 決定「為了某個 cell type characterization，哪些模態最有資訊量」。降低不必要 multi-omics 成本。</p>
+
+<h3>🎯 10. Hyperparameter Tuning for scLLMs</h3>
+<p>scGPT、Geneformer 的 fine-tuning 有大量 hyperparameters（learning rate, batch size, masking rate, vocabulary size）。BO 用 validation performance 作目標函數，幾十次 trial 找到最佳組合。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Which Genes to Perturb Next?</h3>
+<p>~20k protein-coding genes but only ~1000 perturbed. BO trains a surrogate on existing Perturb-seq data; acquisition picks targets maximizing info about GRN structure. <strong>Proposal:</strong> active Perturb-seq pipeline coupled with scGen-style predictors.</p>
+
+<h3>🎯 2. Next Drug Candidate & Dose</h3>
+<p>Multi-objective BO over chemical space + ADMET + efficacy → Pareto candidates. <strong>Proposal:</strong> integrated drug discovery loop — in silico → BO → wet lab → iterate.</p>
+
+<h3>🎯 3. Most Informative Patient Sample</h3>
+<p>Biobanks have 500k samples but only 5k can be deep-profiled. BO actively picks samples that most improve current models — boundary cases, minority populations, phenotype outliers. Improves cross-ethnicity polygenic risk calibration.</p>
+
+<h3>🎯 4. Rare Cell Type Discovery via Active Outlier Detection</h3>
+<p>BO-guided outlier detection in atlas-scale scRNA-seq — actively explores "uncertain" regions. After each novel rare type found, update surrogate to find more hidden populations.</p>
+
+<h3>🎯 5. Optimal Experimental Design for Atlases</h3>
+<p>BO selects next combination on tissue × condition × technology budget grid to maximize atlas coverage and quality. <strong>Proposal:</strong> HuBMAP / HCA adaptive sampling scheduler.</p>
+
+<h3>🎯 6. CRISPR sgRNA Library Design</h3>
+<p>BO selects sgRNAs for genome-wide libraries balancing efficacy + off-target risk + sequence diversity. 50% smaller libraries with equal hit rate vs random.</p>
+
+<h3>🎯 7. Directed Evolution for Protein Engineering</h3>
+<p>Replace random mutagenesis with BO-driven sequence-space navigation. LaMBO showed promise; extendable to antibody affinity maturation, enzyme thermostability.</p>
+
+<h3>🎯 8. Active Spatial Transcriptomics Sampling</h3>
+<p>Sparse spatial omics (single-cell Hi-C) can't fully cover. BO from sparse scans predicts the next-most-informative cell/location. Critical for limited patient biopsies.</p>
+
+<h3>🎯 9. Multi-Omics Modality Selection</h3>
+<p>For RNA/ATAC/protein/methylation with different costs, BO picks which modalities most inform a given cell-type characterization — cuts unnecessary multi-omics costs.</p>
+
+<h3>🎯 10. Hyperparameter Tuning for scLLMs</h3>
+<p>scGPT, Geneformer have many tuning knobs (LR, batch size, mask rate, vocab). BO uses validation performance as objective — finds best combos in tens of trials.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'botorch1')">BoTorch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'skopt1')">scikit-optimize</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scratch1')">GP from scratch</button>
+</div>
+
+<div class="code-tab-content active" id="botorch1"><pre><span class="comment"># pip install botorch gpytorch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> botorch.models <span class="keyword">import</span> SingleTaskGP
+<span class="keyword">from</span> botorch.fit <span class="keyword">import</span> fit_gpytorch_mll
+<span class="keyword">from</span> botorch.acquisition <span class="keyword">import</span> ExpectedImprovement
+<span class="keyword">from</span> gpytorch.mlls <span class="keyword">import</span> ExactMarginalLogLikelihood
+
+<span class="comment"># Initial data</span>
+train_X = torch.rand(<span class="num">10</span>, <span class="num">3</span>)                   <span class="comment"># 10 samples, 3D</span>
+train_Y = some_expensive_fn(train_X).unsqueeze(-<span class="num">1</span>)
+
+<span class="comment"># Fit GP</span>
+gp = SingleTaskGP(train_X, train_Y)
+mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+fit_gpytorch_mll(mll)
+
+<span class="comment"># BO loop</span>
+<span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">30</span>):
+    EI = ExpectedImprovement(gp, best_f=train_Y.max())
+    <span class="keyword">from</span> botorch.optim <span class="keyword">import</span> optimize_acqf
+    cand, _ = optimize_acqf(EI, bounds=torch.tensor([[<span class="num">0.</span>]*<span class="num">3</span>,[<span class="num">1.</span>]*<span class="num">3</span>]),
+                            q=<span class="num">1</span>, num_restarts=<span class="num">10</span>, raw_samples=<span class="num">256</span>)
+    new_Y = some_expensive_fn(cand).unsqueeze(-<span class="num">1</span>)
+    train_X = torch.cat([train_X, cand]); train_Y = torch.cat([train_Y, new_Y])
+    gp = SingleTaskGP(train_X, train_Y)
+    fit_gpytorch_mll(ExactMarginalLogLikelihood(gp.likelihood, gp))</pre></div>
+
+<div class="code-tab-content" id="skopt1"><pre><span class="comment"># pip install scikit-optimize</span>
+<span class="keyword">from</span> skopt <span class="keyword">import</span> gp_minimize
+<span class="keyword">from</span> skopt.space <span class="keyword">import</span> Real, Integer
+
+<span class="comment"># Define search space</span>
+space = [Real(<span class="num">0.0</span>, <span class="num">1.0</span>, name=<span class="str">"learning_rate"</span>),
+         Integer(<span class="num">16</span>, <span class="num">256</span>, name=<span class="str">"batch_size"</span>),
+         Real(<span class="num">0.0</span>, <span class="num">0.5</span>, name=<span class="str">"dropout"</span>)]
+
+<span class="keyword">def</span> objective(params):
+    lr, bs, dr = params
+    <span class="comment"># Train model with these hyperparameters</span>
+    val_loss = train_model(lr, bs, dr)
+    <span class="keyword">return</span> val_loss
+
+result = gp_minimize(objective, space, n_calls=<span class="num">50</span>, acq_func=<span class="str">"EI"</span>)
+print(<span class="str">"Best params:"</span>, result.x)
+print(<span class="str">"Best value:"</span>, result.fun)</pre></div>
+
+<div class="code-tab-content" id="scratch1"><pre><span class="comment"># Minimal GP regression + EI from scratch</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> scipy.stats <span class="keyword">import</span> norm
+
+<span class="keyword">def</span> rbf(x1, x2, l=<span class="num">0.2</span>, sigma=<span class="num">1.0</span>):
+    sqd = (x1[:,<span class="keyword">None</span>] - x2[<span class="keyword">None</span>,:])**<span class="num">2</span>
+    <span class="keyword">return</span> sigma**<span class="num">2</span> * np.exp(-<span class="num">0.5</span> * sqd / l**<span class="num">2</span>)
+
+<span class="keyword">def</span> gp_posterior(X_train, y_train, X_star, noise=<span class="num">1e-4</span>):
+    K = rbf(X_train, X_train) + noise * np.eye(len(X_train))
+    K_inv = np.linalg.inv(K)
+    K_star = rbf(X_train, X_star)
+    K_ss = rbf(X_star, X_star)
+    mu = K_star.T @ K_inv @ y_train
+    cov = K_ss - K_star.T @ K_inv @ K_star
+    <span class="keyword">return</span> mu, np.sqrt(np.maximum(np.diag(cov), <span class="num">1e-8</span>))
+
+<span class="keyword">def</span> expected_improvement(mu, sigma, f_best, xi=<span class="num">0.01</span>):
+    Z = (mu - f_best - xi) / (sigma + <span class="num">1e-9</span>)
+    <span class="keyword">return</span> (mu - f_best - xi) * norm.cdf(Z) + sigma * norm.pdf(Z)
+
+<span class="comment"># BO loop</span>
+X_grid = np.linspace(<span class="num">0</span>, <span class="num">1</span>, <span class="num">200</span>)
+X_train = np.array([<span class="num">0.1</span>, <span class="num">0.5</span>, <span class="num">0.9</span>])
+y_train = expensive_fn(X_train)
+<span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">20</span>):
+    mu, sigma = gp_posterior(X_train, y_train, X_grid)
+    ei = expected_improvement(mu, sigma, y_train.max())
+    x_next = X_grid[np.argmax(ei)]
+    X_train = np.append(X_train, x_next)
+    y_train = np.append(y_train, expensive_fn(np.array([x_next])))</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Bayesian Optimization 中 acquisition function 的主要任務是什麼？</p><p data-lang="en">What is the main role of the acquisition function in Bayesian Optimization?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 訓練神經網路</span><span data-lang="en">A. Train neural network</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 計算 loss function</span><span data-lang="en">B. Compute loss function</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 平衡 exploration 與 exploitation，選下一個 query 點</span><span data-lang="en">C. Balance exploration vs exploitation to select next query</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 後處理輸出</span><span data-lang="en">D. Postprocess output</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列哪個是 UCB acquisition function 的公式？</p><p data-lang="en">Which is the UCB acquisition function formula?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. μ(x) − σ(x)</span><span data-lang="en">A. μ(x) − σ(x)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. μ(x) + β · σ(x)</span><span data-lang="en">B. μ(x) + β · σ(x)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. softmax(μ)</span><span data-lang="en">C. softmax(μ)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. ‖μ‖²</span><span data-lang="en">D. ‖μ‖²</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">在 Perturb-seq active learning 場景中，BO 的核心優勢是？</p><p data-lang="en">In active Perturb-seq learning, what is BO's core advantage?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 用更少的實驗（~10× 減少）找到最有資訊量的擾動目標</span><span data-lang="en">A. Find most informative perturbation targets with ~10× fewer experiments</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 完全取代 wet lab 實驗</span><span data-lang="en">B. Completely replaces wet-lab experiments</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 不需要任何先驗資料</span><span data-lang="en">C. No prior data needed</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 保證 100% 找到全域最佳</span><span data-lang="en">D. Guarantees 100% global optimum</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="conformal-prediction.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 19：Conformal Prediction" data-en="Ch 19: Conformal Prediction">Ch 19：Conformal</span></a>
+<a href="information-bottleneck.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 21：Information Bottleneck" data-en="Ch 21: Information Bottleneck">Ch 21：Information Bottleneck</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== 1D BO Animation (SVG) =====
+const W=600,H=360,padL=40,padR=20,padT=20,padB=40;
+const innerW=W-padL-padR,innerH=H-padT-padB;
+const xMin=0,xMax=1,yMin=-1.5,yMax=2.0;
+function xToPx(x){return padL+(x-xMin)/(xMax-xMin)*innerW;}
+function yToPx(y){return padT+(yMax-y)/(yMax-yMin)*innerH;}
+// True function — multi-modal
+function trueFn(x){return Math.sin(8*x)*Math.exp(-1.5*Math.abs(x-0.6))+0.3*Math.cos(20*x)*x;}
+// Seeded sequence of query points (deterministic, increasing N)
+// Compute query sequence based on chosen acquisition by simulating from 3 initial fixed points.
+function rbfK(xa,xb,l,sig){const m=xa.length,n=xb.length;const K=Array.from({length:m},()=>new Array(n));for(let i=0;i<m;i++)for(let j=0;j<n;j++){const d=xa[i]-xb[j];K[i][j]=sig*sig*Math.exp(-0.5*d*d/(l*l));}return K;}
+function solve(K,y){// K is n x n; add small jitter and use simple Cholesky-like
+  const n=K.length;const L=Array.from({length:n},()=>new Array(n).fill(0));
+  for(let i=0;i<n;i++){for(let j=0;j<=i;j++){let s=K[i][j];for(let k=0;k<j;k++)s-=L[i][k]*L[j][k];L[i][j]=i===j?Math.sqrt(Math.max(s,1e-10)):s/L[j][j];}}
+  // forward solve L z = y
+  const z=new Array(n).fill(0);
+  for(let i=0;i<n;i++){let s=y[i];for(let k=0;k<i;k++)s-=L[i][k]*z[k];z[i]=s/L[i][i];}
+  // backward solve L^T alpha = z
+  const a=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){let s=z[i];for(let k=i+1;k<n;k++)s-=L[k][i]*a[k];a[i]=s/L[i][i];}
+  return {alpha:a,L:L};
+}
+function gpPredict(Xtr,ytr,Xte,l=0.08,sig=1.0,noise=1e-3){
+  const K=rbfK(Xtr,Xtr,l,sig);for(let i=0;i<K.length;i++)K[i][i]+=noise;
+  const {alpha,L}=solve(K,ytr);
+  const Kts=rbfK(Xte,Xtr,l,sig);
+  const mu=Kts.map(row=>row.reduce((s,v,i)=>s+v*alpha[i],0));
+  const sd=Xte.map((x,i)=>{const k=Kts[i];// solve L v = k
+    const v=new Array(Xtr.length).fill(0);for(let r=0;r<Xtr.length;r++){let s=k[r];for(let c=0;c<r;c++)s-=L[r][c]*v[c];v[r]=s/L[r][r];}
+    const dot=v.reduce((s,vv)=>s+vv*vv,0);
+    return Math.sqrt(Math.max(sig*sig-dot,1e-8));
+  });
+  return {mu,sd};
+}
+function normPdf(z){return Math.exp(-0.5*z*z)/Math.sqrt(2*Math.PI);}
+function normCdf(z){return 0.5*(1+erf(z/Math.SQRT2));}
+function erf(x){const s=Math.sign(x);x=Math.abs(x);const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;const t=1/(1+p*x);const y=1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
+function acq(name,mu,sd,fbest){
+  if(name==='ei'){return mu.map((m,i)=>{const s=Math.max(sd[i],1e-6);const z=(m-fbest)/s;return (m-fbest)*normCdf(z)+s*normPdf(z);});}
+  if(name==='ucb'){const beta=2.0;return mu.map((m,i)=>m+beta*sd[i]);}
+  if(name==='pi'){return mu.map((m,i)=>{const z=(m-fbest)/Math.max(sd[i],1e-6);return normCdf(z);});}
+  if(name==='ts'){// 1 random draw approximate: m + sd * randn (use fixed seeded pseudo)
+    return mu.map((m,i)=>m+sd[i]*(2*pseudo(i)-1)*1.5);}
+}
+let pseed=12345;function pseudo(k){let x=(pseed*9301+(k+1)*49297+233280)%233280;return x/233280;}
+function runBOSeq(acqType,n){
+  // initial 3 points
+  const Xtr=[0.05,0.45,0.95];const ytr=Xtr.map(trueFn);
+  const grid=[];for(let i=0;i<=120;i++)grid.push(i/120);
+  pseed=acqType==='ts'?7919:12345;
+  for(let k=3;k<n;k++){
+    const {mu,sd}=gpPredict(Xtr,ytr,grid);
+    const fbest=Math.max(...ytr);
+    const a=acq(acqType,mu,sd,fbest);
+    // mask near existing points
+    Xtr.forEach(xp=>{for(let g=0;g<grid.length;g++)if(Math.abs(grid[g]-xp)<0.02)a[g]=-1e9;});
+    let mi=0;for(let g=1;g<a.length;g++)if(a[g]>a[mi])mi=g;
+    Xtr.push(grid[mi]);ytr.push(trueFn(grid[mi]));
+  }
+  return {Xtr,ytr,grid};
+}
+
+function render(){
+  const acqType=document.getElementById('acqType').value;
+  const n=+document.getElementById('sN').value;
+  document.getElementById('vN').textContent=n;
+  const {Xtr,ytr,grid}=runBOSeq(acqType,n);
+  const {mu,sd}=gpPredict(Xtr,ytr,grid);
+  const fbest=Math.max(...ytr);
+  const ax=acq(acqType,mu,sd,fbest);
+  // mask near existing
+  Xtr.forEach(xp=>{for(let g=0;g<grid.length;g++)if(Math.abs(grid[g]-xp)<0.02)ax[g]=-1e9;});
+  let nextIdx=0;for(let g=1;g<ax.length;g++)if(ax[g]>ax[nextIdx])nextIdx=g;
+
+  let svg='';
+  // axes
+  svg+=`<line x1="${padL}" y1="${yToPx(0)}" x2="${W-padR}" y2="${yToPx(0)}" stroke="#ccc" stroke-dasharray="2,4"/>`;
+  svg+=`<rect x="${padL}" y="${padT}" width="${innerW}" height="${innerH}" fill="none" stroke="#ddd"/>`;
+  // True f (dashed)
+  let path=''; grid.forEach((x,i)=>{const y=trueFn(x);path+=(i===0?'M':'L')+xToPx(x)+','+yToPx(y)+' ';});
+  svg+=`<path d="${path}" fill="none" stroke="#c0392b" stroke-width="1.5" stroke-dasharray="6,4" opacity="0.7"/>`;
+  // GP uncertainty band: 2 sigma
+  let upper=grid.map((x,i)=>mu[i]+2*sd[i]);
+  let lower=grid.map((x,i)=>mu[i]-2*sd[i]);
+  let pathU='';grid.forEach((x,i)=>{pathU+=(i===0?'M':'L')+xToPx(x)+','+yToPx(upper[i])+' ';});
+  for(let i=grid.length-1;i>=0;i--){pathU+='L'+xToPx(grid[i])+','+yToPx(lower[i])+' ';}
+  svg+=`<path d="${pathU}Z" fill="rgba(26,107,90,0.2)" stroke="none"/>`;
+  // GP mean
+  let pathM='';grid.forEach((x,i)=>{pathM+=(i===0?'M':'L')+xToPx(x)+','+yToPx(mu[i])+' ';});
+  svg+=`<path d="${pathM}" fill="none" stroke="#1a6b5a" stroke-width="2.2"/>`;
+  // Acquisition (rescaled, drawn at bottom)
+  const aMin=Math.min(...ax.filter(v=>v>-1e8));const aMax=Math.max(...ax);const aRange=Math.max(aMax-aMin,1e-9);
+  let pathA='';grid.forEach((x,i)=>{const v=ax[i]<-1e8?aMin:ax[i];const yA=yMin+0.15+(v-aMin)/aRange*0.6;pathA+=(i===0?'M':'L')+xToPx(x)+','+yToPx(yA)+' ';});
+  svg+=`<path d="${pathA}" fill="none" stroke="#7c3aed" stroke-width="1.8" opacity="0.8"/>`;
+  // Query points
+  Xtr.forEach((x,i)=>{svg+=`<circle cx="${xToPx(x)}" cy="${yToPx(ytr[i])}" r="5" fill="#1a1a1a" stroke="#fff" stroke-width="1.5"/>`;});
+  // Next pick star
+  const xn=grid[nextIdx];svg+=`<polygon points="${star(xToPx(xn),yToPx(mu[nextIdx]),8)}" fill="#f39c12" stroke="#000" stroke-width="1"/>`;
+  // axis labels
+  svg+=`<text x="${W/2}" y="${H-8}" text-anchor="middle" font-size="12" fill="#666">x (parameter)</text>`;
+  svg+=`<text x="14" y="${H/2}" text-anchor="middle" font-size="12" fill="#666" transform="rotate(-90,14,${H/2})">f(x)</text>`;
+  document.getElementById('boSvg').innerHTML=svg;
+
+  const lang=(window.I18n&&I18n.get())||'zh';
+  const xmax=grid[mu.indexOf(Math.max(...mu))];
+  const trueMax=trueFn(grid[grid.map(g=>trueFn(g)).indexOf(Math.max(...grid.map(trueFn)))]);
+  const bestSoFar=Math.max(...ytr);
+  const msg=lang==='zh'?
+    `Acquisition = <strong>${acqType.toUpperCase()}</strong>。當前 ${n} 個 query 點，目前最佳 f = ${bestSoFar.toFixed(3)}（vs 真實最大值 ${trueMax.toFixed(3)}）。下一個 query x = ${xn.toFixed(3)}（★）。注意：GP 在 query 多的區域不確定性小，acquisition 自動引導到「值高 + 不確定」的區域。`:
+    `Acquisition = <strong>${acqType.toUpperCase()}</strong>. After ${n} queries, best f so far = ${bestSoFar.toFixed(3)} (vs true max ${trueMax.toFixed(3)}). Next query x = ${xn.toFixed(3)} (★). Note: GP uncertainty shrinks where queries cluster; acquisition guides toward regions of high value + high uncertainty.`;
+  document.getElementById('boInfo').innerHTML=msg;
+}
+function star(cx,cy,r){const pts=[];for(let i=0;i<10;i++){const ang=-Math.PI/2+i*Math.PI/5;const rr=i%2===0?r:r*0.4;pts.push((cx+rr*Math.cos(ang))+','+(cy+rr*Math.sin(ang)));}return pts.join(' ');}
+
+document.getElementById('acqType').addEventListener('change',render);
+document.getElementById('sN').addEventListener('input',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！Acquisition function 是 BO 的智慧核心，平衡探索與開發。',
+  q1_n:'答案是 C。Acquisition 結合 GP 的 μ 與 σ 決定下一個 query 點。',
+  q2_y:'答對！UCB = μ + β·σ，β 控制 exploration 強度。',
+  q2_n:'答案是 B。UCB 直接把均值加上加權的標準差作為 acquisition。',
+  q3_y:'答對！這就是 active Perturb-seq 的價值 — 用少量實驗探索基因擾動空間。',
+  q3_n:'答案是 A。BO 透過 surrogate model + acquisition function 大幅降低實驗成本。'
+},en:{
+  q1_y:'Correct! The acquisition function is BO\'s intelligent core, balancing exploration and exploitation.',
+  q1_n:'Answer is C. Acquisition combines GP\'s μ and σ to decide next query.',
+  q2_y:'Correct! UCB = μ + β·σ; β controls exploration strength.',
+  q2_n:'Answer is B. UCB directly adds weighted std to the mean as acquisition.',
+  q3_y:'Correct! That\'s the value of active Perturb-seq — explore gene perturbation space with few experiments.',
+  q3_n:'Answer is A. BO uses surrogate + acquisition to drastically cut experimental cost.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=(window.I18n&&I18n.get())||'zh';fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>
