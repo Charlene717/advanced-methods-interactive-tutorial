@@ -1,0 +1,460 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Spatial Statistics — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html" class="active">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 10 / 14</div><h1 data-zh="空間自相關與 Gaussian Process" data-en="Spatial Autocorrelation &amp; Gaussian Process">空間自相關與 Gaussian Process</h1>
+<p class="subtitle" data-lang="zh">Moran's I、Geary's C、SpatialDE、SPARK、nnSVG、BayesSpace——找「空間變異基因」(SVG) 的統計工具箱。</p>
+<p class="subtitle" data-lang="en">Moran's I, Geary's C, SpatialDE, SPARK, nnSVG, BayesSpace — the statistical toolbox for spatially variable genes (SVGs).</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="Moran's I 與 Geary's C" data-en="Moran's I and Geary's C">Moran's I 與 Geary's C</h2>
+<div data-lang="zh">
+<p>空間統計來自地理學。<strong>Moran's I</strong> 衡量「鄰近地點是否傾向有相似值」：</p>
+<p style="text-align:center;font-family:Georgia,serif;">I = (n/W) · Σᵢⱼ wᵢⱼ(x<sub>i</sub> − x̄)(x<sub>j</sub> − x̄) / Σ(x<sub>i</sub> − x̄)²</p>
+<p>其中 w<sub>ij</sub> 是空間權重（鄰居 = 1，否則 0）、W = Σw<sub>ij</sub>。I > 0 → 正空間自相關（聚集）；I < 0 → 棋盤狀；I ≈ 0 → 隨機。</p>
+<p><strong>Geary's C：</strong>用「鄰居差異」而非「鄰居協方差」測自相關，數值上 C ∈ [0, 2]，C < 1 為正自相關。對局部變化更敏感。</p>
+</div>
+<div data-lang="en">
+<p>Spatial statistics originate from geography. <strong>Moran's I</strong> measures whether neighboring locations tend to have similar values:</p>
+<p style="text-align:center;font-family:Georgia,serif;">I = (n/W) · Σᵢⱼ wᵢⱼ(x<sub>i</sub> − x̄)(x<sub>j</sub> − x̄) / Σ(x<sub>i</sub> − x̄)²</p>
+<p>where w<sub>ij</sub> is spatial weight (1 if neighbors, 0 else); W = Σw<sub>ij</sub>. I > 0 → positive autocorrelation (clustering); I < 0 → checkerboard; I ≈ 0 → random.</p>
+<p><strong>Geary's C</strong> uses "neighbor differences" instead of covariance; C ∈ [0, 2], C < 1 = positive autocorrelation. More sensitive to local change.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">📍</div><h4 data-zh="全域 vs 局部" data-en="Global vs Local">全域 vs 局部</h4><p data-lang="zh">Global I 是一個總體分數。Local Moran's I (LISA) 給每個 spot 一個 score——找熱點/冷點。</p><p data-lang="en">Global I is one summary. Local Moran's I (LISA) gives per-spot scores — find hotspots/coldspots.</p></div>
+<div class="card"><div class="card-icon">🌡️</div><h4 data-zh="Getis-Ord G*" data-en="Getis-Ord G*">Getis-Ord G*</h4><p data-lang="zh">另一種 hotspot 偵測，特別適合找「高值聚集區」。</p><p data-lang="en">Hotspot detector that targets clusters of high values.</p></div>
+<div class="card"><div class="card-icon">📈</div><h4 data-zh="Variogram" data-en="Variogram">Variogram</h4><p data-lang="zh">把空間自相關按距離分箱——揭示「相似性如何隨距離衰減」。</p><p data-lang="en">Distance-binned autocorrelation — reveals how similarity decays with distance.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="進階方法" data-en="ADVANCED">進階方法</h2>
+<h2 data-zh="SpatialDE、SPARK、nnSVG、BayesSpace" data-en="SpatialDE, SPARK, nnSVG, BayesSpace">代表性方法</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>SpatialDE (Svensson 2018)</h4><p data-lang="zh">用 Gaussian Process 模型分解基因表現為「空間相關」+「隨機」兩部分。先導性的 SVG 方法，但對 droput 與 over-dispersion 敏感。</p><p data-lang="en">Decomposes gene expression into "spatial" + "noise" via Gaussian Process. Pioneering SVG method but sensitive to dropout and over-dispersion.</p></div>
+<div class="card"><h4>SPARK / SPARK-X (Zhu 2021/2024)</h4><p data-lang="zh">基於 GLM + 多個 kernel 的空間檢定，SPARK-X 用核–線性等價技巧把計算速度提升 100×，可擴展到 10⁵ spots。</p><p data-lang="en">GLM + multiple-kernel test; SPARK-X uses kernel–linear equivalence for 100× speedup, scales to 10⁵ spots.</p></div>
+<div class="card"><h4>nnSVG (Weber 2023)</h4><p data-lang="zh">每個基因 fit 一個 nearest-neighbor GP，給出基因專屬的「effective range」。對於異質長度尺度的 SVG 偵測表現好。</p><p data-lang="en">Fits a nearest-neighbor GP per gene; gives gene-specific "effective range." Excels when SVGs have heterogeneous length scales.</p></div>
+<div class="card"><h4>BayesSpace (Zhao 2021)</h4><p data-lang="zh">階層貝氏模型在「鄰居應屬同一空間域」的先驗下做分群、解析度提升 (subspot)。</p><p data-lang="en">Hierarchical Bayes with "neighbors tend to share domain" prior — clustering and subspot resolution enhancement.</p></div>
+<div class="card"><h4>MERINGUE (Miller 2021)</h4><p data-lang="zh">融合空間自相關與 cross-correlation——找「空間共定位」基因對。</p><p data-lang="en">Combines spatial autocorrelation + cross-correlation — find spatially co-localized gene pairs.</p></div>
+<div class="card"><h4>GASTON / SOTIP (2024)</h4><p data-lang="zh">最新一代用神經網路或拓撲方法擴展，處理跨切片整合與三維重建。</p><p data-lang="en">Latest gen using neural networks / topology for cross-slice integration and 3D reconstruction.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Moran's I 計算" data-en="Compute Moran's I">Moran's I 計算</h2>
+<div data-lang="zh"><p>選擇不同空間模式（聚集、棋盤、隨機），看 Moran's I 的變化。聚集應產生 I > 0；棋盤產生 I < 0；隨機 I ≈ 0。</p></div>
+<div data-lang="en"><p>Pick spatial patterns (clustered, checkerboard, random); watch Moran's I. Clustering → I > 0; checkerboard → I < 0; random → I ≈ 0.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="模式" data-en="Pattern">模式</label>
+<select id="spPat" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);">
+<option value="cluster" selected>Clustered / 聚集</option>
+<option value="checker">Checkerboard / 棋盤</option>
+<option value="random">Random / 隨機</option>
+<option value="gradient">Gradient / 漸層</option>
+</select></div>
+<div class="slider-group"><label data-zh="噪音" data-en="Noise">噪音 <span id="spN">0.20</span></label><input type="range" id="sSpN" min="0" max="1" value="0.20" step="0.05"></div>
+<svg id="spSvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div class="card-grid cols-2" style="margin-top:12px;">
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>Moran's I</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="moI">—</p></div>
+  <div class="card"><h4>Geary's C</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="gC">—</p></div>
+</div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析：權重矩陣、變異函數、GP 與 SVG 偵測" data-en="Deep Dive: Weight Matrices, Variograms, GP, and SVG Detection">深入解析：權重矩陣、變異函數、GP 與 SVG 偵測</h2>
+
+<div data-lang="zh">
+<h3>① 空間權重矩陣 (Spatial Weight Matrix) 的設計</h3>
+<p>所有空間自相關統計都依賴一個 n × n 的權重矩陣 W，定義「誰是誰的鄰居」。常見設計：</p>
+<ul>
+<li><strong>Rook contiguity：</strong>共享一條邊（grid 上的上下左右，4 鄰居）。適合規則網格如早期 array-based ST。</li>
+<li><strong>Queen contiguity：</strong>共享邊或角（8 鄰居）。仍是規則網格用，但對「對角訊號」更敏感。</li>
+<li><strong>Distance-based：</strong>w_{ij} = 1 if d_{ij} &lt; threshold else 0。優點：適用不規則點分布；缺點：threshold 需手調。</li>
+<li><strong>k-Nearest Neighbors：</strong>每個 spot 連到最近 k 個鄰居。優點：density-adaptive；缺點：W 不對稱（需 symmetrize）。Visium 通常用 k = 6（六角網格）。</li>
+<li><strong>Kernel-based：</strong>w_{ij} = exp(−d_{ij}² / σ²)，連續權重，與 Gaussian Process 接軌。</li>
+</ul>
+<p>權重矩陣需要 row-normalize（每列總和=1），讓統計量在不同度數節點上可比。</p>
+
+<h3>② Moran's I 的虛無分布：Randomization vs Permutation</h3>
+<p>Moran's I = (n / S₀) · (xᵀ W x) / (xᵀ x)（中心化後）。其虛無分布有兩種假設：</p>
+<ul>
+<li><strong>Normality assumption (Normal H₀):</strong> 假設 x ~ N(μ, σ²) i.i.d.，可導出 E[I] = −1/(n−1)，Var[I] 有閉式解 (Cliff &amp; Ord 1981)。z-score 適用大樣本但若資料有 outlier 會失準。</li>
+<li><strong>Randomization assumption (Random H₀):</strong> 假設 x 的「值集合」固定，但位置隨機重排。permutation 999 次計算 empirical p-value。對非常態資料較穩健，但對非常大樣本 (n &gt; 10000) 太貴。</li>
+</ul>
+<p>實務經驗：基因表現多為 zero-inflated count，建議 (a) 先 log1p normalize，(b) 用 permutation，(c) 對全基因組做 FDR (Benjamini-Hochberg)。</p>
+
+<h3>③ Local Moran's I (LISA, Anselin 1995)</h3>
+<p>Global Moran's I 只給一個總體數字；Anselin 把它分解到每個 spot：I_i = (x_i − x̄)/σ² · Σⱼ w_{ij}(x_j − x̄)。可分類為四種：</p>
+<ul>
+<li><strong>HH (High-High):</strong> 自己高，鄰居也高 — hot spot</li>
+<li><strong>LL (Low-Low):</strong> 自己低，鄰居也低 — cold spot</li>
+<li><strong>HL (High-Low):</strong> 自己高、鄰居低 — outlier / spatial discontinuity</li>
+<li><strong>LH (Low-High):</strong> 自己低、鄰居高 — 反向 outlier</li>
+</ul>
+<p>對於 ST：HH/LL 找 niche 中心；HL/LH 找 niche 邊界或浸潤前緣（例如腫瘤邊界、傷口邊緣）。</p>
+
+<h3>④ Geary's C 與 Getis-Ord G* 的差異</h3>
+<p>三者並非等價：</p>
+<ul>
+<li><strong>Moran's I：</strong>對「均值偏移」的 spatial pattern 最敏感。</li>
+<li><strong>Geary's C：</strong>C = ((n−1) / 2S₀) · ΣᵢΣⱼ w_{ij}(x_i − x_j)² / Σᵢ(x_i − x̄)²。對「鄰近 pair 差異」直接量化，對 local heterogeneity 比 Moran 敏感。C 範圍 [0, 2]，C &lt; 1 表正自相關。</li>
+<li><strong>Getis-Ord G*：</strong>G_i* = Σⱼ w_{ij} x_j / Σⱼ x_j。只看絕對值，能區分 high cluster 與 low cluster（Moran 無法）。常用於犯罪 hotspot 分析，ST 中可用於 marker gene hotspot 偵測。</li>
+</ul>
+
+<h3>⑤ Variogram 與 Covariogram</h3>
+<p>半變異函數 γ(h) = ½ E[(Z(x+h) − Z(x))²] 是地統計學核心工具，衡量「距離 h 的兩點之差異變異度」。三個關鍵參數：</p>
+<ul>
+<li><strong>Nugget (τ²):</strong> γ(0⁺)，反映微觀變異 + 量測誤差。在 ST 中 dropout 會讓 nugget 偏高。</li>
+<li><strong>Sill (σ² + τ²):</strong> γ(∞)，總變異。</li>
+<li><strong>Range (a):</strong> 達到 sill 的距離，物理意義是「spatial 影響範圍」。基因 range = 50 µm 表示其表現只在 50 µm 內有 spatial 結構。</li>
+</ul>
+<p>covariogram C(h) = Var(Z) − γ(h)。在 stationary GP 下兩者等價。</p>
+
+<h3>⑥ Gaussian Process Kernel 的選擇</h3>
+<p>GP 模型 Z(x) ~ GP(μ(x), k(x, x'))。kernel 決定「平滑度」：</p>
+<ul>
+<li><strong>RBF / Squared Exponential:</strong> k(d) = σ² exp(−d²/2ℓ²)。infinitely smooth，但太平滑常不合生物資料。</li>
+<li><strong>Matérn 3/2:</strong> k(d) = σ²(1 + √3 d/ℓ) exp(−√3 d/ℓ)。一次可微，介於 exponential 與 RBF 之間。對 ST 多數基因合適。</li>
+<li><strong>Matérn 5/2:</strong> k(d) = σ²(1 + √5 d/ℓ + 5d²/3ℓ²) exp(−√5 d/ℓ)。二次可微，比 3/2 更平滑。</li>
+<li><strong>Periodic kernel:</strong> k(d) = σ² exp(−2 sin²(πd/p) / ℓ²)。捕捉週期性 spatial pattern（如皮層柱、肝小葉）。</li>
+<li><strong>Composite kernels:</strong> RBF + Periodic + Linear，模擬「全局趨勢 + 區域結構 + 週期性」。</li>
+</ul>
+
+<h3>⑦ SpatialDE (Svensson 2018, Nature Methods) 的數學</h3>
+<p>對每個基因 g，建立兩個 GP 模型：</p>
+<ul>
+<li><strong>H₁ (spatial):</strong> y_g(x) ~ GP(0, σ²_s K_s(x, x') + σ²_n I)，K_s 為 spatial kernel。</li>
+<li><strong>H₀ (non-spatial):</strong> y_g ~ N(0, σ²_n I)，純噪音。</li>
+</ul>
+<p>用 maximum likelihood 估計參數，做 likelihood ratio test：LLR = log L(H₁) − log L(H₀)，依 χ² 分布算 p-value。最後 BH-FDR 校正。優點：每個 SVG 還能得到 length scale ℓ_s，反映 spatial 結構尺度。</p>
+
+<h3>⑧ SPARK (Sun 2020, Nat Methods) 與 SPARK-X</h3>
+<p>SPARK 改用 Poisson / Negative Binomial GLM + spatial random effect（不像 SpatialDE 假設 Gaussian），對 raw count 更合適。並且同時 fit 多個 kernel（不同長度尺度）做集成，找對「任何 spatial 結構」都敏感。SPARK-X (Zhu 2021, Genome Biology) 是 scalable 版本：用 covariance test 取代 likelihood，O(n) 即可，能處理 Slide-seqV2 百萬 spot 資料。</p>
+
+<h3>⑨ nnSVG (Weber 2023, Nat Commun) 的 Nearest-neighbor GP</h3>
+<p>使用 Nearest-Neighbor Gaussian Process (NNGP, Datta 2016)：每個 spot 只與最近 m 個鄰居（如 m=10）建模，O(nm³) 而非 O(n³)。對每個基因 fit 不同 length scale ℓ_g，能找出「短程 vs 長程 spatial 變化」基因。對 Visium DLPFC 資料能精準分層皮層 layer 特異基因。</p>
+
+<h3>⑩ BayesSpace (Zhao 2021, Nat Biotechnol) 的 Hierarchical Model</h3>
+<p>不是 SVG 偵測，而是 spatial domain 分群。用 hierarchical Bayesian：</p>
+<ul>
+<li>Layer 1: y_i ~ N(μ_{z_i}, Σ_{z_i})，z_i 為 spot i 的 cluster 標籤。</li>
+<li>Layer 2: z 服從 Potts model（Ising 推廣），鼓勵相鄰 spot 同 cluster：P(z) ∝ exp(γ Σ_{i~j} I(z_i = z_j))。</li>
+<li>用 MCMC 採樣。</li>
+</ul>
+<p>還能做 sub-spot resolution enhancement：把每個 Visium spot 細分為更小的 sub-spot。</p>
+
+<h3>⑪ MERINGUE (Miller 2021, Genome Biology)</h3>
+<p>結合 spatial autocorrelation 與 cross-correlation。先用 Moran's I 找 SVG，再算 SVG pair 之間的 spatial cross-correlation，找出「在相同空間區域共表現」的基因模組。對 ligand-receptor 共定位特別有用。</p>
+
+<h3>⑫ Sparse / Inducing-point GP</h3>
+<p>標準 GP 訓練 O(n³)，記憶體 O(n²)，n &gt; 5000 即不可行。Sparse GP (Titsias 2009)：選 m « n 個 inducing points u，用 q(f, u) ≈ p(u) q(f|u)，把複雜度降到 O(nm²)。對 Stereo-seq 等百萬 spot 資料必用。最新進展：SVGP (Hensman 2013)、Deep GP (Damianou 2013) 等。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Spatial Weight Matrix Design</h3>
+<p>All spatial autocorrelation statistics need an n × n weight matrix W defining "who is whose neighbor". Common choices:</p>
+<ul>
+<li><strong>Rook contiguity:</strong> share an edge (4 neighbors on a grid). Good for regular grids like early array-based ST.</li>
+<li><strong>Queen contiguity:</strong> share edge or corner (8 neighbors). More sensitive to diagonal patterns.</li>
+<li><strong>Distance-based:</strong> w_{ij} = 1 if d_{ij} &lt; threshold else 0. Adapts to irregular layouts but threshold must be tuned.</li>
+<li><strong>k-Nearest Neighbors:</strong> each spot connects to k nearest. Density-adaptive but W is non-symmetric (symmetrize). Visium typically uses k = 6 (hex grid).</li>
+<li><strong>Kernel-based:</strong> w_{ij} = exp(−d_{ij}² / σ²), continuous weights, bridges to Gaussian Processes.</li>
+</ul>
+<p>Row-normalize W (each row sums to 1) for comparability across degree-heterogeneous nodes.</p>
+
+<h3>② Moran's I Null: Randomization vs Permutation</h3>
+<p>Moran's I = (n / S₀) · (xᵀ W x) / (xᵀ x) (centered). Two null hypotheses:</p>
+<ul>
+<li><strong>Normality (Normal H₀):</strong> x ~ N(μ, σ²) i.i.d., gives E[I] = −1/(n−1) and closed-form Var[I] (Cliff &amp; Ord 1981). z-score works for large samples but breaks with outliers.</li>
+<li><strong>Randomization (Random H₀):</strong> value set fixed, locations permuted; compute empirical p over 999 permutations. Robust to non-normality but expensive for n &gt; 10000.</li>
+</ul>
+<p>For zero-inflated gene counts: (a) log1p normalize, (b) use permutation, (c) FDR via Benjamini-Hochberg.</p>
+
+<h3>③ Local Moran's I (LISA, Anselin 1995)</h3>
+<p>Global I gives one number; LISA decomposes to each spot: I_i = (x_i − x̄)/σ² · Σⱼ w_{ij}(x_j − x̄). Four quadrants:</p>
+<ul>
+<li><strong>HH:</strong> self high, neighbors high — hotspot</li>
+<li><strong>LL:</strong> self low, neighbors low — coldspot</li>
+<li><strong>HL:</strong> self high, neighbors low — outlier / discontinuity</li>
+<li><strong>LH:</strong> self low, neighbors high — reverse outlier</li>
+</ul>
+<p>In ST: HH/LL find niche centers; HL/LH find boundaries or invasion fronts (e.g. tumor margins, wound edges).</p>
+
+<h3>④ Geary's C and Getis-Ord G*</h3>
+<ul>
+<li><strong>Moran's I:</strong> most sensitive to mean-shift spatial patterns.</li>
+<li><strong>Geary's C:</strong> C = ((n−1) / 2S₀) · ΣᵢΣⱼ w_{ij}(x_i − x_j)² / Σᵢ(x_i − x̄)². Directly quantifies neighbor differences, more sensitive to local heterogeneity. Range [0, 2]; C &lt; 1 ⇒ positive autocorrelation.</li>
+<li><strong>Getis-Ord G*:</strong> G_i* = Σⱼ w_{ij} x_j / Σⱼ x_j. Looks at absolute level, distinguishes high vs low clusters (Moran cannot). Common in crime hotspot analysis; useful in ST for marker-gene hotspot detection.</li>
+</ul>
+
+<h3>⑤ Variogram and Covariogram</h3>
+<p>γ(h) = ½ E[(Z(x+h) − Z(x))²]. Three key parameters:</p>
+<ul>
+<li><strong>Nugget (τ²):</strong> γ(0⁺), micro-scale variability + measurement error. ST dropout inflates nugget.</li>
+<li><strong>Sill (σ² + τ²):</strong> γ(∞), total variance.</li>
+<li><strong>Range (a):</strong> distance at which γ reaches sill — "spatial influence range". A gene with range = 50 µm only shows spatial structure within 50 µm.</li>
+</ul>
+<p>Covariogram C(h) = Var(Z) − γ(h). Equivalent to variogram under stationary GP.</p>
+
+<h3>⑥ Choosing a Gaussian Process Kernel</h3>
+<p>Z(x) ~ GP(μ(x), k(x, x')). Kernel sets smoothness:</p>
+<ul>
+<li><strong>RBF / Squared Exponential:</strong> k(d) = σ² exp(−d²/2ℓ²). Infinitely smooth — often too smooth for biology.</li>
+<li><strong>Matérn 3/2:</strong> k(d) = σ²(1 + √3 d/ℓ) exp(−√3 d/ℓ). Once-differentiable, between exponential and RBF — good default for ST.</li>
+<li><strong>Matérn 5/2:</strong> k(d) = σ²(1 + √5 d/ℓ + 5d²/3ℓ²) exp(−√5 d/ℓ). Twice-differentiable.</li>
+<li><strong>Periodic:</strong> k(d) = σ² exp(−2 sin²(πd/p) / ℓ²). Captures periodic spatial patterns (cortical columns, hepatic lobules).</li>
+<li><strong>Composite:</strong> RBF + Periodic + Linear models global trend + regional structure + periodicity.</li>
+</ul>
+
+<h3>⑦ SpatialDE Math (Svensson 2018, Nature Methods)</h3>
+<p>For each gene g, fit two GPs:</p>
+<ul>
+<li><strong>H₁ (spatial):</strong> y_g(x) ~ GP(0, σ²_s K_s(x, x') + σ²_n I).</li>
+<li><strong>H₀ (non-spatial):</strong> y_g ~ N(0, σ²_n I), noise only.</li>
+</ul>
+<p>MLE the parameters; LLR test gives p-value via χ², then BH-FDR. Bonus: each SVG returns its length scale ℓ_s indicating spatial scale.</p>
+
+<h3>⑧ SPARK (Sun 2020) and SPARK-X</h3>
+<p>SPARK uses Poisson / NB GLM + spatial random effects (vs SpatialDE's Gaussian assumption) — better for raw counts. Fits multiple kernels with different length scales as ensemble. SPARK-X (Zhu 2021, Genome Biology) is the scalable version using a covariance test instead of likelihood, O(n) — handles Slide-seqV2 million-spot data.</p>
+
+<h3>⑨ nnSVG (Weber 2023, Nat Commun)</h3>
+<p>Nearest-Neighbor GP (NNGP, Datta 2016): each spot models only the m nearest neighbors (e.g. m=10), O(nm³) not O(n³). Per-gene length scale ℓ_g distinguishes short- vs long-range spatial genes. Accurately layers cortical layer-specific genes on Visium DLPFC.</p>
+
+<h3>⑩ BayesSpace (Zhao 2021, Nat Biotechnol)</h3>
+<p>Not an SVG detector but a spatial-domain clusterer. Hierarchical Bayesian:</p>
+<ul>
+<li>Layer 1: y_i ~ N(μ_{z_i}, Σ_{z_i}).</li>
+<li>Layer 2: z follows a Potts model (Ising generalization), neighbors prefer same cluster: P(z) ∝ exp(γ Σ_{i~j} I(z_i = z_j)).</li>
+<li>MCMC sampling.</li>
+</ul>
+<p>Also performs sub-spot resolution enhancement (subdivides each Visium spot).</p>
+
+<h3>⑪ MERINGUE (Miller 2021, Genome Biology)</h3>
+<p>Combines spatial autocorrelation + cross-correlation. First Moran's I finds SVGs, then SVG pairs' spatial cross-correlation finds gene modules co-expressed in the same region. Especially useful for ligand-receptor co-localization.</p>
+
+<h3>⑫ Sparse / Inducing-point GP</h3>
+<p>Standard GP is O(n³) train, O(n²) memory — infeasible for n &gt; 5000. Sparse GP (Titsias 2009): pick m « n inducing points u, q(f, u) ≈ p(u) q(f|u), reducing to O(nm²). Must for Stereo-seq's million spots. State of the art: SVGP (Hensman 2013), Deep GP (Damianou 2013).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="Spatial Statistics 在生物資訊的具體案例" data-en="Concrete Cases of Spatial Statistics in Bioinformatics">Spatial Statistics 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Svensson et al. 2018, Nature Methods — SpatialDE on Mouse Olfactory Bulb</h3>
+<p>SpatialDE 原論文。在 Visium 前身的 ST (Stahl 2016) 資料上分析小鼠嗅球，找到 67 個 SVG (FDR &lt; 0.05)，包括已知的 layer-specific markers（Olig1, Mbp）以及新發現的「短程 spatial pattern」基因。同時建立 FSV (Fraction of Spatial Variance) 指標：σ²_s / (σ²_s + σ²_n)，量化各基因的 spatial 結構強度。</p>
+
+<h3>🧬 案例 2：Sun et al. 2020, Nature Methods — SPARK on Mouse Cerebellum</h3>
+<p>SPARK 論文。在 mouse cerebellum Visium 資料上比 SpatialDE 多找出 40% SVG，包括 Calb1, Calb2 等 Purkinje 細胞特異基因。重要創新：用 multi-kernel ensemble（同時 fit Gaussian + cosine + linear kernels），對各種 spatial pattern 都敏感。Zhu et al. 2021 後續的 SPARK-X 把計算複雜度降到 O(n)，可處理 Slide-seqV2 等高解析度資料。</p>
+
+<h3>🧬 案例 3：Zhu et al. 2024, Genome Biology — SPARK-X on Slide-seqV2 Atlas</h3>
+<p>用 SPARK-X 分析 1.5 M spot 的 Slide-seqV2 mouse hippocampus，找到 3000+ SVG 並做 spatial clustering，揭示 dentate gyrus 不同 sublayer 的 marker。傳統 SpatialDE/SPARK 在這規模都 OOM；SPARK-X 在 1 個 CPU 約 30 分鐘完成。</p>
+
+<h3>🧬 案例 4：Weber et al. 2023, Nature Communications — nnSVG on Visium DLPFC</h3>
+<p>nnSVG 論文。在 Maynard 2021 的 12 個 DLPFC Visium 樣本上，nnSVG 比 SpatialDE/SPARK 對「跨樣本一致 SVG」的偵測更準確（measured by replicates' rank correlation）。重要創新：per-gene length scale 估計能區分「皮層 layer 特異」（短 ℓ）與「白質-灰質對比」（長 ℓ）基因，提供生物學上有用的「scale 註解」。</p>
+
+<h3>🧬 案例 5：Zhao et al. 2021, Nature Biotechnology — BayesSpace</h3>
+<p>BayesSpace 用 hierarchical Bayesian + Potts model 做 spatial clustering，並能 sub-spot enhancement（55 µm Visium → 25 µm sub-spot）。在 DLPFC, melanoma, breast cancer 資料上的 layer/domain 識別 ARI 都比 Seurat、Giotto 高 20–40%。後續還有 BayesTME (Zhang 2023) 整合 cell-type deconvolution。</p>
+
+<h3>🧬 案例 6：Miller et al. 2021, Genome Biology — MERINGUE</h3>
+<p>MERINGUE 結合 spatial autocorrelation 與 cross-correlation 找 ligand-receptor 共定位。在 Slide-seq 小鼠肝臟資料上找到 Igf1-Igf1r、Wnt2-Fzd1 等 paracrine 訊號軸，並對應到 portal vein vs central vein 不同 spatial zone。對 cell-cell communication 研究有獨特價值。</p>
+
+<h3>🧬 案例 7：DeTomaso &amp; Yosef 2021, Cell Systems — Hotspot</h3>
+<p>把 spatial autocorrelation 推廣到 single-cell：把每個 cell 當作 node，邊由 KNN graph 在 PCA / latent space 上建構。然後對每個基因算「graph autocorrelation」，找 informative gene。可視為 scRNA-seq 的 Moran's I 推廣。最後用 hotspot graph 找「同變化」基因 module。已整合進 Scanpy/scvi-tools 生態系。</p>
+
+<h3>🧬 案例 8：Varrone et al. 2024, Nature Methods — CellCharter</h3>
+<p>用 spatial neighborhood enrichment 與 Gaussian Mixture Model + Markov Random Field 做 niche 分析。能自動找出「在空間上 enriched」的 cell-type combination（spatial niche），並對多病人 ST cohort 做 niche 比較。在 1000+ 病人胃腸道癌 ST atlas 上找到多個 prognostic niche。</p>
+
+<h3>🧬 案例 9：Palla et al. 2022, Nature Methods — Squidpy</h3>
+<p>Squidpy 是 ST 標準工具包，提供 Moran's I, Geary's C, Ripley's K, neighborhood enrichment 等多種 spatial statistics 介面。已整合到 Scanpy / AnnData 生態系。雖然不是新方法，但作為「ST analysis 統一接口」對社群影響極大。</p>
+
+<h3>🧬 案例 10：Kats et al. 2022, bioRxiv — SpatialDE2</h3>
+<p>SpatialDE 升級版，整合多模態（gene expression + cell type + morphology），並對多切片做 joint inference。在多 batch ST 資料上比 SpatialDE 更穩健，且能找到「跨切片一致」的 SVG。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Svensson et al. 2018, Nature Methods — SpatialDE on Mouse Olfactory Bulb</h3>
+<p>The original SpatialDE paper. On mouse olfactory bulb (Stahl 2016 ST data), found 67 SVGs (FDR &lt; 0.05) including known layer-specific markers (Olig1, Mbp) and short-range spatial genes. Introduced FSV = σ²_s / (σ²_s + σ²_n) to quantify spatial structure strength.</p>
+
+<h3>🧬 Case 2: Sun et al. 2020, Nature Methods — SPARK on Mouse Cerebellum</h3>
+<p>The SPARK paper. On mouse cerebellum Visium, found 40% more SVGs than SpatialDE, including Calb1/Calb2 Purkinje markers. Key innovation: multi-kernel ensemble (Gaussian + cosine + linear) sensitive to varied spatial patterns. Follow-up SPARK-X (Zhu 2021) lowered cost to O(n) for high-res data.</p>
+
+<h3>🧬 Case 3: Zhu et al. 2024, Genome Biology — SPARK-X on Slide-seqV2 Atlas</h3>
+<p>SPARK-X on 1.5M-spot Slide-seqV2 hippocampus, found 3000+ SVGs revealing sublayer markers in dentate gyrus. SpatialDE / SPARK OOM at this scale; SPARK-X finishes in ~30 min on one CPU.</p>
+
+<h3>🧬 Case 4: Weber et al. 2023, Nature Communications — nnSVG on Visium DLPFC</h3>
+<p>The nnSVG paper. On Maynard 2021's 12 DLPFC samples, more accurate cross-sample SVG detection than SpatialDE/SPARK (measured by replicate rank correlation). Per-gene length scale separates layer-specific (short ℓ) from white-gray contrast (long ℓ) genes — biologically useful scale annotation.</p>
+
+<h3>🧬 Case 5: Zhao et al. 2021, Nature Biotechnology — BayesSpace</h3>
+<p>Hierarchical Bayesian + Potts spatial clustering, plus sub-spot enhancement (55 µm → 25 µm). 20–40% higher ARI on DLPFC, melanoma, breast cancer vs Seurat/Giotto. Follow-up BayesTME (Zhang 2023) integrates cell-type deconvolution.</p>
+
+<h3>🧬 Case 6: Miller et al. 2021, Genome Biology — MERINGUE</h3>
+<p>Combines spatial autocorrelation + cross-correlation for L-R co-localization. Found Igf1-Igf1r, Wnt2-Fzd1 paracrine axes on Slide-seq liver, matched to portal vs central vein zones. Unique value for cell-cell communication.</p>
+
+<h3>🧬 Case 7: DeTomaso &amp; Yosef 2021, Cell Systems — Hotspot</h3>
+<p>Generalizes spatial autocorrelation to single-cell: cells are nodes, edges from KNN graph in PCA/latent space. Computes "graph autocorrelation" per gene to find informative genes — a Moran's I for scRNA-seq. Then finds co-varying gene modules. Integrated into Scanpy/scvi-tools.</p>
+
+<h3>🧬 Case 8: Varrone et al. 2024, Nature Methods — CellCharter</h3>
+<p>Spatial neighborhood enrichment + Gaussian Mixture Model + Markov Random Field for niche analysis. Automatically finds spatially-enriched cell-type combinations (niches) and compares across multi-patient ST cohorts. Identified prognostic niches on 1000+ GI cancer ST atlas.</p>
+
+<h3>🧬 Case 9: Palla et al. 2022, Nature Methods — Squidpy</h3>
+<p>Squidpy is the standard ST toolkit: Moran's I, Geary's C, Ripley's K, neighborhood enrichment APIs, integrated with Scanpy/AnnData. Not a new method, but the unified interface massively boosted ST community adoption.</p>
+
+<h3>🧬 Case 10: Kats et al. 2022, bioRxiv — SpatialDE2</h3>
+<p>SpatialDE upgrade integrating multi-modal data (gene expression + cell type + morphology), joint inference across slices. More robust to batch effects, finds "cross-slice consistent" SVGs.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Spatial Statistics 還能改良 / 新解決哪些任務？" data-en="What Else Could Spatial Statistics Improve?">Spatial Statistics 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Sub-cellular Spatial Transcriptomics 的 GP 解析</h3>
+<p><strong>現有限制：</strong>SpatialDE/SPARK 設計給 Visium (55 µm spot)；對 Stereo-seq、MERFISH 等 sub-cellular 解析度資料，spot 間距離很小，傳統 length scale 估計不穩定。<strong>新提案：</strong>設計 multi-scale Matérn kernel：k(d) = Σ_k w_k Matérn_νk(d / ℓ_k)，同時 fit 多個 length scale；用 sparse GP 加速。<strong>預期改進：</strong>能同時找出「胞器尺度」（&lt; 1 µm，如核仁基因）與「組織尺度」（&gt; 100 µm，如皮層 layer）兩種 spatial pattern，傳統方法無法同時偵測。</p>
+
+<h3>🎯 2. Multi-scale Spatial Autocorrelation</h3>
+<p><strong>現有限制：</strong>Moran's I 只給一個 scale 的整體統計，無法說「這個基因在小尺度 (10 µm) 自相關但大尺度 (100 µm) 隨機」。<strong>新提案：</strong>用 wavelet decomposition + spatial autocorrelation：對 expression field 做 spatial wavelet，每個 scale 各算一個 Moran's I。<strong>預期改進：</strong>產生 multi-scale autocorrelation spectrum，類似時間序列的 wavelet coherence。能找出 nested spatial pattern（如 tumor 內的免疫 hotspot 又包含更細的 T cell sub-cluster）。</p>
+
+<h3>🎯 3. 疾病 vs 健康 Spatial Pattern 對比</h3>
+<p><strong>現有限制：</strong>多數 SVG 偵測在單一條件內做；跨條件比較通常是「在各條件分別找 SVG 再取交集/差集」，缺乏統計嚴謹性。<strong>新提案：</strong>設計 differential spatial pattern test：H₀ = spatial structure 在 disease vs healthy 相同；H₁ = 兩條件 spatial pattern 不同。用 multi-condition GP 或 Bayesian model comparison。<strong>預期改進：</strong>能找到「健康時 spatially organized 但疾病時 spatial 結構崩潰」的基因——這類 disease-disrupted spatial pattern 是潛在診斷標誌。</p>
+
+<h3>🎯 4. Dynamic Spatial Pattern（多時間點 ST）</h3>
+<p><strong>現有限制：</strong>STARmap、CONFINIT 等開始有 time-course ST，但目前分析各時間點獨立做 SVG，無時序整合。<strong>新提案：</strong>spatio-temporal GP：k((x,t), (x',t')) = k_spatial(x, x') · k_time(t, t')；可分離 spatial vs temporal length scale，並偵測「spatial pattern 隨時間演化」的基因。<strong>預期改進：</strong>能量化「pattern 形成速度」，對發育、傷口癒合、腫瘤侵襲時序研究關鍵。</p>
+
+<h3>🎯 5. 三維 Spatial GP（連續切片 3D 重建）</h3>
+<p><strong>現有限制：</strong>ST 多為 2D 切片；3D 整合（如 Wang et al. 3D STARmap）目前用 alignment 後再 2D 分析，沒有真正的 3D spatial structure 偵測。<strong>新提案：</strong>3D GP with anisotropic kernel：k(d_x, d_y, d_z) 在 z 方向（切片間）可有不同 length scale。可整合 H&amp;E 影像做 anatomical alignment。<strong>預期改進：</strong>找出「真正三維 niche」，例如腎絲球的球狀結構、神經元 dendritic field。對器官級理解（whole-organ atlas）重要。</p>
+
+<h3>🎯 6. 跨病人 Spatial Pattern 對齊</h3>
+<p><strong>現有限制：</strong>每個病人 ST 的座標系不同，不能直接做 spatial 比較。CellCharter 用 niche label 比較，但不保留 spatial 連續性。<strong>新提案：</strong>用 functional Bayesian alignment：把每個病人的 SVG field 視為「空間函數」，用 functional PCA / GP registration 對齊到 canonical 坐標系。<strong>預期改進：</strong>能做 population-level spatial 分析，例如「100 個乳癌病人 ST 的腫瘤邊界區域共同表現哪些基因」，遠超目前 cell-type 比較的層次。</p>
+
+<h3>🎯 7. nnSVG + RNA Velocity = 動態 Spatial Hotspot</h3>
+<p><strong>現有限制：</strong>nnSVG 找 spatial 結構，scVelo 找 RNA velocity，但分開做，無法回答「spatial pattern 是穩態還是動態形成中」。<strong>新提案：</strong>對 velocity vector field（每 spot 有 ds/dt）跑 spatial autocorrelation：高 Moran's I 表示「velocity 也有 spatial 結構」，這就是「動態 hotspot」（不只表現高，還在快速變化的區域）。<strong>預期改進：</strong>找出「即將分化」、「即將遷移」的 spatial niche，對 wound healing、發育時序研究極有價值。</p>
+
+<h3>🎯 8. 用 Spatial Autocorrelation 修正 Cell-Cell Communication</h3>
+<p><strong>現有限制：</strong>CellChat、NicheNet 用平均表現算 L-R signaling，但這假設 ligand 與 receptor 細胞「均勻混合」。實際上若 ligand 細胞群集在某 spatial 區域，rest 細胞接觸不到 ligand，CellChat 會高估 communication。<strong>新提案：</strong>用 spatial colocalization-weighted CellChat：計算 ligand-receptor pair 的 spatial cross-correlation（如 MERINGUE），用以加權 CellChat 的 LR score。<strong>預期改進：</strong>能區分「真正空間鄰近的 paracrine 訊號」vs「兩細胞型別都表現但物理上分開」的假訊號，大幅減少 false positive。</p>
+
+<h3>🎯 9. H&amp;E Imaging + Spatial GP 多模態整合</h3>
+<p><strong>現有限制：</strong>多數 SVG 方法只用 ST expression，忽略 H&amp;E 提供的組織結構資訊。DeepST 用 image，但是 GNN-based，缺乏 GP 的不確定性量化。<strong>新提案：</strong>multi-output GP：兩個 output channel（expression + image embedding），共享 spatial kernel。可整合 cross-modal correlation。<strong>預期改進：</strong>能找「組織學上明顯但 expression 弱訊號」的 niche（例如某些 cancer stroma），並提供 uncertainty interval 指導後續實驗。</p>
+
+<h3>🎯 10. Senescence 空間漸層分析</h3>
+<p><strong>現有限制：</strong>傳統 senescence 研究用 bulk 或單細胞，不知道 senescent cell 在組織中的 spatial pattern。<strong>新提案：</strong>用 Local Moran's I 在 senescence score（如 SenMayo gene signature）上找 senescence hotspot；用 GP 量化「senescence 隨距離某 niche 的漸層」（如離血管的距離）。<strong>預期改進：</strong>能找出 senescence「擴散源頭」，對 anti-aging therapy 設計（如 senolytic drug 局部投藥）有實用意義。</p>
+
+<h3>🎯 11. Tumor Margin 的 GP-based 自動偵測</h3>
+<p><strong>現有限制：</strong>病理學家手動標 tumor margin 費時且主觀；BayesSpace 等用 hard cluster，邊界不平滑。<strong>新提案：</strong>用 GP-based segmentation：把 tumor probability 視為 GP，邊界 = probability gradient 最大處。GP 能給出 boundary uncertainty band。<strong>預期改進：</strong>提供「定量的、含信心區間的」tumor margin，並可量化「margin 寬度」與預後關聯——這在腫瘤手術切除邊界規劃有臨床價值。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. GP-based Sub-cellular Spatial Transcriptomics</h3>
+<p><strong>Current limit:</strong> SpatialDE/SPARK designed for Visium (55 µm). For Stereo-seq, MERFISH at sub-cellular resolution, spot spacing is tiny and length-scale estimation is unstable. <strong>Proposal:</strong> multi-scale Matérn kernel k(d) = Σ_k w_k Matérn_νk(d / ℓ_k), jointly fitting multiple length scales with sparse GP for speed. <strong>Expected gain:</strong> simultaneously detect organelle-scale (&lt; 1 µm, e.g. nucleolar genes) and tissue-scale (&gt; 100 µm, cortical layers) spatial patterns — currently impossible to do both.</p>
+
+<h3>🎯 2. Multi-scale Spatial Autocorrelation</h3>
+<p><strong>Current limit:</strong> Moran's I gives one number per gene, can't say "autocorrelated at 10 µm but random at 100 µm". <strong>Proposal:</strong> spatial wavelet decomposition + per-scale Moran's I, producing a multi-scale autocorrelation spectrum (analogous to wavelet coherence). <strong>Expected gain:</strong> reveal nested spatial patterns — e.g. an immune hotspot in a tumor that itself contains finer T-cell sub-clusters.</p>
+
+<h3>🎯 3. Differential Spatial Pattern: Disease vs Healthy</h3>
+<p><strong>Current limit:</strong> SVG detection is within-condition; cross-condition comparison is usually "find SVGs separately and intersect", lacking rigor. <strong>Proposal:</strong> differential spatial pattern test — H₀: same spatial structure in disease vs healthy; H₁: different. Multi-condition GP or Bayesian model comparison. <strong>Expected gain:</strong> find genes whose spatial organization is disrupted in disease — potential diagnostic markers.</p>
+
+<h3>🎯 4. Dynamic Spatial Patterns (time-course ST)</h3>
+<p><strong>Current limit:</strong> STARmap, CONFINIT now offer time-course ST; current analysis does SVG per time point with no temporal integration. <strong>Proposal:</strong> spatio-temporal GP k((x,t), (x',t')) = k_spatial(x, x') · k_time(t, t'), separable spatial vs temporal length scales, detect "pattern evolves over time" genes. <strong>Expected gain:</strong> quantify "pattern formation rate" — key for development, wound healing, tumor invasion.</p>
+
+<h3>🎯 5. 3D Spatial GP for Serial-section Reconstruction</h3>
+<p><strong>Current limit:</strong> ST is mostly 2D; 3D works (e.g. 3D STARmap) align then analyze in 2D — no true 3D spatial detection. <strong>Proposal:</strong> 3D GP with anisotropic kernel k(d_x, d_y, d_z), different z-direction length scale. Integrate H&amp;E for anatomical alignment. <strong>Expected gain:</strong> identify truly 3D niches like glomerular spheres or neuronal dendritic fields — essential for whole-organ atlases.</p>
+
+<h3>🎯 6. Cross-patient Spatial Pattern Alignment</h3>
+<p><strong>Current limit:</strong> each patient's ST has its own coordinate frame, can't be directly compared. CellCharter uses niche labels but loses spatial continuity. <strong>Proposal:</strong> functional Bayesian alignment — treat each patient's SVG field as a function, use functional PCA / GP registration to a canonical frame. <strong>Expected gain:</strong> population-level spatial analysis — e.g. "in 100 breast cancer ST, what genes are co-expressed at tumor margins?" — far richer than current cell-type comparisons.</p>
+
+<h3>🎯 7. nnSVG + RNA Velocity = Dynamic Spatial Hotspot</h3>
+<p><strong>Current limit:</strong> nnSVG finds spatial structure, scVelo finds velocity — separately, can't say "is the spatial pattern steady or actively forming?" <strong>Proposal:</strong> run spatial autocorrelation on the velocity vector field (ds/dt per spot); high Moran's I ⇒ velocity itself is spatially structured ⇒ a dynamic hotspot. <strong>Expected gain:</strong> identify niches that are "about to differentiate" or "about to migrate" — invaluable for wound healing and developmental kinetics.</p>
+
+<h3>🎯 8. Spatial-aware Correction of Cell-Cell Communication</h3>
+<p><strong>Current limit:</strong> CellChat/NicheNet compute L-R signaling from mean expression, assuming uniform mixing. If ligand cells cluster spatially, others never contact ligand — CellChat overestimates. <strong>Proposal:</strong> spatial colocalization-weighted CellChat — compute LR pair spatial cross-correlation (à la MERINGUE), weight CellChat scores accordingly. <strong>Expected gain:</strong> distinguish genuinely adjacent paracrine signals from "both cell types express but are physically separated", dramatically reducing false positives.</p>
+
+<h3>🎯 9. Multi-modal H&amp;E + Spatial GP</h3>
+<p><strong>Current limit:</strong> most SVG methods use only ST expression, ignore H&amp;E tissue context. DeepST uses image but is GNN-based, lacking GP uncertainty quantification. <strong>Proposal:</strong> multi-output GP — two channels (expression + image embedding) sharing a spatial kernel; integrate cross-modal correlation. <strong>Expected gain:</strong> find niches with strong histology but weak expression signal (e.g. some cancer stroma), with uncertainty intervals to guide experiments.</p>
+
+<h3>🎯 10. Spatial Senescence Gradient Analysis</h3>
+<p><strong>Current limit:</strong> classical senescence studies use bulk or single-cell, ignoring tissue spatial pattern. <strong>Proposal:</strong> Local Moran's I on senescence scores (e.g. SenMayo signature) finds senescence hotspots; GP quantifies gradient with distance from a niche (e.g. from vasculature). <strong>Expected gain:</strong> identify senescence diffusion sources, practical for anti-aging therapy (localized senolytic delivery).</p>
+
+<h3>🎯 11. GP-based Automatic Tumor Margin Detection</h3>
+<p><strong>Current limit:</strong> manual margin annotation is laborious and subjective; BayesSpace uses hard clusters with non-smooth boundaries. <strong>Proposal:</strong> GP-based segmentation — model tumor probability as a GP, boundary = max-gradient location, with uncertainty band. <strong>Expected gain:</strong> quantitative tumor margins with confidence intervals, supporting margin-width vs prognosis studies — clinically valuable for surgical planning.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sq')">squidpy</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sd')">SpatialDE</button>
+<button class="code-tab-btn" onclick="switchTab(this,'nn')">nnSVG (R)</button>
+</div>
+<div class="code-tab-content active" id="sq"><pre><span class="keyword">import</span> squidpy <span class="keyword">as</span> sq
+
+sq.gr.spatial_neighbors(adata)
+sq.gr.spatial_autocorr(adata, mode=<span class="str">"moran"</span>)   <span class="comment"># Moran's I</span>
+sq.gr.spatial_autocorr(adata, mode=<span class="str">"geary"</span>)
+adata.uns[<span class="str">"moranI"</span>].head(<span class="num">20</span>)                      <span class="comment"># 顯著的 SVG</span></pre></div>
+<div class="code-tab-content" id="sd"><pre><span class="keyword">import</span> SpatialDE
+
+results = SpatialDE.run(coords, expression_df)
+<span class="comment"># results 包含 LLR、qval、l (length scale)、FSV (fraction spatial variance)</span>
+svgs = results[results[<span class="str">"qval"</span>] &lt; <span class="num">0.05</span>].sort_values(<span class="str">"FSV"</span>, ascending=<span class="keyword">False</span>)</pre></div>
+<div class="code-tab-content" id="nn"><pre><span class="comment"># BiocManager::install("nnSVG")</span>
+<span class="keyword">library</span>(nnSVG)
+spe &lt;- nnSVG(spe, X = <span class="keyword">NULL</span>, assay_name = <span class="str">"logcounts"</span>)
+top_svgs &lt;- <span class="func">rowData</span>(spe) |&gt; as.data.frame() |&gt;
+  dplyr::arrange(rank) |&gt; head(<span class="num">50</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="0"><p data-lang="zh">當 Moran's I 顯著大於 0，表示？</p><p data-lang="en">A significantly positive Moran's I means?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 鄰近 spot 的值傾向相似（空間聚集）</span><span data-lang="en">A. Nearby spots have similar values (spatial clustering)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 空間分布完全隨機</span><span data-lang="en">B. Pattern is fully random</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 樣本太少</span><span data-lang="en">C. Too few samples</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 細胞型別錯誤</span><span data-lang="en">D. Wrong cell type</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">SPARK-X 比 SpatialDE 的主要優勢是？</p><p data-lang="en">Main advantage of SPARK-X over SpatialDE?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 完全相同</span><span data-lang="en">A. Identical</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 需要更多記憶體</span><span data-lang="en">B. More memory needed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 速度大幅提升（~100×），可擴展到 10⁵ spots</span><span data-lang="en">C. ~100× faster, scales to 10⁵ spots</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只能用 R</span><span data-lang="en">D. R-only</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="graph-signal-gnn.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 9：GSP/GNN</span></a>
+<a href="variational-inference.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 11：變分推論" data-en="Ch 11: VAE">Ch 11：變分推論</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+const GRID=15;
+function gen(pat,noise){const vals=[];for(let i=0;i<GRID;i++){const row=[];for(let j=0;j<GRID;j++){let v;switch(pat){case'cluster':v=Math.exp(-((i-7)*(i-7)+(j-7)*(j-7))/20)+(Math.random()-0.5)*noise;break;case'checker':v=((i+j)%2)+(Math.random()-0.5)*noise;break;case'random':v=Math.random();break;case'gradient':v=i/GRID+(Math.random()-0.5)*noise;break;}row.push(v);}vals.push(row);}return vals;}
+function morans(vals){const n=GRID*GRID;let sum=0,cnt=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++){sum+=vals[i][j];cnt++;}const mean=sum/cnt;let varv=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++)varv+=(vals[i][j]-mean)**2;
+let num=0,W=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++){const d=[[1,0],[-1,0],[0,1],[0,-1]];for(const[di,dj] of d){const ni=i+di,nj=j+dj;if(ni>=0&&ni<GRID&&nj>=0&&nj<GRID){num+=(vals[i][j]-mean)*(vals[ni][nj]-mean);W++;}}}
+return (n/W)*num/varv;}
+function gearys(vals){const n=GRID*GRID;let sum=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++)sum+=vals[i][j];const mean=sum/n;let varv=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++)varv+=(vals[i][j]-mean)**2;
+let num=0,W=0;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++){const d=[[1,0],[-1,0],[0,1],[0,-1]];for(const[di,dj] of d){const ni=i+di,nj=j+dj;if(ni>=0&&ni<GRID&&nj>=0&&nj<GRID){num+=(vals[i][j]-vals[ni][nj])**2;W++;}}}
+return ((n-1)/(2*W))*num/varv;}
+function render(){const pat=document.getElementById('spPat').value;const noise=+document.getElementById('sSpN').value;document.getElementById('spN').textContent=noise.toFixed(2);const vals=gen(pat,noise);
+const cell=18;const ox=(600-GRID*cell)/2,oy=10;let svg='';let vmin=Infinity,vmax=-Infinity;for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++){vmin=Math.min(vmin,vals[i][j]);vmax=Math.max(vmax,vals[i][j]);}
+for(let i=0;i<GRID;i++)for(let j=0;j<GRID;j++){const v=(vals[i][j]-vmin)/(vmax-vmin+1e-9);const r=Math.round(60+v*195),g=Math.round(80+v*120),b=Math.round(200-v*150);svg+=`<rect x="${ox+j*cell}" y="${oy+i*cell}" width="${cell-1}" height="${cell-1}" fill="rgb(${r},${g},${b})"/>`;}
+document.getElementById('spSvg').innerHTML=svg;
+document.getElementById('moI').textContent=morans(vals).toFixed(3);document.getElementById('gC').textContent=gearys(vals).toFixed(3);}
+document.getElementById('spPat').addEventListener('change',render);document.getElementById('sSpN').addEventListener('input',render);render();
+
+window._QF={zh:{q1_y:'答對！I > 0 即正空間自相關。',q1_n:'答案是 A。Moran’s I > 0 表示空間聚集。',q2_y:'答對！速度是 SPARK-X 的賣點。',q2_n:'答案是 C。SPARK-X 把計算複雜度大幅降低。'},en:{q1_y:'Correct! Positive I = spatial clustering.',q1_n:'Answer is A. Moran’s I > 0 means clustering.',q2_y:'Correct! Speed is the selling point.',q2_n:'Answer is C. SPARK-X dramatically reduces complexity.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

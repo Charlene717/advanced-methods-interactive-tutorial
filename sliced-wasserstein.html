@@ -1,0 +1,459 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Sliced-Wasserstein / Fast OT — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html" class="active">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 32 / 38</div><h1 data-zh="切片 Wasserstein / 快速 OT (Sliced-Wasserstein)" data-en="Sliced-Wasserstein / Fast OT">切片 Wasserstein / 快速 OT</h1>
+<p class="subtitle" data-lang="zh">Sinkhorn OT 一次比較 N 個樣本要 O(N² log N)。1D Wasserstein 卻只要 sort：O(N log N)。Sliced-Wasserstein 把高維分布投影到隨機 1D 方向，平均多個 1D W——快、可微、樣本複雜度低，已成單細胞、影像、生成模型的標準距離。</p>
+<p class="subtitle" data-lang="en">Sinkhorn OT costs O(N² log N) to compare N samples. 1D Wasserstein needs only sorting: O(N log N). Sliced-Wasserstein projects high-dim distributions onto random 1D directions and averages — fast, differentiable, sample-efficient. Now standard in single-cell, imaging and generative modelling.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 OT 到 Sliced-Wasserstein" data-en="From OT to Sliced-Wasserstein">從 OT 到 Sliced-Wasserstein</h2>
+<div data-lang="zh">
+<p><strong>OT 的痛點：</strong>標準 p-Wasserstein 距離 W_p(μ, ν) 在 d 維需解線性規劃，N 樣本下複雜度 O(N³ log N)；entropic regularised Sinkhorn (Cuturi 2013) 把成本降到 O(N² / ε²)，但仍是 quadratic in N，且涉及非平凡 hyperparam ε。</p>
+<p><strong>1D 的奇蹟：</strong>當 d = 1，兩個 1D 分布的 W_p 有 closed-form：</p>
+<p style="text-align:center;font-family:Georgia,serif;">W_p^p(μ, ν) = ∫_0^1 | F_μ^{-1}(t) − F_ν^{-1}(t) |^p dt</p>
+<p>對 N 個樣本就是 <strong>sort + 對齊兩個 sorted 陣列</strong>：複雜度 <strong>O(N log N)</strong>。沒有 LP、沒有 hyperparameter。</p>
+<p><strong>Sliced-Wasserstein (Bonneel et al. 2015, JMIV; Rabin et al. 2011)：</strong>把高維問題化為 L 個 1D 問題的平均：</p>
+<p style="text-align:center;font-family:Georgia,serif;">SW_p^p(μ, ν) = ∫_{S^{d-1}} W_p^p(θ_# μ, θ_# ν) dσ(θ) ≈ (1/L) Σ_{l=1}^L W_p^p(P_{θ_l} μ, P_{θ_l} ν)</p>
+<p>其中 θ ∈ S^{d-1} 是隨機單位方向，P_θ μ 是 μ 沿 θ 的 1D 邊際分布。理論：SW 仍是 metric (Bonnotte 2013) 且與 W 拓樸等價（在緊緻空間上）。</p>
+</div>
+<div data-lang="en">
+<p><strong>OT pain point:</strong> the standard p-Wasserstein W_p(μ, ν) in d-D is a linear program with O(N³ log N) complexity for N samples. Entropic Sinkhorn (Cuturi 2013) drops this to O(N² / ε²) — still quadratic, and adds a non-trivial hyperparameter ε.</p>
+<p><strong>The 1D miracle:</strong> for d = 1, the W_p between two 1D distributions has a closed form:</p>
+<p style="text-align:center;font-family:Georgia,serif;">W_p^p(μ, ν) = ∫_0^1 | F_μ^{-1}(t) − F_ν^{-1}(t) |^p dt</p>
+<p>For N samples this is just <strong>sort + pair the two sorted arrays</strong>: complexity <strong>O(N log N)</strong>. No LP, no hyperparameter.</p>
+<p><strong>Sliced-Wasserstein (Bonneel et al. 2015, JMIV; Rabin et al. 2011):</strong> reduces the high-dim problem to an average of L 1D problems:</p>
+<p style="text-align:center;font-family:Georgia,serif;">SW_p^p(μ, ν) = ∫_{S^{d-1}} W_p^p(θ_# μ, θ_# ν) dσ(θ) ≈ (1/L) Σ_{l=1}^L W_p^p(P_{θ_l} μ, P_{θ_l} ν)</p>
+<p>θ ∈ S^{d-1} is a random unit direction, P_θ μ the 1D marginal of μ along θ. Theory: SW is still a metric (Bonnotte 2013) and topologically equivalent to W on compact spaces.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="近線性複雜度" data-en="Near-linear cost">近線性複雜度</h4><p data-lang="zh">每個切片 O(N log N) · L 個切片 → O(L N log N)，比 Sinkhorn 的 O(N²) 快數量級。</p><p data-lang="en">Per slice O(N log N) · L slices → O(L N log N), orders of magnitude faster than Sinkhorn's O(N²).</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="可微分" data-en="Differentiable">可微分</h4><p data-lang="zh">sort 雖不可微，但「sorted index 對齊」可微 → SW 是 generator / autoencoder 損失的好選擇。</p><p data-lang="en">Sorting itself isn't differentiable, but "aligning indices of sorted arrays" is — SW is ideal for generator / autoencoder losses.</p></div>
+  <div class="card"><div class="card-icon">📊</div><h4 data-zh="樣本複雜度" data-en="Sample efficient">樣本複雜度</h4><p data-lang="zh">SW 在維度上樣本複雜度 O(N^{-1/2})（與 d 無關），而 W 是 O(N^{-1/d}) — 雙重勝利。</p><p data-lang="en">SW has dimension-free O(N^{-1/2}) sample complexity, vs W's O(N^{-1/d}) — a double win.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="SW 計算、Max-SW、Generalised-SW" data-en="SW Computation, Max-SW, Generalised-SW">SW 計算、Max-SW、Generalised-SW</h2>
+<div data-lang="zh">
+
+<p><strong>① SW 計算 — 三步驟（Bonneel 2015）：</strong></p>
+<ol>
+<li>取 L 個隨機單位方向 θ_l ~ Unif(S^{d-1})（簡單做法：抽 d 維高斯後 normalise）。</li>
+<li>對每個 θ_l：計算投影 a_i = ⟨x_i, θ_l⟩、b_j = ⟨y_j, θ_l⟩（兩組 N 個 1D 值）。</li>
+<li>分別 sort 兩組，配對成 (a_(i), b_(i))，計算 W_p^p = (1/N) Σ_i |a_(i) − b_(i)|^p。</li>
+</ol>
+<p>最終 SW^p ≈ (1/L) Σ_l W_p^p。當 L → ∞ 收斂到真 SW；通常 L = 50–500 已足夠穩。</p>
+
+<p><strong>② Max-Sliced Wasserstein (Deshpande et al. 2019, CVPR)：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">Max-SW(μ, ν) = max_{θ ∈ S^{d-1}} W_p(P_θ μ, P_θ ν)</p>
+<p>不平均所有方向，而找「最判別性」的方向。高維下 SW 的 L 個隨機方向多半 informative 低（curse of dimensionality）；Max-SW 集中在最重要方向，sample efficiency 更好。實作：對 θ 做 projected gradient ascent。</p>
+
+<p><strong>③ Distributional Sliced-Wasserstein (Nguyen et al. 2021, ICLR)：</strong>學一個方向分布 q(θ) 而非單一最大方向——介於 SW 和 Max-SW 之間，更穩健。可用於 GAN-style 訓練。</p>
+
+<p><strong>④ Generalised SW (Kolouri et al. 2019, NeurIPS)：</strong>把 linear projection P_θ 換成 <strong>非線性</strong> projection g_θ：μ → ℝ。常見：神經網路、polynomial、Radon transform 廣義版。對「捲曲」manifold 友善。</p>
+
+<p><strong>⑤ Sliced Gromov-Wasserstein (Vayer et al. 2019, NeurIPS)：</strong>Gromov-Wasserstein (GW) 對 metric space 之間做比較，但成本是 O(N⁴)；Sliced-GW 把兩個 metric space 各投影到 1D 後計算 GW、平均。<strong>應用：跨物種 / 跨模態 single-cell 對齊。</strong></p>
+
+<p><strong>⑥ Sinkhorn-Sliced 混合：</strong>Sliced-W loss 可作為 Sinkhorn 的 warm-up，或在 batch 級別交替使用，兼顧速度與精確 coupling。GeomLoss (Feydy 2019) 同時提供。</p>
+</div>
+<div data-lang="en">
+
+<p><strong>① SW computation — three steps (Bonneel 2015):</strong></p>
+<ol>
+<li>Draw L unit directions θ_l ~ Unif(S^{d-1}) (sample d-D Gaussian, normalise).</li>
+<li>For each θ_l: project a_i = ⟨x_i, θ_l⟩, b_j = ⟨y_j, θ_l⟩ (two arrays of N values).</li>
+<li>Sort both, pair (a_(i), b_(i)), compute W_p^p = (1/N) Σ_i |a_(i) − b_(i)|^p.</li>
+</ol>
+<p>SW^p ≈ (1/L) Σ_l W_p^p; L = 50–500 typically suffices.</p>
+
+<p><strong>② Max-Sliced Wasserstein (Deshpande et al. 2019, CVPR):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">Max-SW(μ, ν) = max_{θ ∈ S^{d-1}} W_p(P_θ μ, P_θ ν)</p>
+<p>Instead of averaging, find the most discriminative direction. In high dim most random directions carry low information (curse of dimensionality); Max-SW concentrates effort and is sample-efficient. Implementation: projected gradient ascent on θ.</p>
+
+<p><strong>③ Distributional Sliced-Wasserstein (Nguyen et al. 2021, ICLR):</strong> learn a distribution q(θ) over directions instead of a single max — between SW and Max-SW, more robust. Used in GAN-style training.</p>
+
+<p><strong>④ Generalised SW (Kolouri et al. 2019, NeurIPS):</strong> replace linear P_θ with a <strong>non-linear</strong> projection g_θ: μ → ℝ (NNs, polynomials, generalised Radon). Helpful for curved manifolds.</p>
+
+<p><strong>⑤ Sliced Gromov-Wasserstein (Vayer et al. 2019, NeurIPS):</strong> GW compares two metric spaces but costs O(N⁴); Sliced-GW projects each to 1D, runs GW per slice, averages. <strong>Used for cross-species / cross-modality single-cell alignment.</strong></p>
+
+<p><strong>⑥ Sinkhorn-Sliced hybrid:</strong> use Sliced-W as warm-up to Sinkhorn, or alternate per batch for speed + exact coupling. Provided by GeomLoss (Feydy 2019).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼 sort 就夠？</strong> 對 1D 兩個分布的 W_p，最佳 coupling 就是「分位數對齊」——把兩邊都 sort 後對應位置直接配。這是 1D OT 的特有結構（不需 LP）；高維沒有這個免費午餐。</div>
+<div data-lang="en"><strong>Why is sorting enough?</strong> For two 1D distributions, the optimal W_p coupling is "quantile alignment" — sort both sides and pair by position. This is a 1D-only structural shortcut (no LP needed); high-dim lacks this free lunch.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="2D 分布的隨機投影 sliced 計算" data-en="Random Projections of 2D Distributions for Sliced Computation">2D 分布的隨機投影 sliced 計算</h2>
+<div data-lang="zh"><p>下方 SVG 畫兩個 2D 點雲（藍色 μ，紅色 ν），以及 L 個隨機 1D 投影方向 (灰色虛線)。每個方向上計算 1D W₂，最終平均成 SW。<strong>移動兩個 cluster 中心</strong>、調整 L 觀察 SW 估計穩定性。理論值由 N(m₁, I) ↔ N(m₂, I) 在無限樣本下為 ‖m₁ − m₂‖²。</p></div>
+<div data-lang="en"><p>The SVG below shows two 2D point clouds (blue μ, red ν) and L random projection directions (grey dashed). Per direction we compute 1D W₂; we average to get SW. <strong>Drag the two cluster centres</strong>, tune L, and see how stable SW is. Asymptotically, for N(m₁, I) vs N(m₂, I), the true value is ‖m₁ − m₂‖².</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="樣本數 N" data-en="Samples N">樣本數 N <span id="vSN">120</span></label><input type="range" id="sSN" min="20" max="400" value="120" step="10"></div>
+<div class="slider-group"><label data-zh="切片數 L" data-en="Slices L">切片數 L <span id="vSL">32</span></label><input type="range" id="sSL" min="1" max="200" value="32" step="1"></div>
+<div class="slider-group"><label data-zh="cluster σ" data-en="cluster σ">σ <span id="vSS">0.40</span></label><input type="range" id="sSS" min="0.1" max="1.2" value="0.4" step="0.05"></div>
+<div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">
+  <button id="btnResample" style="padding:8px 18px;background:var(--c-accent);color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;" data-zh="🎲 重新取樣" data-en="🎲 Resample">🎲 重新取樣</button>
+  <button id="btnNewDir" style="padding:8px 18px;background:var(--c-highlight);color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;" data-zh="🔄 新方向" data-en="🔄 New directions">🔄 新方向</button>
+</div>
+<svg id="swSvg" viewBox="0 0 600 380" style="width:100%;height:380px;background:#fafafa;border-radius:6px;cursor:pointer;"></svg>
+<div id="swInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>⚡ <span data-zh="何時用 Sliced-Wasserstein？" data-en="When to use Sliced-Wasserstein?">何時用 Sliced-Wasserstein？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>大樣本 (N &gt; 10⁴):</strong> Sinkhorn O(N²) 已不可行；SW O(L N log N) 仍可行。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>需要梯度:</strong> 訓練 generator / VAE / autoencoder 時，SW 損失比 GAN 損失穩定、比 Sinkhorn 快。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>跨 batch / 跨 donor 比較:</strong> 比較 single-cell population distance；SW 是好 metric。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>需要明確 transport plan / coupling（例 batch alignment 要直接配對） → 用 Sinkhorn 或 unbalanced OT；極高維且高度稀疏（直接 random projection 失效）→ Generalised SW。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Large N (&gt;10⁴):</strong> Sinkhorn O(N²) is impractical; SW O(L N log N) still works.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Gradient required:</strong> training generators / VAEs / AEs — SW loss is more stable than GAN, faster than Sinkhorn.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Cross-batch / cross-donor comparison:</strong> single-cell population distance — SW is a good metric.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Need an explicit transport plan / coupling (e.g. batch alignment requires direct pairing) → use Sinkhorn or unbalanced OT; extremely high-dim and very sparse (linear projections lose info) → Generalised SW.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="SW 在單細胞、空間、生成模型" data-en="SW in Single-cell, Spatial, and Generative Models">SW 在單細胞、空間、生成模型</h2>
+<div class="card-grid cols-2">
+
+<div class="card"><h4 data-zh="Sliced-Wasserstein AutoEncoder" data-en="Sliced-Wasserstein AutoEncoder">Sliced-Wasserstein AutoEncoder</h4>
+<p data-lang="zh">Kolouri et al. (2018, ICLR) SWAE 用 SW loss 取代 WAE 的 GAN/MMD critic — 訓練穩、無 adversarial、隱空間分布貼合 prior。生物應用：scVI 的變體、藥物分子 VAE 損失改良（更穩定的 latent geometry）。</p>
+<p data-lang="en">Kolouri et al. (2018, ICLR) SWAE replaces the WAE GAN/MMD critic with an SW loss — stable, adversarial-free, latent matches the prior. Used in scVI variants and molecule-VAE losses with better latent geometry.</p></div>
+
+<div class="card"><h4 data-zh="SW-PD 跨 donor population 距離" data-en="SW-PD cross-donor population distance">SW-PD 跨 donor population 距離</h4>
+<p data-lang="zh">single-cell 多 donor 比較需要 population-level distance，但 N 可達 10⁵+。Sliced-Wasserstein Population Distance (Cao, Yan 2022; 衍生工作 2023–24) 用 SW 計算 donor pairwise distance，可用於做 hierarchical clustering 或 association test 與 disease 表型相關性。</p>
+<p data-lang="en">Comparing multiple donors at the single-cell population level needs a distance with N up to 10⁵+. Sliced-Wasserstein Population Distance (Cao, Yan 2022; follow-ups 2023–24) computes pairwise donor distances via SW for hierarchical clustering and disease-association tests.</p></div>
+
+<div class="card"><h4 data-zh="空間轉錄體 slice alignment" data-en="Spatial slice alignment">空間轉錄體 slice alignment</h4>
+<p data-lang="zh">PASTE (Zeira et al. 2022, Nat Methods) 用 OT 對齊連續切片；後續 PASTE2、SPACEL 採用 Sliced-GW 提速、處理大樣本切片。對大規模 Visium / Slide-seqV2 資料尤其關鍵。</p>
+<p data-lang="en">PASTE (Zeira et al. 2022, Nat Methods) aligns consecutive spatial slices via OT; later PASTE2 and SPACEL use Sliced-GW for speed and scalability. Especially critical for large Visium / Slide-seqV2 datasets.</p></div>
+
+<div class="card"><h4 data-zh="Batch comparison 與 effect quantification" data-en="Batch comparison / effect quantification">Batch comparison 與 effect quantification</h4>
+<p data-lang="zh">不同 batch 的 single-cell 嵌入分佈可用 SW 比較；SW 距離可作為 batch effect 強度 metric，比 kBET / iLISI 更原則化、可微（可做正則項）。已見於 scIB benchmark 變體。</p>
+<p data-lang="en">Embeddings from different batches can be compared via SW; SW distance is a principled, differentiable batch-effect metric — more rigorous than kBET / iLISI and usable as a regulariser. Appears in scIB benchmark variants.</p></div>
+
+<div class="card"><h4 data-zh="Sliced Gromov-Wasserstein 跨物種" data-en="Sliced-GW cross-species">Sliced Gromov-Wasserstein 跨物種</h4>
+<p data-lang="zh">Vayer et al. (2019, NeurIPS) Sliced-GW 把兩個無法直接共享 feature 的 metric space 對齊 — 用於人–鼠 single-cell 對齊（不同 gene set）、跨模態（RNA ↔ ATAC）embedding 對齊。比 full GW 快 100×。</p>
+<p data-lang="en">Vayer et al. (2019, NeurIPS) Sliced-GW aligns two metric spaces lacking shared features — used for human–mouse single-cell alignment (different gene sets) and cross-modal (RNA ↔ ATAC) embedding alignment. 100× faster than full GW.</p></div>
+
+<div class="card"><h4 data-zh="Cross-modal embedding 對齊" data-en="Cross-modal embedding alignment">Cross-modal embedding 對齊</h4>
+<p data-lang="zh">CITE-seq 同一細胞的 RNA + protein latent 對齊；ATAC + RNA multiome；spatial + scRNA-seq 整合。SW 比 Sinkhorn 在 100k-cell 級別資料快 30–100×，且更易加入 GPU 訓練。</p>
+<p data-lang="en">CITE-seq RNA + protein latents, ATAC + RNA multiome, spatial + scRNA-seq integration — SW is 30–100× faster than Sinkhorn on 100k-cell datasets and integrates easily into GPU training.</p></div>
+
+<div class="card"><h4 data-zh="生成模型損失 (SW-GAN, SW-Diffusion)" data-en="Generative model losses (SW-GAN, SW-Diffusion)">生成模型損失</h4>
+<p data-lang="zh">Wu et al. (2019) SW-GAN 用 sliced-W 替換 WGAN critic — 無 adversarial 不穩。後續用於 protein structure 生成、分子 VAE、cell embedding GAN。Diffusion 變體中也有人用 SW 替代 ELBO 對齊樣本分布。</p>
+<p data-lang="en">Wu et al. (2019) SW-GAN replaces the WGAN critic with sliced-W — no adversarial instability. Later used for protein structure generation, molecule VAEs, cell-embedding GANs. Some diffusion variants use SW instead of ELBO to align sample distributions.</p></div>
+
+<div class="card"><h4 data-zh="scVI variants" data-en="scVI variants">scVI variants</h4>
+<p data-lang="zh">scVI / totalVI / multiVI 是 VAE-based single-cell 模型；近年變體（如 scvi-tools 內部實驗、社群 PR）用 SW prior matching 替代 KL，對 latent geometry 控制更好、batch correction 更乾淨。</p>
+<p data-lang="en">scVI / totalVI / multiVI are VAE-based single-cell models; recent variants (scvi-tools experiments, community PRs) replace KL with SW prior matching for better latent geometry and cleaner batch correction.</p></div>
+
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題：方向選取、收斂、與 W 的關係" data-en="Advanced: direction selection, convergence, link to W">進階主題</h2>
+<div data-lang="zh">
+<h3>① 方向選取的維度詛咒</h3>
+<p>SW 對高維 d 不友善——隨機方向幾乎正交於資料 manifold，多數方向只看到「mean shift」沒有結構資訊。Nadjahi et al. (2020, NeurIPS) 對 SW 樣本複雜度做詳細分析；Max-SW、Distributional-SW、Generalised-SW 都是對此問題的回應。實務：在 PCA 後的低維 latent 計算 SW 更有效。</p>
+
+<h3>② SW 與 W 的關係</h3>
+<p>SW ≤ W（容易證），但反向沒有；Bonnotte (2013) 證明在緊緻 d 維域上兩者拓樸等價，但 SW 的「rate」比 W 弱。實務：SW 是 W 的好 surrogate，但要量化 transport cost 仍需 W / Sinkhorn。</p>
+
+<h3>③ Sample complexity</h3>
+<p>W_p 的 empirical estimator 收斂率為 O(N^{-1/d})（curse of dim），SW 為 O(N^{-1/2})（與 d 無關）。對 single-cell N = 10⁵ 量級且 d = 50 維 latent，SW 估計穩定，W 估計極為 noisy。</p>
+
+<h3>④ Differentiable sorting trick</h3>
+<p>Sliced-W 訓練時需對 sort 操作微分。實作技巧：sort 不直接可微，但其「permutation」相對輸入連續變化（measure-zero except at ties），實務上對輸入梯度可用——PyTorch <code>torch.sort()</code> 即提供。Cuturi et al. (2019) 提出 soft-sort 平滑近似，數值更穩。</p>
+
+<h3>⑤ Convex Sliced-W</h3>
+<p>Bonneel & Coeurjolly (2019) Spot the Spot 用 max-SW 找最判別方向；對 GAN-style 訓練更穩。後續 distributional sliced (Nguyen 2021) 介於 mean 與 max 之間。</p>
+
+<h3>⑥ Sliced for non-Euclidean / Hyperbolic</h3>
+<p>近年延伸到 hyperbolic SW (Bonet 2023)、circular SW、graph SW。對 cell ontology / phylogeny 等非歐式資料給出快速距離。</p>
+
+<h3>⑦ 何時改用 Sinkhorn？</h3>
+<p>當需要明確 transport plan（如 batch correction 要把 cell A 對應到 cell B 整合）、或計算 OT-derived quantities (Wasserstein gradient flow, OT barycentre)，仍以 Sinkhorn / unbalanced Sinkhorn 為主。SW 主要當「相似度」用。</p>
+</div>
+<div data-lang="en">
+<h3>① Curse of dimensionality on directions</h3>
+<p>SW degrades in very high d — random directions are nearly orthogonal to the data manifold; most carry only mean-shift info. Nadjahi et al. (2020, NeurIPS) analyse SW sample complexity; Max-SW, Distributional-SW, Generalised-SW respond to this. Practical fix: compute SW in a PCA-reduced latent.</p>
+
+<h3>② SW vs W</h3>
+<p>SW ≤ W (easy); the reverse fails. Bonnotte (2013) shows topological equivalence on compact d-D domains, but SW's "rate" is weaker. SW is a good W surrogate, but for transport cost itself you still want W / Sinkhorn.</p>
+
+<h3>③ Sample complexity</h3>
+<p>Empirical W_p converges at O(N^{-1/d}) — curse of dim; SW at O(N^{-1/2}) — dim-free. For single-cell with N ~ 10⁵ and d = 50 latent, SW is stable, W is extremely noisy.</p>
+
+<h3>④ Differentiable sorting</h3>
+<p>Training SW needs gradients through sort. Sort itself isn't differentiable, but the permutation is locally constant in input (except at ties), so gradient w.r.t. input values is well-defined a.e. — PyTorch <code>torch.sort()</code> supports it. Cuturi et al. (2019) propose smooth soft-sort for added stability.</p>
+
+<h3>⑤ Convex Sliced-W</h3>
+<p>Bonneel & Coeurjolly (2019) "Spot the Spot" use Max-SW for the most discriminative direction — stable for GAN-style training. Distributional-SW (Nguyen 2021) interpolates between mean and max.</p>
+
+<h3>⑥ Non-Euclidean / hyperbolic Sliced-W</h3>
+<p>Recent: hyperbolic SW (Bonet 2023), circular SW, graph SW. Provides fast distances on cell ontologies / phylogenies and other non-Euclidean structures.</p>
+
+<h3>⑦ When to use Sinkhorn instead?</h3>
+<p>When you need an explicit transport plan (e.g. batch correction that pairs cell A to cell B), or OT-derived quantities (Wasserstein gradient flow, OT barycentres), stay with Sinkhorn / unbalanced Sinkhorn. SW is mainly used as a "similarity".</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / POT</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / GeomLoss</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / from-scratch</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install pot</span>
+<span class="keyword">import</span> ot
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+X = np.random.randn(<span class="num">5000</span>, <span class="num">50</span>)        <span class="comment"># cells × latent</span>
+Y = np.random.randn(<span class="num">5000</span>, <span class="num">50</span>) + <span class="num">0.3</span>
+
+<span class="comment"># Sliced Wasserstein with L = 200 projections</span>
+sw2 = ot.sliced_wasserstein_distance(X, Y, n_projections=<span class="num">200</span>, p=<span class="num">2</span>, seed=<span class="num">0</span>)
+print(<span class="str">"SW₂ ="</span>, sw2)
+
+<span class="comment"># Max-Sliced (POT &gt;= 0.9)</span>
+maxsw = ot.max_sliced_wasserstein_distance(X, Y, n_projections=<span class="num">50</span>, p=<span class="num">2</span>)
+print(<span class="str">"Max-SW ="</span>, maxsw)
+
+<span class="comment"># Sliced Gromov-Wasserstein (cross-feature alignment)</span>
+sgw = ot.gromov.sliced_gromov_wasserstein(X, Y, n_projections=<span class="num">100</span>)</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># pip install geomloss</span>
+<span class="keyword">from</span> geomloss <span class="keyword">import</span> SamplesLoss
+<span class="keyword">import</span> torch
+
+<span class="comment"># Sinkhorn for comparison and SW for speed; both differentiable</span>
+sinkhorn = SamplesLoss(loss=<span class="str">"sinkhorn"</span>, p=<span class="num">2</span>, blur=<span class="num">0.05</span>)
+sliced   = SamplesLoss(loss=<span class="str">"sinkhorn"</span>, p=<span class="num">2</span>, blur=<span class="num">0.05</span>, backend=<span class="str">"online"</span>)
+
+<span class="comment"># In a generative model training loop:</span>
+X = torch.randn(<span class="num">1024</span>, <span class="num">128</span>, requires_grad=<span class="keyword">True</span>)
+Y = real_batch()                            <span class="comment"># real data</span>
+loss = sinkhorn(X, Y)                       <span class="comment"># Sinkhorn-style loss</span>
+loss.backward()                             <span class="comment"># gradient w.r.t. X (or generator)</span></pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="keyword">import</span> torch
+
+<span class="keyword">def</span> sliced_w2(X, Y, L=<span class="num">128</span>):
+    <span class="str">"""Sliced 2-Wasserstein for X (N,d), Y (M,d). Differentiable."""</span>
+    d = X.shape[<span class="num">1</span>]
+    theta = torch.randn(d, L, device=X.device); theta = theta / theta.norm(dim=<span class="num">0</span>, keepdim=<span class="keyword">True</span>)
+    A = X @ theta                            <span class="comment"># (N, L)</span>
+    B = Y @ theta                            <span class="comment"># (M, L)</span>
+    <span class="comment"># Sort per direction independently; pad if N != M (here assume equal)</span>
+    A_s, _ = A.sort(dim=<span class="num">0</span>)
+    B_s, _ = B.sort(dim=<span class="num">0</span>)
+    <span class="keyword">return</span> ((A_s - B_s)**<span class="num">2</span>).mean()       <span class="comment"># average over N AND L</span>
+
+<span class="comment"># Use in a training loop:</span>
+optimizer = torch.optim.Adam([X_gen], lr=<span class="num">1e-3</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">2000</span>):
+    loss = sliced_w2(X_gen, X_real, L=<span class="num">128</span>)
+    optimizer.zero_grad(); loss.backward(); optimizer.step()</pre></div>
+</div>
+
+<p data-lang="zh" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">主要套件：<code>pot</code> (Python Optimal Transport — Flamary 2021, JMLR)、<code>geomloss</code> (Feydy 2019, AISTATS — GPU 友善 SW/Sinkhorn)、<code>torchsort</code> (Cuturi 2019 soft-sort)。R: <code>transport</code> 套件含基本 SW。</p>
+<p data-lang="en" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">Key libraries: <code>pot</code> (Python Optimal Transport — Flamary 2021, JMLR), <code>geomloss</code> (Feydy 2019, AISTATS — GPU-friendly SW/Sinkhorn), <code>torchsort</code> (Cuturi 2019 soft-sort). R: <code>transport</code> ships basic SW.</p>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">為什麼 1D Wasserstein 距離計算只需 O(N log N)？</p><p data-lang="en">Why is 1D Wasserstein distance O(N log N)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 因為它是凸函數</span><span data-lang="en">A. Because it's convex</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為 1D 沒有距離概念</span><span data-lang="en">B. There's no distance in 1D</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 1D 兩分布的最佳配對是 sorted-order 對應，sort 主導複雜度</span><span data-lang="en">C. The optimal coupling between two 1D distributions is sorted-order alignment; sort dominates the cost</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 需要 GPU 才有這個複雜度</span><span data-lang="en">D. It only achieves this on GPU</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Sliced-Wasserstein 的核心想法是？</p><p data-lang="en">What is the core idea of Sliced-Wasserstein?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 對資料切片成多 batch，分別計算 W</span><span data-lang="en">A. Split data into batches and compute W on each</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 把高維分布投影到 L 個隨機 1D 方向，每方向計算 1D W 再平均</span><span data-lang="en">B. Project distributions onto L random 1D directions, compute 1D W per direction, average</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只取 W 的第一個 PC</span><span data-lang="en">C. Take just the first PC of W</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 用 PCA 取代 W</span><span data-lang="en">D. Replace W with PCA</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">SW 相對 Sinkhorn 的主要 <em>劣勢</em> 是？</p><p data-lang="en">A main <em>weakness</em> of SW vs Sinkhorn is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 不直接給出 transport plan / coupling</span><span data-lang="en">A. It does not give an explicit transport plan / coupling</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 計算更慢</span><span data-lang="en">B. It's slower</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 不可微</span><span data-lang="en">C. Not differentiable</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不是 metric</span><span data-lang="en">D. Not a metric</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="random-matrix-theory.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 31：Random Matrix Theory" data-en="Ch 31: Random Matrix Theory">Ch 31：Random Matrix Theory</span></a>
+<a href="compressed-sensing.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 33：Compressed Sensing" data-en="Ch 33: Compressed Sensing">Ch 33：Compressed Sensing</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+/* ===== Interactive: 2D point clouds + random 1D projections ===== */
+const SVG=document.getElementById('swSvg');
+const W=600,H=380;
+const PLOTX0=20,PLOTY0=20,PLOTW=360,PLOTH=H-40;          // left: 2D scene
+const CX=PLOTX0+PLOTW/2, CY=PLOTY0+PLOTH/2;
+const SCALE=80;                                          // world unit → px
+const RIGHTX=PLOTX0+PLOTW+10, RIGHTW=W-RIGHTX-20;        // right: projection panel
+
+let muC={x:-1.0,y:0.0}, nuC={x:1.0,y:0.0};               // cluster centres (world coords)
+let X=[],Y=[];                                            // arrays of {x,y}
+let DIRS=[];                                              // unit vectors
+let dragWhich=-1;
+
+function randn(){let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function resample(){const N=+document.getElementById('sSN').value;const s=+document.getElementById('sSS').value;
+  X=[];Y=[];for(let i=0;i<N;i++){X.push({x:muC.x+s*randn(),y:muC.y+s*randn()});Y.push({x:nuC.x+s*randn(),y:nuC.y+s*randn()});}
+}
+function newDirs(){const L=+document.getElementById('sSL').value;DIRS=[];for(let l=0;l<L;l++){let a=Math.random()*Math.PI;DIRS.push({x:Math.cos(a),y:Math.sin(a)});}}
+
+function w2_1d(a,b){const n=Math.min(a.length,b.length);const as=[...a].sort((x,y)=>x-y);const bs=[...b].sort((x,y)=>x-y);let s=0;for(let i=0;i<n;i++){const d=as[i]-bs[i];s+=d*d;}return s/n;}
+
+function computeSW(){
+  const L=DIRS.length;
+  let acc=0;const per=[];
+  for(const t of DIRS){
+    const ax=X.map(p=>p.x*t.x+p.y*t.y);
+    const bx=Y.map(p=>p.x*t.x+p.y*t.y);
+    const w=w2_1d(ax,bx);per.push(w);acc+=w;
+  }
+  return {sw:acc/L, per};
+}
+
+function w2sqTrue(){const dx=muC.x-nuC.x,dy=muC.y-nuC.y;return dx*dx+dy*dy;}
+
+function world2sx(x){return CX+x*SCALE;}
+function world2sy(y){return CY-y*SCALE;}
+function sx2world(sx){return (sx-CX)/SCALE;}
+function sy2world(sy){return -(sy-CY)/SCALE;}
+
+function render(){
+  // Recompute SW
+  const {sw, per}=computeSW();
+  const trueW2=w2sqTrue();
+  // Stats: variance across slices = stability indicator
+  const meanPer=per.reduce((a,b)=>a+b,0)/per.length;
+  let varPer=0;for(const w of per)varPer+=(w-meanPer)*(w-meanPer);varPer/=per.length;
+  const stdPer=Math.sqrt(varPer);
+
+  let svg='';
+  // Left axes (light)
+  svg+=`<rect x="${PLOTX0}" y="${PLOTY0}" width="${PLOTW}" height="${PLOTH}" fill="#fdfdfd" stroke="#d5cfc0" rx="6"/>`;
+  // gridlines at -2,-1,0,1,2
+  for(let k=-2;k<=2;k++){
+    const sx=world2sx(k), sy=world2sy(k);
+    if(sx>PLOTX0&&sx<PLOTX0+PLOTW)svg+=`<line x1="${sx}" y1="${PLOTY0}" x2="${sx}" y2="${PLOTY0+PLOTH}" stroke="#eee"/>`;
+    if(sy>PLOTY0&&sy<PLOTY0+PLOTH)svg+=`<line x1="${PLOTX0}" y1="${sy}" x2="${PLOTX0+PLOTW}" y2="${sy}" stroke="#eee"/>`;
+  }
+  // Random direction lines (each unit vector through origin, lighten)
+  for(const t of DIRS){
+    const k=Math.max(PLOTW,PLOTH);
+    const x1=CX+t.x*k,y1=CY-t.y*k,x2=CX-t.x*k,y2=CY+t.y*k;
+    svg+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#888" stroke-opacity="0.18" stroke-width="0.7"/>`;
+  }
+  // Sample points
+  for(const p of X)svg+=`<circle cx="${world2sx(p.x)}" cy="${world2sy(p.y)}" r="2.6" fill="rgba(37,99,168,.65)"/>`;
+  for(const p of Y)svg+=`<circle cx="${world2sx(p.x)}" cy="${world2sy(p.y)}" r="2.6" fill="rgba(192,57,43,.65)"/>`;
+  // Centres (draggable)
+  svg+=`<circle data-c="0" cx="${world2sx(muC.x)}" cy="${world2sy(muC.y)}" r="10" fill="#2563a8" stroke="#fff" stroke-width="2.5" style="cursor:grab;"/>`;
+  svg+=`<circle data-c="1" cx="${world2sx(nuC.x)}" cy="${world2sy(nuC.y)}" r="10" fill="#c0392b" stroke="#fff" stroke-width="2.5" style="cursor:grab;"/>`;
+  // Labels
+  svg+=`<text x="${PLOTX0+8}" y="${PLOTY0+18}" font-size="11" fill="#666">2D scene (drag centres)</text>`;
+  svg+=`<text x="${world2sx(muC.x)-6}" y="${world2sy(muC.y)+4}" font-size="11" fill="#fff" font-weight="700">μ</text>`;
+  svg+=`<text x="${world2sx(nuC.x)-6}" y="${world2sy(nuC.y)+4}" font-size="11" fill="#fff" font-weight="700">ν</text>`;
+
+  // Right panel: per-slice W2 bars + average line
+  svg+=`<rect x="${RIGHTX}" y="${PLOTY0}" width="${RIGHTW}" height="${PLOTH}" fill="#fdfdfd" stroke="#d5cfc0" rx="6"/>`;
+  const L=per.length;
+  const maxV=Math.max(...per, 0.01);
+  const barW=Math.max(1,(RIGHTW-20)/L);
+  for(let i=0;i<L;i++){
+    const h0=(per[i]/maxV)*(PLOTH-50);
+    svg+=`<rect x="${RIGHTX+10+i*barW}" y="${PLOTY0+PLOTH-20-h0}" width="${Math.max(0.6,barW-0.4)}" height="${h0}" fill="rgba(26,107,90,.55)"/>`;
+  }
+  // mean line
+  const meanH=(sw/maxV)*(PLOTH-50);
+  const ym=PLOTY0+PLOTH-20-meanH;
+  svg+=`<line x1="${RIGHTX+5}" y1="${ym}" x2="${RIGHTX+RIGHTW-5}" y2="${ym}" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 3"/>`;
+  svg+=`<text x="${RIGHTX+8}" y="${PLOTY0+16}" font-size="11" fill="#666">per-slice W₂²</text>`;
+  svg+=`<text x="${RIGHTX+8}" y="${PLOTY0+30}" font-size="10.5" fill="#c0392b">— mean = SW₂² ≈ ${sw.toFixed(3)}</text>`;
+
+  SVG.innerHTML=svg;
+
+  const lang=I18n.get();
+  document.getElementById('swInfo').innerHTML = lang==='zh'?
+    `SW₂² 估計 = <strong>${sw.toFixed(3)}</strong> · 切片標準差 = <strong>${stdPer.toFixed(3)}</strong><br>
+理論值 (mean shift only, σ → 0): ‖m_μ − m_ν‖² ≈ <strong>${trueW2.toFixed(3)}</strong> · cluster σ 也會加入 0 偏差貢獻<br>
+切片數 L = ${L}，越大估計越穩；切片標準差表示「方向不確定性」`
+    :
+    `SW₂² estimate = <strong>${sw.toFixed(3)}</strong> · per-slice std = <strong>${stdPer.toFixed(3)}</strong><br>
+Theoretical mean-shift-only value: ‖m_μ − m_ν‖² ≈ <strong>${trueW2.toFixed(3)}</strong> · cluster σ adds an unbiased contribution<br>
+L = ${L} slices — larger L = more stable estimate; per-slice std = direction uncertainty`;
+}
+
+/* Drag handling */
+SVG.addEventListener('mousedown',e=>{const t=e.target;if(t.tagName==='circle'&&t.dataset.c!==undefined){dragWhich=+t.dataset.c;}});
+window.addEventListener('mouseup',()=>{dragWhich=-1;});
+SVG.addEventListener('mousemove',e=>{
+  if(dragWhich<0)return;
+  const rect=SVG.getBoundingClientRect();
+  const sx0=W/rect.width, sy0=H/rect.height;
+  const mx=(e.clientX-rect.left)*sx0, my=(e.clientY-rect.top)*sy0;
+  if(mx<PLOTX0||mx>PLOTX0+PLOTW||my<PLOTY0||my>PLOTY0+PLOTH)return;
+  const wx=sx2world(mx), wy=sy2world(my);
+  if(dragWhich===0)muC={x:wx,y:wy};else nuC={x:wx,y:wy};
+  resample();render();
+});
+
+document.getElementById('sSN').addEventListener('input',e=>{document.getElementById('vSN').textContent=e.target.value;resample();render();});
+document.getElementById('sSL').addEventListener('input',e=>{document.getElementById('vSL').textContent=e.target.value;newDirs();render();});
+document.getElementById('sSS').addEventListener('input',e=>{document.getElementById('vSS').textContent=(+e.target.value).toFixed(2);resample();render();});
+document.getElementById('btnResample').addEventListener('click',()=>{resample();render();});
+document.getElementById('btnNewDir').addEventListener('click',()=>{newDirs();render();});
+document.addEventListener('langchange',render);
+
+resample();newDirs();render();
+
+window._QF={zh:{
+  q1_y:'答對！1D 最佳 coupling 就是 sorted-order pairing，sort 主導 O(N log N)。',
+  q1_n:'答案是 C。1D 的最佳 transport 是把兩個 sorted 陣列對應，因此只要 sort。',
+  q2_y:'答對！SW 把 d 維問題降為多個 1D 問題的平均。',
+  q2_n:'答案是 B。Sliced-W 對 L 個隨機 1D 方向各做 1D W，再平均。',
+  q3_y:'答對！SW 只給「距離」，沒有 transport plan；要 plan 就用 Sinkhorn / 標準 OT。',
+  q3_n:'答案是 A。SW 沒有顯式 coupling，需 coupling 的場景仍以 Sinkhorn 為主。'
+},en:{
+  q1_y:'Correct! The optimal 1D coupling is sorted-order pairing; sort dominates O(N log N).',
+  q1_n:'Answer is C. The optimal 1D transport is to pair two sorted arrays — just a sort.',
+  q2_y:'Correct! SW reduces a d-D problem to an average of 1D problems.',
+  q2_n:'Answer is B. Sliced-W computes 1D W on L random directions and averages.',
+  q3_y:'Correct! SW gives a distance only — no explicit transport plan. Use Sinkhorn / OT for that.',
+  q3_n:'Answer is A. SW lacks an explicit coupling; Sinkhorn is preferred when you need one.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

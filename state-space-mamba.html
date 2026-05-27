@@ -1,0 +1,416 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>State Space Models / Mamba — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html" class="active">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 18 / 26</div><h1 data-zh="狀態空間模型 / Mamba" data-en="State Space Models / Mamba">狀態空間模型 / Mamba</h1>
+<p class="subtitle" data-lang="zh">線性複雜度 O(n) 取代 Transformer 的 O(n²) — S4、Mamba 等選擇性 SSM 讓「全基因組 1 Mbp 上下文建模」首次成真，正在改寫長序列基因組學的格局。</p>
+<p class="subtitle" data-lang="en">Linear-time O(n) alternatives to Transformer's O(n²) — S4 and Mamba's selective SSMs make whole-genome 1 Mbp context modeling feasible for the first time, reshaping long-sequence genomics.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從連續系統到序列建模" data-en="From Continuous Systems to Sequence Modeling">從連續系統到序列建模</h2>
+<div data-lang="zh">
+<p>狀態空間模型（State Space Model, SSM）來自控制論。連續形式：</p>
+<p style="text-align:center;font-family:Georgia,serif;">h'(t) = A · h(t) + B · x(t),&nbsp;&nbsp;&nbsp;y(t) = C · h(t) + D · x(t)</p>
+<p>h 是「隱藏狀態」（記憶），A 控制狀態如何隨時間衰減/振盪，B 把輸入注入狀態，C 從狀態讀出輸出。離散化（用 zero-order hold 或 bilinear）後變成：</p>
+<p style="text-align:center;font-family:Georgia,serif;">h<sub>k</sub> = Ā · h<sub>k−1</sub> + B̄ · x<sub>k</sub>,&nbsp;&nbsp;&nbsp;y<sub>k</sub> = C · h<sub>k</sub></p>
+<p>這個遞迴式長得像 RNN——但因為 (Ā, B̄, C) 是線性常數，可以展開成「卷積核」：y = K * x，其中 K = (C B̄, C Ā B̄, C Ā² B̄, ...)。卷積可平行計算，配合 FFT 可達 O(n log n)；Mamba 更進一步用 hardware-aware scan 做到 O(n)。</p>
+<p>關鍵突破：<strong>Mamba (Gu & Dao 2024, COLM)</strong> 讓 (A, B, C) 依輸入動態變化——「selective SSM」——使模型能像 attention 一樣選擇性記住或忽略 token，但仍維持線性複雜度。</p>
+</div>
+<div data-lang="en">
+<p>State Space Models (SSMs) come from control theory. Continuous form:</p>
+<p style="text-align:center;font-family:Georgia,serif;">h'(t) = A · h(t) + B · x(t),&nbsp;&nbsp;&nbsp;y(t) = C · h(t) + D · x(t)</p>
+<p>h is the latent state (memory); A governs state decay/oscillation; B injects input; C reads out. After discretization (zero-order hold or bilinear):</p>
+<p style="text-align:center;font-family:Georgia,serif;">h<sub>k</sub> = Ā · h<sub>k−1</sub> + B̄ · x<sub>k</sub>,&nbsp;&nbsp;&nbsp;y<sub>k</sub> = C · h<sub>k</sub></p>
+<p>This looks like an RNN — but with constant (Ā, B̄, C), it unrolls into a <strong>convolution</strong>: y = K * x with K = (C B̄, C Ā B̄, C Ā² B̄, ...). Convolution parallelizes, FFT gives O(n log n); Mamba's hardware-aware scan achieves O(n).</p>
+<p>The key breakthrough: <strong>Mamba (Gu & Dao 2024, COLM)</strong> makes (A, B, C) input-dependent — "selective SSM" — letting the model selectively remember or ignore tokens like attention, but still in linear time.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⏱️</div><h4 data-zh="線性複雜度" data-en="Linear time">線性複雜度</h4><p data-lang="zh">O(n) 訓練與推論，記憶體 O(1)，可處理百萬 bp 序列。</p><p data-lang="en">O(n) training and inference, O(1) memory — handles million-bp sequences.</p></div>
+  <div class="card"><div class="card-icon">🔀</div><h4 data-zh="雙重視角" data-en="Dual view">雙重視角</h4><p data-lang="zh">訓練時當卷積（平行）；推論時當 RNN（O(1) 記憶體）。</p><p data-lang="en">Convolution during training (parallel); RNN at inference (O(1) memory).</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="選擇性" data-en="Selective">選擇性</h4><p data-lang="zh">Mamba 讓參數依輸入變化，類似 attention 的選擇機制。</p><p data-lang="en">Mamba's input-dependent parameters mimic attention's selection mechanism.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 HiPPO 到 Mamba：演進路線" data-en="From HiPPO to Mamba: Evolution">從 HiPPO 到 Mamba：演進路線</h2>
+<div data-lang="zh">
+<h3>① HiPPO 初始化（Gu 2020, NeurIPS）</h3>
+<p>SSM 的 A 矩陣怎麼選？HiPPO 理論證明：把 A 初始化為「最佳記憶」狀態（使 h(t) 為 x 的 Legendre 多項式投影）——這給了 SSM 數學基礎，能在連續時間下「無損壓縮」歷史輸入。</p>
+
+<h3>② S4：Structured State Space (Gu 2022, ICLR)</h3>
+<p>HiPPO 的 A 是 normal + low-rank (DPLR) 結構，可用 Cauchy kernel 在 O(n log n) 計算卷積。S4 在 Long Range Arena (LRA) benchmark 上首次擊敗 Transformer，但仍需大量超參數調校。</p>
+
+<h3>③ S5、H3、Hyena：架構簡化</h3>
+<p>S5 (Smith 2023, ICLR) 簡化為對角 A；H3 (Fu 2023, ICLR) 引入 gating；<strong>Hyena (Poli 2023, ICML)</strong> 把 SSM 拓展為「隱式卷積」+ multiplicative gating，HyenaDNA 在基因組上展示了 1 Mbp 上下文。</p>
+
+<h3>④ Mamba：Selective Scan (Gu & Dao 2024)</h3>
+<p>核心招數：讓 (Δ, B, C) 是輸入 x 的函數——這破壞了 LTI 結構，無法再用卷積。怎麼辦？用 <strong>hardware-aware parallel scan</strong>：</p>
+<ol>
+<li>把序列分成 block（每個 block 約 1024 token）</li>
+<li>每個 block 用 Blelloch scan 在 GPU SRAM 內並行計算</li>
+<li>blocks 之間遞迴串接</li>
+<li>整體在 A100 上達到 5× Transformer 推論速度</li>
+</ol>
+<p>Mamba-2 (Dao & Gu 2024, ICML) 統一 SSM 與 attention 為「Structured State Space Duality (SSD)」框架——SSM 其實是 attention 的特殊矩陣形式。</p>
+</div>
+<div data-lang="en">
+<h3>① HiPPO Initialization (Gu 2020, NeurIPS)</h3>
+<p>How to choose A? HiPPO theory: initialize A so that h(t) is the optimal Legendre-polynomial projection of x's history. Gives SSMs a mathematical basis for lossless continuous-time memory compression.</p>
+
+<h3>② S4: Structured State Space (Gu 2022, ICLR)</h3>
+<p>HiPPO's A is normal + low-rank (DPLR), computable via Cauchy kernel in O(n log n). S4 first beat Transformers on Long Range Arena (LRA), though required heavy hyperparameter tuning.</p>
+
+<h3>③ S5, H3, Hyena: simplifications</h3>
+<p>S5 (Smith 2023, ICLR) uses diagonal A; H3 (Fu 2023, ICLR) adds gating; <strong>Hyena (Poli 2023, ICML)</strong> extends SSM to "implicit long convolution" + multiplicative gating; HyenaDNA demonstrated 1 Mbp genomic context.</p>
+
+<h3>④ Mamba: Selective Scan (Gu & Dao 2024)</h3>
+<p>Core trick: make (Δ, B, C) functions of input x. This breaks LTI structure — convolution no longer works. Solution: <strong>hardware-aware parallel scan</strong>:</p>
+<ol>
+<li>Chunk sequence into blocks (~1024 tokens each)</li>
+<li>Each block: Blelloch scan inside GPU SRAM</li>
+<li>Concatenate blocks via recurrence</li>
+<li>5× Transformer inference speed on A100</li>
+</ol>
+<p>Mamba-2 (Dao & Gu 2024, ICML) unifies SSM and attention as "Structured State Space Duality (SSD)" — SSMs are special matrix forms of attention.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>關鍵直覺：</strong>Transformer 的 attention 矩陣是 n×n（O(n²)）；SSM 的 attention 矩陣是「半可分離 (semiseparable)」，可用 O(n) 表達。代價是「結構化」——某些 attention 模式 SSM 學不到（例如需要精確 token 對應的 in-context learning），但對「天然有時間/位置遞迴結構」的訊號（DNA、protein、time series）非常合身。</div>
+<div data-lang="en"><strong>Key intuition:</strong> Transformer attention matrices are n×n dense (O(n²)); SSM attention is "semiseparable", representable in O(n). Trade-off: some patterns SSMs can't learn (e.g. precise-token-matching in-context learning), but for signals with natural temporal/positional recurrence (DNA, protein, time series), SSMs fit beautifully.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="複雜度比較：Transformer vs SSM" data-en="Complexity Comparison: Transformer vs SSM">複雜度比較：Transformer vs SSM</h2>
+<div data-lang="zh"><p>調整序列長度，比較 Transformer attention 的 O(n²) 與 SSM 的 O(n) 在計算量（FLOPs）與記憶體上的差距。注意：對 100 kbp 以上的 DNA 序列，Transformer 完全跑不動，這就是 HyenaDNA、Caduceus 出現的原因。</p></div>
+<div data-lang="en"><p>Adjust sequence length to compare Transformer O(n²) attention vs SSM O(n) in compute (FLOPs) and memory. For DNA sequences over 100 kbp, Transformer becomes infeasible — exactly why HyenaDNA, Caduceus emerged.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="最大序列長度 (bp)" data-en="Max sequence length (bp)">最大序列長度 <span id="vL">100000</span></label><input type="range" id="sL" min="1000" max="1000000" value="100000" step="1000"></div>
+<div class="slider-group"><label data-zh="隱藏維度 d" data-en="Hidden dim d">隱藏維度 d <span id="vD">256</span></label><input type="range" id="sD" min="64" max="1024" value="256" step="64"></div>
+<div class="chart-container" style="height:280px;"><canvas id="cxChart"></canvas></div>
+
+<div class="card-grid cols-3" style="margin-top:14px;">
+  <div class="card"><h4>Transformer</h4><p style="font-size:1.2rem;font-weight:700;margin:0;color:#c0392b;" id="tCompute">— FLOPs</p><p style="font-size:.85rem;margin:4px 0 0 0;" id="tMem">— GB</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>Mamba / SSM</h4><p style="font-size:1.2rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="sCompute">— FLOPs</p><p style="font-size:.85rem;margin:4px 0 0 0;" id="sMem">— GB</p></div>
+  <div class="card"><h4 data-zh="加速比" data-en="Speedup">加速比</h4><p style="font-size:1.6rem;font-weight:700;margin:0;" id="speedup">— ×</p></div>
+</div>
+<div id="cxInterp" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="SSM/Mamba 在生命科學的應用" data-en="SSM/Mamba in Life Sciences">SSM/Mamba 在生命科學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="HyenaDNA (Nguyen 2023, NeurIPS)" data-en="HyenaDNA (Nguyen 2023, NeurIPS)">HyenaDNA</h4>
+<p data-lang="zh">第一個達到 1 Mbp 上下文的 DNA 基礎模型（vs DNABERT 512 bp）。在 Nucleotide Transformer benchmark 上以 1500× 小的模型獲得相當或更好表現。可建模 enhancer–promoter 跨百萬 bp 的長距互動。</p>
+<p data-lang="en">First DNA foundation model reaching 1 Mbp context (vs DNABERT 512 bp). On Nucleotide Transformer benchmark, matches or beats with 1500× smaller models. Models enhancer–promoter long-range interactions across megabases.</p></div>
+
+<div class="card"><h4 data-zh="Caduceus (Schiff 2024, ICML)" data-en="Caduceus (Schiff 2024, ICML)">Caduceus</h4>
+<p data-lang="zh">雙向 Mamba 配上 reverse-complement equivariance（DNA 互補鏈不變性）。在 variant effect prediction、SNP 影響預測上達 SOTA。為「DNA-specific」inductive bias 的範例。</p>
+<p data-lang="en">Bidirectional Mamba with reverse-complement equivariance (DNA strand symmetry). SOTA on variant effect prediction and SNP impact prediction — example of DNA-specific inductive bias.</p></div>
+
+<div class="card"><h4 data-zh="Evo (Nguyen 2024, Science)" data-en="Evo (Nguyen 2024, Science)">Evo</h4>
+<p data-lang="zh">7B 參數 StripedHyena 在 2.7M 微生物基因組上訓練，可生成 CRISPR-Cas 系統與整個小型基因組（131k bp）。涵蓋 DNA→RNA→protein 統一表徵。</p>
+<p data-lang="en">7B-parameter StripedHyena trained on 2.7M microbial genomes — generates entire CRISPR-Cas systems and small genomes (131k bp). Unifies DNA→RNA→protein representation.</p></div>
+
+<div class="card"><h4 data-zh="ProtMamba (Sgarbossa 2024)" data-en="ProtMamba (Sgarbossa 2024)">ProtMamba</h4>
+<p data-lang="zh">蛋白質序列 Mamba，可處理整個 MSA（多重序列比對）作為單一輸入，把同源蛋白資訊端到端學習。在 contact prediction、fitness landscape 任務上勝過 ESM-2。</p>
+<p data-lang="en">Protein-sequence Mamba; ingests entire MSAs as one input, learning homolog information end-to-end. Beats ESM-2 on contact prediction and fitness landscape tasks.</p></div>
+
+<div class="card"><h4 data-zh="MambaDNA / scMamba" data-en="MambaDNA / scMamba">MambaDNA / scMamba</h4>
+<p data-lang="zh">把 Mamba 應用於單細胞表現序列（依基因表現排序的「gene rank sequence」）——學習細胞層級的全基因組表現模式，作為 scGPT/Geneformer 的替代。</p>
+<p data-lang="en">Applies Mamba to single-cell expression sequences (gene-rank ordered), learning cell-level genome-wide patterns — an alternative to scGPT/Geneformer.</p></div>
+
+<div class="card"><h4 data-zh="Cellular Barcoding" data-en="Cellular Barcoding">細胞條碼序列</h4>
+<p data-lang="zh">CRISPR-Cas9 lineage barcoding（如 ScarTrace、GESTALT）產生長 indel 序列。Mamba 適合學習「條碼演化軌跡」的長距依賴，重建細胞家族樹。</p>
+<p data-lang="en">CRISPR-Cas9 lineage barcodes (ScarTrace, GESTALT) yield long indel sequences. Mamba captures long-range dependencies in barcode evolution to reconstruct cell lineages.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="SSM 的限制與最新動向" data-en="SSM Limitations &amp; Latest Developments">SSM 的限制與最新動向</h2>
+
+<div data-lang="zh">
+<h3>① SSM 不擅長的事</h3>
+<ul>
+<li><strong>精確 copy / in-context learning：</strong>Jelassi et al. (2024) 證明 Mamba 在「需要精確記住前面 token」的任務（associative recall）上 provably 比 attention 弱。實務上 Mamba 模型在 few-shot prompt 跟 in-context learning 表現不如同規模 Transformer。</li>
+<li><strong>固定上下文記憶：</strong>SSM 的 h<sub>k</sub> 維度固定（例如 256），不論序列多長都壓進同一個向量——超長依賴會「壓縮損失」。Transformer 的 KV cache 隨序列線性成長，無此限制（但耗記憶體）。</li>
+</ul>
+
+<h3>② Hybrid 架構是未來</h3>
+<p>Jamba (AI21 2024)、Zamba (Zyphra 2024)、Samba 等模型結合 Mamba 層與 attention 層——Mamba 處理長距記憶，attention 處理精確匹配。MoE-Mamba 進一步加上 Mixture of Experts。生物上 Caduceus + sparse attention 可能成為 DNA 的標準架構。</p>
+
+<h3>③ 雙向性對生物序列至關重要</h3>
+<p>DNA 沒有「方向」——讀正股或反股都合理。原 Mamba 是因果（causal）的，只能由左向右。Caduceus、BiMamba 等變體加入雙向掃描：把序列正向過一次 + 反向過一次，將兩個 hidden state 合併。對 DNA、protein、spatial sequence 都重要。</p>
+
+<h3>④ SSM 的數學身分</h3>
+<p>SSM = linear RNN = linear attention with特定 kernel = Volterra series 一階近似。Mamba-2 的 SSD 框架揭示：SSM 等價於「semiseparable attention」——attention 矩陣有某種低秩 + 三角結構。這給了 SSM 與 Transformer 互通的數學橋樑，未來可能融合為統一架構。</p>
+
+<h3>⑤ Hardware-aware 設計的重要性</h3>
+<p>Mamba 的成功有一半在演算法，一半在工程：parallel scan 必須在 GPU SRAM 內完成，避免 HBM 讀寫。這跟 FlashAttention 的精神類似。沒這個工程實作，Mamba 的線性複雜度只是紙上談兵——實際吞吐量取決於 memory bandwidth。</p>
+
+<h3>⑥ 評估：到底比 Transformer 好嗎？</h3>
+<p>純 Mamba 在 ≤ 3B 參數規模上跟 Transformer 旗鼓相當，某些任務（長序列、time series）更好；但在 ≥ 7B 或需要 in-context learning 的任務上，純 Mamba 通常輸給同等規模 Transformer。<strong>結論：</strong>不是取代，是新工具——特別適合長序列領域如基因組學、長時間 EHR、protein structure 預測。</p>
+</div>
+
+<div data-lang="en">
+<h3>① What SSMs Are Bad At</h3>
+<ul>
+<li><strong>Exact copy / in-context learning:</strong> Jelassi et al. (2024) proved Mamba is provably weaker than attention on associative recall (precisely remember earlier tokens). Empirically, same-scale Mamba underperforms Transformer on few-shot prompting and ICL.</li>
+<li><strong>Fixed-size memory:</strong> SSM's h<sub>k</sub> has fixed dimension (e.g. 256) regardless of sequence length — ultra-long dependencies suffer "compression loss." Transformer's KV cache grows linearly (memory-expensive but lossless).</li>
+</ul>
+
+<h3>② Hybrid Architectures Are the Future</h3>
+<p>Jamba (AI21 2024), Zamba (Zyphra 2024), Samba combine Mamba + attention layers — Mamba for long-range memory, attention for precise matching. MoE-Mamba adds Mixture of Experts. In biology, Caduceus + sparse attention may become standard for DNA.</p>
+
+<h3>③ Bidirectionality Matters for Biology</h3>
+<p>DNA has no inherent direction — forward and reverse strands both make sense. Vanilla Mamba is causal (left-to-right). Caduceus, BiMamba scan both ways and merge hidden states. Crucial for DNA, protein, and spatial sequences.</p>
+
+<h3>④ Mathematical Identity of SSMs</h3>
+<p>SSM = linear RNN = linear attention with specific kernel = first-order Volterra series. Mamba-2's SSD framework reveals: SSM equals "semiseparable attention" (low-rank + triangular structure). A mathematical bridge to Transformer — future architectures may unify both.</p>
+
+<h3>⑤ The Importance of Hardware-Aware Design</h3>
+<p>Half of Mamba's success is engineering: parallel scan must stay inside GPU SRAM, avoiding HBM. Same philosophy as FlashAttention. Without this, linear complexity is theoretical — real throughput is memory-bandwidth-bound.</p>
+
+<h3>⑥ Evaluation: Is It Actually Better Than Transformer?</h3>
+<p>Pure Mamba matches Transformer at ≤ 3B scale and excels on long sequences / time series. At ≥ 7B or for in-context learning, pure Mamba underperforms. <strong>Bottom line:</strong> not a replacement but a new tool — perfect for long-sequence domains like genomics, long EHR, protein structure prediction.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="SSM 還能改良哪些生物資訊任務？" data-en="What Else Can SSMs Improve?">SSM 還能改良哪些生物資訊任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 全基因組 Epigenome 預測</h3>
+<p>從 1 Mbp DNA 序列預測 ChIP-seq、ATAC-seq、Hi-C 訊號。Enformer (Avsec 2021) 用 Transformer 只能到 200 kbp，HyenaDNA-based 模型可拓展到全染色體。<strong>提案：</strong>單一模型輸入整條染色體輸出多軌 epigenomic profile，捕捉 TAD-scale 結構。</p>
+
+<h3>🎯 2. 長 Perturbation Lineage 軌跡</h3>
+<p>Perturb-seq + lineage barcoding 產生「擾動標籤 + 條碼歷史 + 表現序列」的長序列。Mamba 可端到端學習「祖先擾動如何影響後代表現」，跨數十代細胞分裂。</p>
+
+<h3>🎯 3. Spatial Gene Panel 序列建模</h3>
+<p>把 MERFISH、Visium 的 gene panel 視為「依空間軌跡排序的序列」，Mamba 可學「沿組織梯度的長距共表達模式」。優於用 GNN 處理離散 graph。</p>
+
+<h3>🎯 4. 長 Single-cell 軌跡建模</h3>
+<p>scRNA-seq + 時間採樣（如 LARRY、Cospar）構成 cell × time 矩陣。Mamba 把每個細胞的 expression vector 視為 token，沿時間建模狀態演化——比 RNA velocity 的瞬時推估更穩健。</p>
+
+<h3>🎯 5. ChIP-seq + ATAC-seq Long Context 整合</h3>
+<p>多軌 epigenomic data 跨 Mbp 的協同調控。Mamba 可同時吃 DNA 序列 + ChIP-seq peaks + ATAC peaks + Hi-C contacts，學「染色質區域 × 區域」的因果鏈。</p>
+
+<h3>🎯 6. 長 Read 基因組組裝</h3>
+<p>Nanopore、PacBio 長 read（10–100 kbp）的 basecalling 與 assembly。Mamba 取代 RNN-based basecaller 達到更高準確度 + 更快推論。</p>
+
+<h3>🎯 7. 全長 RNA isoform 預測</h3>
+<p>從 DNA 預測所有 isoform 結構（splicing patterns）。需 100 kbp 上下文涵蓋整個 gene locus，Mamba 完美適配。</p>
+
+<h3>🎯 8. 長時間病理史 (EHR) 模型</h3>
+<p>病人數十年的就診紀錄、實驗室數值、藥物史——Mamba 處理長序列同時保留 long-range pattern，比 Transformer 更實用。</p>
+
+<h3>🎯 9. 多重序列比對 (MSA) 端到端學習</h3>
+<p>ProtMamba 已示範：把整個 MSA 當作單一輸入。可拓展至 metagenomics 大型 MSA，找跨菌種保守的調控元件。</p>
+
+<h3>🎯 10. Streaming 即時 scRNA-seq 分析</h3>
+<p>SSM 推論時為 O(1) 記憶體 RNN——適合做「資料一筆筆進來」的線上學習場景，例如 10x Chromium 即時細胞分群、live-cell imaging 時序分析。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Whole-Genome Epigenome Prediction</h3>
+<p>Predict ChIP-seq, ATAC-seq, Hi-C from 1 Mbp DNA. Enformer (Avsec 2021) caps at 200 kbp with Transformer; HyenaDNA-based models extend to entire chromosomes. <strong>Proposal:</strong> one model inputs full chromosome, outputs multi-track epigenome — captures TAD-scale structure.</p>
+
+<h3>🎯 2. Long Perturbation Lineage Trajectories</h3>
+<p>Perturb-seq + lineage barcoding gives long sequences of "perturbation labels + barcode history + expression." Mamba learns end-to-end how ancestor perturbations affect descendant expression across dozens of cell generations.</p>
+
+<h3>🎯 3. Spatial Gene Panel Sequence Modeling</h3>
+<p>Treat MERFISH/Visium gene panels as "spatially-ordered sequences"; Mamba learns long-range co-expression along tissue gradients — better than GNNs on discrete graphs.</p>
+
+<h3>🎯 4. Long Single-cell Trajectory Modeling</h3>
+<p>scRNA-seq with time sampling (LARRY, Cospar) forms cell × time matrices. Mamba tokenizes per-cell expression vectors and models state evolution — more robust than RNA velocity's instantaneous estimates.</p>
+
+<h3>🎯 5. ChIP-seq + ATAC-seq Long-Context Integration</h3>
+<p>Multi-track epigenomes with Mbp-scale co-regulation. Mamba simultaneously ingests DNA + ChIP peaks + ATAC + Hi-C, learning region-region causal chains.</p>
+
+<h3>🎯 6. Long-Read Genome Assembly</h3>
+<p>Nanopore / PacBio long reads (10–100 kbp) for basecalling and assembly. Mamba replaces RNN-based basecallers for higher accuracy and faster inference.</p>
+
+<h3>🎯 7. Full-Length RNA Isoform Prediction</h3>
+<p>Predict all isoforms (splicing patterns) from DNA. Needs 100 kbp context to span whole gene loci — Mamba is a perfect fit.</p>
+
+<h3>🎯 8. Long Patient History (EHR) Modeling</h3>
+<p>Decades of patient visits, lab values, medications — Mamba handles long sequences while preserving long-range patterns, more practical than Transformer.</p>
+
+<h3>🎯 9. End-to-End MSA Learning</h3>
+<p>ProtMamba showed: ingest entire MSA as one input. Extendable to metagenomics' giant MSAs to find cross-species conserved regulatory elements.</p>
+
+<h3>🎯 10. Streaming Real-Time scRNA-seq</h3>
+<p>SSM inference is O(1)-memory RNN — ideal for online streaming (live 10x Chromium cell clustering, live-cell imaging temporal analysis).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'mamba1')">mamba-ssm</button>
+<button class="code-tab-btn" onclick="switchTab(this,'hyena1')">HyenaDNA</button>
+<button class="code-tab-btn" onclick="switchTab(this,'ssm1')">SSM from scratch</button>
+</div>
+
+<div class="code-tab-content active" id="mamba1"><pre><span class="comment"># pip install mamba-ssm causal-conv1d</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> mamba_ssm <span class="keyword">import</span> Mamba
+
+<span class="comment"># Single Mamba block</span>
+model = Mamba(
+    d_model=<span class="num">256</span>,        <span class="comment"># hidden dim</span>
+    d_state=<span class="num">16</span>,          <span class="comment"># SSM state dim</span>
+    d_conv=<span class="num">4</span>,            <span class="comment"># local conv kernel size</span>
+    expand=<span class="num">2</span>,            <span class="comment"># expansion factor</span>
+).cuda()
+
+x = torch.randn(<span class="num">4</span>, <span class="num">100000</span>, <span class="num">256</span>).cuda()   <span class="comment"># 100k length!</span>
+y = model(x)                                <span class="comment"># O(n), linear in length</span>
+print(y.shape)                              <span class="comment"># [4, 100000, 256]</span></pre></div>
+
+<div class="code-tab-content" id="hyena1"><pre><span class="comment"># pip install transformers</span>
+<span class="keyword">from</span> transformers <span class="keyword">import</span> AutoModel, AutoTokenizer
+
+<span class="comment"># HyenaDNA-medium-450k (450k bp context)</span>
+model = AutoModel.from_pretrained(
+    <span class="str">"LongSafari/hyenadna-medium-450k-seqlen-hf"</span>,
+    trust_remote_code=<span class="keyword">True</span>
+)
+tok = AutoTokenizer.from_pretrained(
+    <span class="str">"LongSafari/hyenadna-medium-450k-seqlen-hf"</span>,
+    trust_remote_code=<span class="keyword">True</span>
+)
+
+seq = <span class="str">"ACGT"</span> * <span class="num">100000</span>                      <span class="comment"># 400k bp</span>
+inputs = tok(seq, return_tensors=<span class="str">"pt"</span>)
+out = model(**inputs)
+embeddings = out.last_hidden_state            <span class="comment"># [1, L, d]</span></pre></div>
+
+<div class="code-tab-content" id="ssm1"><pre><span class="comment"># Minimal SSM (S4-like, diagonal A) in PyTorch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> SimpleSSM(nn.Module):
+    <span class="keyword">def</span> __init__(self, d_model, d_state=<span class="num">16</span>):
+        super().__init__()
+        <span class="comment"># Diagonal A initialized via HiPPO</span>
+        self.A_log = nn.Parameter(torch.log(torch.arange(<span class="num">1</span>, d_state+<span class="num">1</span>).<span class="func">float</span>()))
+        self.B = nn.Parameter(torch.randn(d_model, d_state))
+        self.C = nn.Parameter(torch.randn(d_model, d_state))
+        self.dt = nn.Parameter(torch.ones(d_model) * <span class="num">0.01</span>)
+
+    <span class="keyword">def</span> forward(self, x):                  <span class="comment"># x: (B, L, d)</span>
+        A = -torch.exp(self.A_log)         <span class="comment"># stable, negative</span>
+        Ab = torch.exp(self.dt.unsqueeze(-<span class="num">1</span>) * A)   <span class="comment"># discretize</span>
+        h = torch.zeros(x.shape[<span class="num">0</span>], self.B.shape[<span class="num">1</span>], device=x.device)
+        ys = []
+        <span class="keyword">for</span> t <span class="keyword">in</span> range(x.shape[<span class="num">1</span>]):
+            h = Ab.mean(<span class="num">0</span>) * h + (self.B.T @ x[:,t,:].T).T
+            y = (self.C @ h.unsqueeze(-<span class="num">1</span>)).squeeze(-<span class="num">1</span>)
+            ys.append(y)
+        <span class="keyword">return</span> torch.stack(ys, dim=<span class="num">1</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Mamba 與 Transformer 相比，最關鍵的優勢是什麼？</p><p data-lang="en">What is Mamba's most critical advantage over Transformer?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 模型參數數量更少</span><span data-lang="en">A. Fewer parameters</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 不需要訓練資料</span><span data-lang="en">B. No training data needed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 序列長度的線性複雜度 O(n)，可處理百萬 bp 序列</span><span data-lang="en">C. Linear complexity O(n) in sequence length — handles million-bp sequences</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 完全取代 attention，沒有任何缺點</span><span data-lang="en">D. Fully replaces attention with no downsides</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Mamba 的「selective」是什麼意思？</p><p data-lang="en">What does "selective" mean in Mamba's selective SSM?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 隨機丟棄部分 token</span><span data-lang="en">A. Randomly drops some tokens</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. SSM 參數 (Δ, B, C) 是輸入的函數，可動態選擇記住或忽略</span><span data-lang="en">B. SSM parameters (Δ, B, C) become functions of input, dynamically selecting what to remember/ignore</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只用 top-k 個 attention head</span><span data-lang="en">C. Uses only top-k attention heads</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 同 dropout</span><span data-lang="en">D. Same as dropout</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">下列哪個是 Mamba/SSM 在生物資訊的實際應用？</p><p data-lang="en">Which is a real bioinformatics application of Mamba/SSM?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. HyenaDNA — 1 Mbp DNA 上下文的基礎模型</span><span data-lang="en">A. HyenaDNA — 1 Mbp context DNA foundation model</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. AlphaFold2 — 蛋白質結構預測</span><span data-lang="en">B. AlphaFold2 — protein structure prediction</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Seurat — 單細胞分群</span><span data-lang="en">C. Seurat — single-cell clustering</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. BLAST — 序列比對</span><span data-lang="en">D. BLAST — sequence alignment</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="flow-matching.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 17：Flow Matching" data-en="Ch 17: Flow Matching">Ch 17：Flow Matching</span></a>
+<a href="conformal-prediction.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 19：Conformal Prediction" data-en="Ch 19: Conformal Prediction">Ch 19：Conformal Prediction</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Complexity comparison: Transformer vs SSM =====
+function logspace(min,max,n){const arr=[];const lmin=Math.log10(min),lmax=Math.log10(max);for(let i=0;i<n;i++){arr.push(Math.pow(10,lmin+(lmax-lmin)*i/(n-1)));}return arr;}
+const ctx=document.getElementById('cxChart');
+const cxChart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[
+  {label:'Transformer O(n²d)',data:[],borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,0.1)',tension:0.2,pointRadius:0,borderWidth:2.5},
+  {label:'Mamba O(nd)',data:[],borderColor:'#1a6b5a',backgroundColor:'rgba(26,107,90,0.1)',tension:0.2,pointRadius:0,borderWidth:2.5}
+]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},scales:{x:{type:'logarithmic',title:{display:true,text:'Sequence length n (log)'}},y:{type:'logarithmic',title:{display:true,text:'FLOPs (log)'}}}}});
+
+function update(){
+  const L=+document.getElementById('sL').value;
+  const d=+document.getElementById('sD').value;
+  document.getElementById('vL').textContent=L.toLocaleString();
+  document.getElementById('vD').textContent=d;
+  const xs=logspace(1000,L,40);
+  const tFlops=xs.map(n=>n*n*d);
+  const sFlops=xs.map(n=>n*d*d/4);
+  cxChart.data.labels=xs.map(v=>Math.round(v));
+  cxChart.data.datasets[0].data=tFlops;
+  cxChart.data.datasets[1].data=sFlops;
+  cxChart.update('none');
+  const tF=L*L*d, sF=L*d*d/4;
+  const tM=(L*L*4)/1e9; // bytes for attention matrix (fp32) -> GB
+  const sM=(L*d*4)/1e9;
+  document.getElementById('tCompute').textContent=tF.toExponential(2)+' FLOPs';
+  document.getElementById('sCompute').textContent=sF.toExponential(2)+' FLOPs';
+  document.getElementById('tMem').textContent='≈ '+tM.toFixed(2)+' GB (attention matrix)';
+  document.getElementById('sMem').textContent='≈ '+sM.toFixed(4)+' GB';
+  document.getElementById('speedup').textContent=(tF/sF).toFixed(1)+'×';
+  const lang=(window.I18n&&I18n.get())||'zh';
+  const msg=lang==='zh'?
+    `序列長度 n = ${L.toLocaleString()} bp，d = ${d}。Transformer 需要 ${(tM).toFixed(2)} GB 僅 attention 矩陣 — 對 ≥ 100 kbp 完全爆顯卡。Mamba 線性記憶體只需 ${(sM*1000).toFixed(2)} MB。加速比 ${(tF/sF).toFixed(1)}×。`:
+    `n = ${L.toLocaleString()} bp, d = ${d}. Transformer needs ${(tM).toFixed(2)} GB just for attention — infeasible at ≥ 100 kbp. Mamba's linear memory: only ${(sM*1000).toFixed(2)} MB. Speedup: ${(tF/sF).toFixed(1)}×.`;
+  document.getElementById('cxInterp').innerHTML=msg;
+}
+document.getElementById('sL').addEventListener('input',update);
+document.getElementById('sD').addEventListener('input',update);
+document.addEventListener('langchange',update);
+update();
+
+window._QF={zh:{
+  q1_y:'答對！線性複雜度是 Mamba 的核心優勢，讓 1 Mbp DNA 上下文成為可能。',
+  q1_n:'答案是 C。Mamba 在序列長度上線性 O(n)，這是相對 Transformer O(n²) 的關鍵突破。',
+  q2_y:'答對！Selective 指 (Δ, B, C) 隨輸入動態變化，類似 attention 的選擇機制。',
+  q2_n:'答案是 B。Mamba 讓 SSM 參數依輸入變化，模型可動態選擇記住或忽略內容。',
+  q3_y:'答對！HyenaDNA 是基於 Hyena (SSM 變體) 的 DNA 基礎模型。',
+  q3_n:'答案是 A。HyenaDNA 達到 1 Mbp 上下文，遠超 DNABERT 的 512 bp。'
+},en:{
+  q1_y:'Correct! Linear complexity is Mamba\'s core advantage, enabling 1 Mbp DNA context.',
+  q1_n:'Answer is C. Mamba is O(n) in sequence length — key breakthrough over Transformer\'s O(n²).',
+  q2_y:'Correct! Selective means (Δ, B, C) become input-dependent, mimicking attention\'s selection.',
+  q2_n:'Answer is B. Mamba makes SSM parameters input-dependent so the model can dynamically choose what to remember.',
+  q3_y:'Correct! HyenaDNA is built on Hyena (an SSM variant) for DNA foundation modeling.',
+  q3_n:'Answer is A. HyenaDNA reaches 1 Mbp context — vastly exceeding DNABERT\'s 512 bp.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=(window.I18n&&I18n.get())||'zh';fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

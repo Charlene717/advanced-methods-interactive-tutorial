@@ -1,0 +1,383 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>RNA Velocity — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html" class="active">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 7 / 14</div><h1 data-zh="RNA 速度與動力系統" data-en="RNA Velocity &amp; Dynamics">RNA 速度與動力系統</h1>
+<p class="subtitle" data-lang="zh">從 spliced / unspliced 比例反推細胞「正在往哪個方向變化」——把靜態 snapshot 變成有向量場的動力系統。</p>
+<p class="subtitle" data-lang="en">From spliced/unspliced ratios, infer where a cell is heading — turn static snapshots into a dynamical system with a vector field.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="一個 RNA 的生命週期" data-en="The Life of an mRNA">一個 RNA 的生命週期</h2>
+<div data-lang="zh">
+<p>每個基因的 RNA 都會經歷：<strong>轉錄 (α)</strong> 產生 unspliced (pre-mRNA, u) → <strong>剪接 (β)</strong> 變成 spliced (mRNA, s) → <strong>降解 (γ)</strong> 消失。La Manno et al. (2018, Nature) 觀察到：scRNA-seq 的 reads 同時包含 spliced 與 unspliced（intron-containing），兩者比例變化就能反推細胞正在「合成中」還是「衰減中」。</p>
+<p>動力方程：</p>
+<p style="text-align:center;font-family:Georgia,serif;">du/dt = α(t) − β·u<br>ds/dt = β·u − γ·s</p>
+<p>RNA velocity 即 ds/dt——s 的瞬時變化率，正值代表基因表現「正在上升」，負值代表「正在下降」。把所有基因的 velocity 組合成一個向量，就是細胞在表現量空間的「方向」。</p>
+</div>
+<div data-lang="en">
+<p>Every gene's RNA cycles through: <strong>transcription (α)</strong> → unspliced (pre-mRNA, u) → <strong>splicing (β)</strong> → spliced (mRNA, s) → <strong>degradation (γ)</strong>. La Manno et al. (2018, Nature) noticed: scRNA-seq reads contain both spliced and unspliced (intron-containing), and their ratio reveals whether the cell is synthesizing or degrading.</p>
+<p>Dynamics:</p>
+<p style="text-align:center;font-family:Georgia,serif;">du/dt = α(t) − β·u<br>ds/dt = β·u − γ·s</p>
+<p>RNA velocity = ds/dt — the instantaneous rate of change of spliced mRNA. Positive = "going up"; negative = "going down". Stacking all genes gives a velocity vector pointing where the cell is heading.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="velocyto → scVelo → Dynamo" data-en="velocyto → scVelo → Dynamo">三代方法演進</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>velocyto (2018)</h4><p data-lang="zh">假設每個基因處於穩態 (steady state)：γ·s = β·u → 從 u/s 散布圖估計斜率 γ。簡單但對非穩態細胞不準。</p><p data-lang="en">Assumes steady state per gene: γ·s = β·u → estimate γ from u/s slope. Simple but inaccurate for non-steady cells.</p></div>
+<div class="card"><h4>scVelo (2020)</h4><p data-lang="zh">Bergen 等人提出 stochastic 與 dynamical 兩種模型，dynamical mode 用 EM 同時估計 α、β、γ 與每個細胞的「潛在時間」。</p><p data-lang="en">Bergen et al. introduce stochastic and dynamical models. Dynamical mode uses EM to jointly estimate α, β, γ and each cell's latent time.</p></div>
+<div class="card"><h4>Dynamo (Qiu 2022)</h4><p data-lang="zh">最完整的框架：重建連續向量場 f(x)，可進一步算 Jacobian（基因間調控）、加速度、發散度等動力學量。支援代謝標記 (metabolic labeling) 資料。</p><p data-lang="en">Most complete framework: reconstructs continuous vector field f(x); computes Jacobian (gene regulation), acceleration, divergence. Supports metabolic labeling data.</p></div>
+<div class="card"><h4>CellRank (Lange 2022)</h4><p data-lang="zh">把 RNA velocity（或任何方向訊號）轉成馬可夫鏈轉移矩陣，計算細胞的「命運機率」——哪些細胞會走向哪些終態。</p><p data-lang="en">Converts RNA velocity (or any directional signal) into a Markov transition matrix; computes cell fate probabilities — which cells will reach which terminal states.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="動力學 ODE 模擬" data-en="ODE Simulation">動力學 ODE 模擬</h2>
+<div data-lang="zh"><p>數值解 du/dt 與 ds/dt。觀察「誘導期」u 先漲、s 才跟上；「衰減期」u 先掉、s 才下降。velocity = ds/dt 在誘導期為正、衰減期為負。</p></div>
+<div data-lang="en"><p>Numerically integrate du/dt and ds/dt. During "induction" u rises first, s follows; during "repression" u drops first, s follows. velocity = ds/dt is positive during induction and negative during repression.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label>α (transcription) <span id="vAl">2.5</span></label><input type="range" id="sAl" min="0" max="5" value="2.5" step="0.1"></div>
+<div class="slider-group"><label>β (splicing) <span id="vBe">1.0</span></label><input type="range" id="sBe" min="0.1" max="3" value="1.0" step="0.1"></div>
+<div class="slider-group"><label>γ (degradation) <span id="vGa">0.5</span></label><input type="range" id="sGa" min="0.1" max="2" value="0.5" step="0.1"></div>
+<div class="chart-container" style="height:280px;"><canvas id="rvChart"></canvas></div>
+<div id="rvMsg" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用與陷阱" data-en="APPLICATIONS &amp; PITFALLS">生物應用與陷阱</div>
+<h2 data-zh="慎用：velocity 不是萬靈丹" data-en="Caution: Velocity Isn't a Cure-all">慎用：velocity 不是萬靈丹</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="✅ 適合場景" data-en="✅ Works well">✅ 適合場景</h4><p data-lang="zh">轉錄動力學主導的系統：早期發育、神經分化、造血。基因 α/γ 變化清晰可估。</p><p data-lang="en">Transcription-dominated systems: early development, neural differentiation, hematopoiesis. α/γ changes are clear.</p></div>
+<div class="card"><h4 data-zh="❌ 不適合場景" data-en="❌ Caveats">❌ 不適合場景</h4><p data-lang="zh">穩態組織（成熟肝、腦）、慢動力學基因、多重剪接同工型（multi-isoform）讀取會干擾估計。Bergen et al. (2024) 系統性討論 velocity 假設失敗的案例。</p><p data-lang="en">Steady-state tissues (mature liver, brain), slow-dynamic genes, multi-isoform interference. Bergen et al. (2024) systematically reviews failure modes.</p></div>
+<div class="card"><h4 data-zh="代謝標記時代" data-en="Metabolic labeling era">代謝標記時代</h4><p data-lang="zh">scNT-seq、sci-fate 等用 4sU 標記新合成 RNA，直接量「新 vs 舊」mRNA，避免依賴 splicing 訊號。Dynamo 直接支援這類資料。</p><p data-lang="en">scNT-seq, sci-fate label newly synthesized RNA with 4sU — directly measure "new vs old" mRNA, sidestepping splicing assumptions. Dynamo natively supports this.</p></div>
+<div class="card"><h4 data-zh="向量場分析" data-en="Vector field analysis">向量場分析</h4><p data-lang="zh">重建後可在連續空間求 Jacobian → 推估基因–基因調控；求發散度 → 細胞匯聚點 (attractors)；求 Lyapunov → 軌跡穩定性。</p><p data-lang="en">After reconstruction: Jacobian → gene–gene regulation; divergence → attractors; Lyapunov → trajectory stability.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 RNA Velocity：動力學模型、失敗模式與向量場" data-en="Deep Dive: Kinetic Models, Failure Modes & Vector Fields">深入解析 RNA Velocity：動力學模型、失敗模式與向量場</h2>
+
+<div data-lang="zh">
+<h3>① velocyto vs scVelo stochastic vs scVelo dynamical 的數學差異</h3>
+<p>三個主流方法本質上都求解 du/dt = α − β·u、ds/dt = β·u − γ·s 這組常微分方程，但對 α(t) 的假設與估計策略不同：</p>
+<ul>
+<li><strong>velocyto (La Manno 2018, Nature)：</strong>採用 <strong>steady-state 假設</strong>——把每個基因 (u, s) 散布圖的「上極端細胞」當成 ds/dt = 0 的穩態，以線性回歸估 γ = u/s 的斜率，再求 v = u − γ·s。優點是極快；缺點是若資料未涵蓋穩態（早期短時序），γ 嚴重低估。</li>
+<li><strong>scVelo stochastic (Bergen 2020)：</strong>把 α、β、γ 視為常數，但用 <strong>二階矩</strong>（mean + variance）同時估計，等同於 stochastic chemical master equation 的矩匹配。比 steady-state 多用一個方程，γ 估計更穩。</li>
+<li><strong>scVelo dynamical：</strong>把 α(t) 視為 switch (on/off)，引入 latent time τᵢ 與 switching time t_s，用 <strong>Bayesian EM</strong> 對每個基因獨立 fit 4 個參數 (α_on, α_off, β, γ) + 每細胞 τᵢ。輸出的 <strong>latent_time</strong> 是跨基因共識，可當 pseudotime。代價：每個基因要跑數百次 EM，比 stochastic 慢 10–50 倍。</li>
+</ul>
+
+<h3>② Gene-specific kinetics vs shared kinetics</h3>
+<p>scVelo 預設每基因獨立估 (α, β, γ)——適合「動力學差異大」的基因（如 lineage-specific TF）。但對 housekeeping、低表現基因，獨立估計噪音大；此時可用 <strong>shared β across genes</strong>（假設 splicing rate 為細胞 global 屬性，由 SRSF 家族決定）或 <strong>cluster-shared α(t)</strong>（同 cell type 共享轉錄率）。UniTVelo (Gao 2022, Nat Commun) 就是把 α(t) 設為跨基因共享的 radial basis function，減少參數量。</p>
+
+<h3>③ Multi-modal velocity：MultiVelo 與 veloVI</h3>
+<ul>
+<li><strong>MultiVelo (Li &amp; Manno 2022, Nat Biotech)：</strong>把 ATAC peak 開放性 c(t) 納入模型——du/dt = α·c − β·u，假設染色質先開、再轉錄。在 10x Multiome 資料上對 lineage priming 偵測比純 RNA velocity 更早 0.5–1.5 個 pseudotime 單位。</li>
+<li><strong>veloVI (Gayoso et al. 2023, Nat Methods)：</strong>用 deep variational autoencoder 把 (α, β, γ, τ) 視為 latent，end-to-end neural network 估計。提供 <strong>uncertainty per cell</strong>，可區分「真實 velocity」與「模型不確定」。在 corrupted data 上比 scVelo dynamical 穩健。</li>
+<li><strong>LinearVelocity / VeloAE：</strong>把 velocity 學成 latent embedding 中的線性向量，避開 ODE 假設，計算極快但物理意義較弱。</li>
+</ul>
+
+<h3>④ 代謝標記（metabolic labeling）繞過 splicing 假設</h3>
+<p>傳統 RNA velocity 依賴「intron read = unspliced proxy」這個近似——很多基因 intron read 極少（短內含子、深降解），導致 velocity 估計失敗。<strong>4sU labeling</strong>（4-thiouridine 培養細胞數小時後抽 RNA，新合成 RNA 帶 T→C 突變）能<strong>直接</strong>量「新 vs 舊」mRNA：</p>
+<ul>
+<li><strong>scSLAM-seq (Erhard 2019)、scNT-seq (Qiu 2020)、sci-fate (Cao 2020)：</strong>三種主流單細胞 4sU 平台。</li>
+<li><strong>Dynamo (Qiu et al. 2022, Cell)：</strong>對應的估計框架——對 labeled fraction 直接 fit α 與 degradation，不需 splicing model。同時支援 <strong>velocity vector field reconstruction</strong>。</li>
+</ul>
+
+<h3>⑤ RNA velocity 的失敗模式（Bergen et al. 2024 綜述）</h3>
+<p>Bergen et al. (2024, Mol Syst Biol) 系統性整理 velocity 失敗的 7 大情境：</p>
+<ul>
+<li><strong>(i) Saturated kinetics：</strong>穩態組織所有基因 ds/dt ≈ 0，velocity ≈ 0；任何擾動的 velocity 都是噪音放大。</li>
+<li><strong>(ii) Multiple kinetic regimes：</strong>同一基因在不同 lineage 有不同 α/γ（boost vs repression），單一線性 fit 會給出錯誤方向。</li>
+<li><strong>(iii) Batch confounds：</strong>不同批次間 splicing efficiency 微差，會被誤判為「velocity 方向相反」。</li>
+<li><strong>(iv) Complex kinetics：</strong>有 negative feedback / 多級調控的基因 ODE 假設失效。</li>
+<li><strong>(v) Transcriptional bursting：</strong>α 是 stochastic on/off，平均化扭曲估計。</li>
+<li><strong>(vi) Read length bias：</strong>3' counting (10x) 對 intron 取樣不平衡，影響 unspliced count。</li>
+<li><strong>(vii) Ambient RNA contamination：</strong>背景 RNA 主要為 spliced，使 γ 估計偏高。</li>
+</ul>
+
+<h3>⑥ 從離散 velocity 到連續向量場：Dynamo 的 sparseVFC</h3>
+<p>單細胞 velocity 是離散的「每細胞一支箭」，無法直接做 dynamical systems 分析。Dynamo 採用 <strong>sparseVFC (Sparse Vector Field Consensus, Ma 2013)</strong> 與 <strong>Gaussian Process regression</strong> 把離散箭頭重建為連續函數 f: ℝᵈ → ℝᵈ。重建後可：</p>
+<ul>
+<li>對 f 求 <strong>Jacobian ∂fᵢ/∂xⱼ</strong>——讀作「基因 j 變動時，基因 i 的 velocity 如何改變」≈ 即時 GRN 邊強度。</li>
+<li>求 <strong>divergence ∇·f</strong>——負值 = 軌跡匯聚（attractor / 終態細胞型別），正值 = 發散（source / 早期祖細胞）。</li>
+<li>求 <strong>acceleration df/dt</strong>——大幅加速處 = fate decision point（細胞「快速跨界」處）。</li>
+<li>用 <strong>least action path</strong> 找兩個 attractor 之間的最低能量軌跡——對應潛在的 reprogramming 路徑。</li>
+</ul>
+
+<h3>⑦ 從 velocity 到 fate：CellRank 的 Markov 矩陣框架</h3>
+<p>Lange et al. (2022, Nat Methods) 的 <strong>CellRank</strong> 把 velocity 轉為 <strong>cell-to-cell transition matrix</strong>：對每細胞 i，依「指向哪些鄰居」加權成 row-stochastic matrix P。再對 P 做 GPCCA (Generalized Perron Cluster Cluster Analysis) 找 metastable states（≈ attractor），最後計算每細胞的 <strong>absorbing probability</strong> π_i→k（細胞 i 最終命運為終態 k 的機率）。CellRank 2 進一步支援多 kernel 整合（velocity + pseudotime + similarity + CytoTRACE）。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Mathematical differences: velocyto vs scVelo stochastic vs scVelo dynamical</h3>
+<p>All three solve du/dt = α − β·u, ds/dt = β·u − γ·s, but differ in assumptions on α(t) and the estimation strategy:</p>
+<ul>
+<li><strong>velocyto (La Manno 2018, Nature):</strong> <strong>steady-state assumption</strong> — treats upper-extremal cells in (u,s) scatter as ds/dt = 0, regresses γ as the slope u/s, then v = u − γ·s. Fast, but γ is severely under-estimated if data does not span steady state.</li>
+<li><strong>scVelo stochastic (Bergen 2020, Nat Biotech):</strong> α, β, γ constant, but uses <strong>second-moment matching</strong> (mean + variance) from the stochastic chemical master equation — more stable γ.</li>
+<li><strong>scVelo dynamical:</strong> α(t) as switch (on/off), latent times τᵢ + switching time t_s, full <strong>Bayesian EM</strong> per gene fitting (α_on, α_off, β, γ, τᵢ). Outputs gene-consensus <strong>latent_time</strong> usable as pseudotime. Cost: 10–50× slower than stochastic.</li>
+</ul>
+
+<h3>② Gene-specific vs shared kinetics</h3>
+<p>scVelo defaults to per-gene independent (α, β, γ) — good for lineage-specific TFs. For housekeeping / lowly expressed genes, the per-gene fits are noisy; use <strong>shared β across genes</strong> (splicing rate as a global cell property driven by SRSF family) or <strong>cluster-shared α(t)</strong> (same cell type shares transcription rate). UniTVelo (Gao 2022, Nat Commun) imposes a globally shared RBF α(t).</p>
+
+<h3>③ Multi-modal velocity: MultiVelo and veloVI</h3>
+<ul>
+<li><strong>MultiVelo (Li &amp; Manno 2022, Nat Biotech):</strong> incorporates ATAC peak openness c(t): du/dt = α·c − β·u (chromatin opens before transcription). Detects lineage priming 0.5–1.5 pseudotime units earlier than RNA-only velocity in 10x Multiome.</li>
+<li><strong>veloVI (Gayoso et al. 2023, Nat Methods):</strong> deep variational autoencoder treating (α, β, γ, τ) as latent, end-to-end neural estimation. Provides <strong>per-cell uncertainty</strong>; more robust on corrupted data than scVelo dynamical.</li>
+<li><strong>LinearVelocity / VeloAE:</strong> velocity as linear vector in a learned latent — fast but weaker physical interpretation.</li>
+</ul>
+
+<h3>④ Metabolic labeling bypasses the splicing assumption</h3>
+<p>Classical RNA velocity uses "intron read = unspliced proxy" — many genes have very few intron reads (short introns, degradation), making velocity unreliable. <strong>4sU labeling</strong> (4-thiouridine pulse → newly transcribed RNA carries T→C mutations) directly measures new vs old mRNA:</p>
+<ul>
+<li><strong>scSLAM-seq (Erhard 2019), scNT-seq (Qiu 2020), sci-fate (Cao 2020):</strong> three main single-cell 4sU platforms.</li>
+<li><strong>Dynamo (Qiu et al. 2022, Cell):</strong> the matching estimation framework — fits α and degradation from labeled fraction directly, no splicing model needed. Also supports <strong>continuous vector field reconstruction</strong>.</li>
+</ul>
+
+<h3>⑤ Failure modes (Bergen et al. 2024 review)</h3>
+<p>Bergen et al. (2024, Mol Syst Biol) systematically catalog 7 failure regimes:</p>
+<ul>
+<li><strong>(i) Saturated kinetics:</strong> steady-state tissues — ds/dt ≈ 0 everywhere, "velocity" is noise.</li>
+<li><strong>(ii) Multiple kinetic regimes:</strong> same gene with different α/γ across lineages → linear fit gives wrong direction.</li>
+<li><strong>(iii) Batch confounds:</strong> splicing-efficiency differences mistaken for opposite velocity.</li>
+<li><strong>(iv) Complex kinetics:</strong> negative feedback or multi-step regulation breaks the ODE.</li>
+<li><strong>(v) Transcriptional bursting:</strong> stochastic on/off α biases averages.</li>
+<li><strong>(vi) Read-length bias:</strong> 3' counting (10x) under-samples introns.</li>
+<li><strong>(vii) Ambient RNA contamination:</strong> ambient mostly spliced → inflates γ.</li>
+</ul>
+
+<h3>⑥ Discrete velocity → continuous vector field: Dynamo's sparseVFC</h3>
+<p>Single-cell velocity is a discrete "arrow per cell"; not directly usable for dynamical-systems analysis. Dynamo applies <strong>sparseVFC (Ma 2013)</strong> + Gaussian Process regression to reconstruct continuous f: ℝᵈ → ℝᵈ. Then:</p>
+<ul>
+<li><strong>Jacobian ∂fᵢ/∂xⱼ</strong> = "how does velocity of gene i shift when gene j changes" ≈ instantaneous GRN edge weight.</li>
+<li><strong>Divergence ∇·f</strong>: negative = attractor (terminal state); positive = source (progenitor).</li>
+<li><strong>Acceleration df/dt</strong>: peaks at fate decision points (sharp lineage choices).</li>
+<li><strong>Least action paths</strong> between attractors → candidate reprogramming routes.</li>
+</ul>
+
+<h3>⑦ Velocity to fate: CellRank's Markov matrix framework</h3>
+<p>Lange et al. (2022, Nat Methods) <strong>CellRank</strong> converts velocity into a row-stochastic cell-to-cell <strong>transition matrix P</strong>, applies GPCCA to find metastable states (≈ attractors), and computes per-cell <strong>absorbing probability</strong> π_i→k (final fate of cell i). CellRank 2 supports multi-kernel fusion (velocity + pseudotime + similarity + CytoTRACE).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="RNA Velocity 在生物資訊的具體案例" data-en="Concrete Cases of RNA Velocity">RNA Velocity 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：La Manno et al. (2018, Nature) — 第一個 velocity 應用</h3>
+<p>原始 velocyto 論文，使用 mouse 腎上腺髓質 chromaffin 細胞分化資料。從多能祖細胞 (SCP) 出發，velocity 箭頭清楚指向 chromaffin cells 與交感神經元兩條 lineage 的分叉點；同時揭露一群「過渡細胞」其 velocity 方向尚未決定——後來被定義為 fate-undecided intermediate。這個案例確立了 velocity 的核心 narrative：在「靜態 UMAP」上加方向。</p>
+
+<h3>🧪 案例 2：Bergen et al. (2020, Nat Biotech) — pancreas endocrinogenesis</h3>
+<p>scVelo 的首發應用：胰島 endocrine 分化（E15.5 mouse embryo）。dynamical model 不僅還原 α/β/δ 三種 endocrine 細胞的分化軌跡，更找出「Ngn3-high → Fev-positive → 終態」的時序，<strong>latent_time</strong> 與已知的轉錄因子瀑布完全吻合。這個資料集成為後續 velocity 方法的標準 benchmark。</p>
+
+<h3>🌱 案例 3：Qiu et al. (2022, Cell) — Dynamo 在 mouse 胚胎皮膚</h3>
+<p>結合 scNT-seq labeling 與 Dynamo vector field 分析，在 E13.5 mouse 胚胎皮膚找出 hair follicle、interfollicular epidermis 兩條 lineage 的 <strong>least action paths</strong>，並用 Jacobian 推 GRN——預測「Lef1 → Krt15」這條邊，後續用 CRISPRi 在 keratinocyte organoid 驗證為真。Dynamo 是首個能做「velocity 預測 perturbation」的工具。</p>
+
+<h3>🫁 案例 4：Lange et al. (2022, Nat Methods) — CellRank 在 lung regeneration</h3>
+<p>原發 CellRank 論文使用 mouse 肺受 bleomycin 損傷後再生資料。Velocity + CellRank 找出 4 個 metastable states（progenitor、AT2、AT1、damaged AT2），並計算 progenitor → AT1 vs progenitor → AT2 的 absorbing probability，發現損傷後 AT2 → AT1 transdifferentiation 機率顯著上升——這個觀察後續由 Strunz et al. 用 lineage tracing 直接驗證。</p>
+
+<h3>🩸 案例 5：MultiVelo on PBMC 10x Multiome</h3>
+<p>Li &amp; Manno (2022, Nat Biotech) 對 PBMC Multiome 資料，比較 RNA-only velocity 與 ATAC+RNA MultiVelo：在 myeloid → monocyte 分支上，MultiVelo 偵測到 CEBPB locus 染色質開放比 mRNA 上升早 6 小時，符合 chromatin priming 模型。RNA-only velocity 完全看不到這個 lead。</p>
+
+<h3>🤖 案例 6：veloVI 在 corrupted data</h3>
+<p>Gayoso et al. (2023, Nat Methods) 故意對 dentate gyrus 資料注入 20% 的 dropout 與 batch noise；scVelo dynamical 的箭頭方向在 30% 細胞上反轉，veloVI 透過 uncertainty quantification 把不確定細胞自動「遮蔽」，整體軌跡保持正確。提供首個 velocity 結果可靠性指標。</p>
+
+<h3>🧪 案例 7：Bastidas-Ponce et al. (2019) — mouse pancreas E15.5</h3>
+<p>更早的 mouse pancreas 資料（與 Bergen 2020 同來源），velocyto 揭示 Ngn3 transient population 的雙向命運：部分回流為 ductal progenitor、部分往 endocrine。這是 velocity 首次揭示「反向 velocity」現象，後來成為「fate flexibility」的經典證據。</p>
+
+<h3>🧠 案例 8：Hochgerner et al. (2018) — dentate gyrus development</h3>
+<p>mouse hippocampus dentate gyrus postnatal neurogenesis 資料；velocity 還原 radial glia → neuroblast → mature granule cell 的時序，並偵測 P12–P35 期間「新生 granule cell」的持續產生——對應海馬迴成體 neurogenesis。被 Bergen 2020 用為主要 benchmark。</p>
+
+<h3>🦠 案例 9：Tirosh group cancer velocity (melanoma)</h3>
+<p>Jerby-Arnon et al. (2018, Cell) 對人類 melanoma scRNA-seq 應用 velocity，發現「TCF7 high → MITF high」的方向性，對應 stem-like → differentiated 轉變；更發現 immunotherapy resistance program 在 velocity 上是「正在進行式」——預示治療失敗前 tumor 已啟動 program。</p>
+
+<h3>🔬 案例 10：Perturb-seq 軌跡推論的擴展</h3>
+<p>Replogle et al. (2022, Cell)、Jin et al. (2024) 對 Perturb-seq 資料應用 velocity——在 essential gene knockout 後分析 velocity 方向變化，找出哪些擾動「卡住」軌跡（velocity → 0）、哪些「加速」（velocity magnitude 上升）。提供首個系統性的「動力學擾動」分析。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: La Manno et al. (2018, Nature) — first velocity application</h3>
+<p>The original velocyto paper used mouse adrenal medulla chromaffin differentiation. Velocity arrows clearly pointed from the SCP progenitor towards a chromaffin / sympathetic neuron bifurcation; a population of fate-undecided intermediates was first formally identified through their indeterminate velocity directions. This case established the core narrative: directionality layered onto a static UMAP.</p>
+
+<h3>🧪 Case 2: Bergen et al. (2020, Nat Biotech) — pancreas endocrinogenesis</h3>
+<p>scVelo's flagship application: mouse E15.5 endocrine differentiation. The dynamical model recovered α/β/δ cell trajectories <em>and</em> the Ngn3-high → Fev-positive → terminal order; <strong>latent_time</strong> matched the known TF cascade. This dataset became the standard velocity benchmark.</p>
+
+<h3>🌱 Case 3: Qiu et al. (2022, Cell) — Dynamo on mouse embryonic skin</h3>
+<p>Combined scNT-seq labeling with Dynamo vector field analysis on E13.5 mouse skin. Found <strong>least action paths</strong> between hair-follicle and interfollicular-epidermis lineages; Jacobian-based GRN predicted "Lef1 → Krt15", later validated by CRISPRi in keratinocyte organoids. Dynamo is the first tool that performs <em>perturbation prediction</em> from velocity.</p>
+
+<h3>🫁 Case 4: Lange et al. (2022, Nat Methods) — CellRank on lung regeneration</h3>
+<p>The launching CellRank paper used bleomycin-injured mouse lung regeneration. Velocity + CellRank found 4 metastable states (progenitor, AT2, AT1, damaged AT2) and computed absorbing probabilities, revealing increased AT2 → AT1 transdifferentiation after injury — later confirmed via lineage tracing (Strunz et al.).</p>
+
+<h3>🩸 Case 5: MultiVelo on 10x Multiome PBMC</h3>
+<p>Li &amp; Manno (2022, Nat Biotech): MultiVelo on PBMC Multiome detected CEBPB chromatin opening 6 hours before mRNA rise during myeloid → monocyte commitment — consistent with chromatin priming. RNA-only velocity completely misses this lead.</p>
+
+<h3>🤖 Case 6: veloVI on corrupted data</h3>
+<p>Gayoso et al. (2023, Nat Methods) injected 20% dropout + batch noise into dentate-gyrus data. scVelo dynamical reversed direction on 30% of cells; veloVI used uncertainty to auto-mask unreliable cells and preserved global trajectories. First reliability metric for velocity.</p>
+
+<h3>🧪 Case 7: Bastidas-Ponce et al. (2019) — E15.5 mouse pancreas</h3>
+<p>velocyto on a slightly earlier pancreas dataset revealed a bidirectional fate of the Ngn3 transient population — partial flow back into ductal progenitor, partial onward to endocrine. Now a classic example of "fate flexibility" inferred from reverse velocity.</p>
+
+<h3>🧠 Case 8: Hochgerner et al. (2018) — dentate gyrus development</h3>
+<p>Postnatal hippocampal neurogenesis; velocity recovered radial glia → neuroblast → mature granule cell order and detected persistent newborn granule cell production from P12–P35 (adult neurogenesis signature). A primary benchmark in Bergen 2020.</p>
+
+<h3>🦠 Case 9: Tirosh group cancer velocity (melanoma)</h3>
+<p>Jerby-Arnon et al. (2018, Cell) applied velocity to human melanoma, finding directional flow "TCF7-high → MITF-high" (stem-like → differentiated). They further showed an immunotherapy-resistance program is "in progress" in velocity terms — anticipating treatment failure before tumor escape.</p>
+
+<h3>🔬 Case 10: Perturb-seq trajectory extension</h3>
+<p>Replogle et al. (2022, Cell) and Jin et al. (2024) applied velocity to Perturb-seq, asking how essential-gene knockouts altered velocity magnitude/direction — identifying perturbations that "stall" (velocity → 0) or "accelerate" (magnitude up) trajectories. First systematic kinetic-perturbation analysis.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="RNA Velocity 還能改良 / 新解決哪些任務？" data-en="What Else Could RNA Velocity Improve?">RNA Velocity 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 抗藥前體（drug-tolerant persister）動態偵測</h3>
+<p>腫瘤 heterogeneity 中常存在「pre-resistant」群——治療前已具部分抗藥 program。傳統做法（DE on resistant vs sensitive）會錯過這群「正在形成」的細胞。<strong>提案：</strong>用 velocity 方向（指向 resistant terminal state 的細胞）找出「抗藥 in progress」群體，比 cluster-based DE 早 1–2 細胞世代偵測。對比現有 single-cell perturbation 工具如 Augur 只給靜態 priority score。</p>
+
+<h3>🎯 2. T cell exhaustion 軌跡動力學</h3>
+<p>T cell exhaustion 是漸進過程 (Tprog → Tex_int → Tex_term)，每個 stage 的 TF kinetics 差異大（TOX、TCF7、TIM3）。<strong>提案：</strong>用 dynamical scVelo 對 chronic LCMV / 慢性病毒感染資料做 stage-specific α/γ 估計，再用 Jacobian 找「每個 stage 的關鍵 TF」。對比現有靜態 trajectory（Slingshot 只給 pseudotime），velocity 還給每個基因的「打開 / 關閉時刻」。</p>
+
+<h3>🎯 3. iPSC reprogramming 動態量化</h3>
+<p>Yamanaka 因子重編程效率僅 0.1–1%，瓶頸在「partial reprogrammed」群體。<strong>提案：</strong>用 velocity 偵測 OSKM 誘導後第 4–8 天的「reprogramming velocity」——指向 iPSC state 的細胞 vs 卡在中間的細胞。結合 Dynamo least action path 找最低能量重編程路徑，識別關鍵 fate barrier。對比現有 Waddington-OT 用「靜態」snapshot 推測，velocity 是即時動力學。</p>
+
+<h3>🎯 4. 整合 metabolic profiling（13C labeling + scNT-seq）</h3>
+<p>scNT-seq 標 RNA 新合成，13C glucose labeling 標代謝物。兩者結合可推「轉錄 velocity → 代謝 velocity」的因果。<strong>提案：</strong>對應的 dual-omic 估計框架（擴展 Dynamo 支援 metabolite flux），找出代謝轉換驅動的轉錄變化。比現有 scMetabolism / Compass 只給靜態 flux 預測強得多。</p>
+
+<h3>🎯 5. 用 velocity Jacobian 改良 GRN 推論</h3>
+<p>現有 GRN 工具（SCENIC, GENIE3, GRNBoost）都從靜態表現推 TF–target 邊。Velocity Jacobian ∂(dG_i/dt)/∂G_j 直接是 "G_j 變動如何加速 G_i 的轉錄"——是真實的因果方向。<strong>提案：</strong>scVelo + sparseVFC + Jacobian pipeline 作為「動力學 GRN」工具，與 SCENIC 整合（SCENIC 給候選 TF→target，Jacobian 給方向與時刻）。對比 SCENIC 完全靜態，Jacobian-GRN 是時間解析的。</p>
+
+<h3>🎯 6. 細胞通訊動態（哪個 ligand 觸發了 receptor velocity 上升）</h3>
+<p>CellChat 從靜態表現乘積推 L–R 強度。但訊號傳遞本質是動態的——ligand 達閾值 → receptor 表現變化 → 下游基因 velocity 改變。<strong>提案：</strong>對 paired sender-receiver 細胞群，用 Granger-causality on velocity 找「sender ligand velocity → receiver downstream velocity」的時序，這比 CellChat 靜態 score 更接近真實 signaling cascade。</p>
+
+<h3>🎯 7. 跨物種 velocity 比較</h3>
+<p>跨物種發育比較（mouse vs human cortex）目前只比較表現模式，無法比較「速度」。<strong>提案：</strong>對齊 orthologue velocity，量化「mouse 與 human 同一發育階段的 α/γ 是否保守」——快慢差異會揭示物種特異的調控。例如 human neocortex 神經元成熟比 mouse 慢數倍，是否反映於 velocity magnitude？對比現有 cross-species comparison 只比 expression mean。</p>
+
+<h3>🎯 8. 結合 RNA velocity 與空間（spatialVelo）</h3>
+<p>10x Visium / Stereo-seq 有空間 + RNA 但無時間。<strong>提案：</strong>對組織切片每點求 velocity，再分析 velocity 的<strong>空間 divergence pattern</strong>——找出組織中的「動力學熱點」（如 wound healing front、tumor invasion edge）。對比現有 spatialDE 只找靜態空間異質基因，spatialVelo 找「正在變化的空間區域」。</p>
+
+<h3>🎯 9. 預測藥物擾動後的細胞 trajectory</h3>
+<p>藥物篩選通常看「擾動 24 hr 後 expression 差異」。但藥物效應是動態展開的——早期 transcriptional response 與晚期 phenotypic change 不同。<strong>提案：</strong>用 Dynamo 從 baseline velocity vector field 「外推」藥物擾動軌跡（perturb α 或 γ，模擬 velocity 變化）。對比現有 CMap / LINCS 完全靜態（only 6/24h snapshots），Dynamo 可預測 continuous trajectory。</p>
+
+<h3>🎯 10. 用 velocity 評估 perturbation timing（when to intervene）</h3>
+<p>細胞分化中存在「decision window」——早期擾動可逆，晚期擾動無效。<strong>提案：</strong>用 velocity acceleration 找「fate-decision 點」，把 perturbation 設計集中在這些 time window。例如：iPSC 重編程第 6 天是 acceleration 最大時刻 → 該日擾動效率最高。對比現有 Perturb-seq 都「終點測量」，velocity 提供「干預時機」指引。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Drug-tolerant persister kinetics</h3>
+<p>Tumor heterogeneity often contains "pre-resistant" cells with partial resistance programs before therapy. Classical DE (resistant vs sensitive) misses cells "in progress". <strong>Proposal:</strong> use velocity direction (cells pointing towards the resistant terminal state) to detect "resistance in progress" 1–2 generations earlier than cluster-based DE. Contrast: tools like Augur only return static priority scores.</p>
+
+<h3>🎯 2. T cell exhaustion trajectory kinetics</h3>
+<p>Exhaustion is gradual (Tprog → Tex_int → Tex_term) with stage-specific TF kinetics (TOX, TCF7, TIM3). <strong>Proposal:</strong> stage-specific α/γ via dynamical scVelo on chronic LCMV data + Jacobian for "TF of each stage". Whereas Slingshot only gives pseudotime, velocity additionally provides per-gene "on/off times".</p>
+
+<h3>🎯 3. iPSC reprogramming dynamics</h3>
+<p>OSKM reprogramming has ~1% efficiency; the bottleneck is the "partially reprogrammed" pool. <strong>Proposal:</strong> velocity on days 4–8 OSKM induction to find cells with velocity pointing towards iPSC state vs trapped intermediates. Couple with Dynamo least action paths to identify fate barriers. Contrast: Waddington-OT uses static snapshots; velocity captures instantaneous dynamics.</p>
+
+<h3>🎯 4. Integrate metabolic profiling (13C labeling + scNT-seq)</h3>
+<p>scNT-seq labels new RNA; 13C glucose labels metabolites. Combined → "transcription velocity → metabolic velocity" causality. <strong>Proposal:</strong> extend Dynamo to support metabolite flux jointly, identify metabolic transitions that drive transcriptional shifts. Contrast: scMetabolism / Compass give only static flux predictions.</p>
+
+<h3>🎯 5. Velocity Jacobian for improved GRN inference</h3>
+<p>SCENIC, GENIE3, GRNBoost infer TF–target edges from static expression. Velocity Jacobian ∂(dG_i/dt)/∂G_j directly measures "how G_j change accelerates G_i transcription" — true causal direction. <strong>Proposal:</strong> scVelo + sparseVFC + Jacobian as a "dynamic GRN" pipeline, integrated with SCENIC (candidate edges) for direction + timing. Static SCENIC vs time-resolved Jacobian-GRN.</p>
+
+<h3>🎯 6. Cell-communication dynamics (which ligand triggers receptor velocity?)</h3>
+<p>CellChat uses static expression products. Signaling is intrinsically dynamic — ligand crosses threshold → receptor expression shifts → downstream velocity changes. <strong>Proposal:</strong> Granger-causality on velocity for paired sender-receiver clusters: "sender ligand velocity → receiver downstream velocity". Closer to the real signaling cascade than CellChat's static score.</p>
+
+<h3>🎯 7. Cross-species velocity comparison</h3>
+<p>Cross-species developmental comparisons currently only compare expression patterns. <strong>Proposal:</strong> align orthologue velocities, quantify whether α/γ are conserved at matched developmental stages — speed differences reveal species-specific regulation (e.g. why human neocortex maturation is far slower than mouse). Versus standard cross-species expression-mean comparisons.</p>
+
+<h3>🎯 8. RNA velocity + spatial (spatialVelo)</h3>
+<p>Visium / Stereo-seq have space but no time. <strong>Proposal:</strong> compute velocity per spot, analyze spatial divergence patterns — "kinetic hotspots" (wound-healing front, tumor invasion edge). Contrast: SpatialDE finds static spatial DE genes; spatialVelo finds "regions in motion".</p>
+
+<h3>🎯 9. Predict cell trajectories under drug perturbation</h3>
+<p>Drug screens look at "expression diff at 24 hr". But drug effects unfold dynamically — early transcriptional vs late phenotypic responses differ. <strong>Proposal:</strong> use Dynamo to extrapolate trajectories under perturbed α or γ (in silico perturbation of velocity field). Contrast: CMap / LINCS deliver only 6/24h snapshots; Dynamo simulates continuous trajectories.</p>
+
+<h3>🎯 10. Use velocity to choose perturbation timing</h3>
+<p>Differentiation has "decision windows" — early perturbations are reversible, late ones ineffective. <strong>Proposal:</strong> use velocity acceleration to locate fate-decision points; schedule perturbations precisely at those times (e.g. day 6 of OSKM reprogramming is the acceleration peak → maximally effective). Contrast: Perturb-seq usually measures only end-points; velocity tells you <em>when</em> to intervene.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sv')">scVelo</button>
+<button class="code-tab-btn" onclick="switchTab(this,'dyn')">Dynamo</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cr')">CellRank</button>
+</div>
+<div class="code-tab-content active" id="sv"><pre><span class="keyword">import</span> scvelo <span class="keyword">as</span> scv
+
+scv.pp.filter_and_normalize(adata, min_shared_counts=<span class="num">20</span>, n_top_genes=<span class="num">2000</span>)
+scv.pp.moments(adata, n_pcs=<span class="num">30</span>, n_neighbors=<span class="num">30</span>)
+scv.tl.recover_dynamics(adata)        <span class="comment"># 估計 α, β, γ</span>
+scv.tl.velocity(adata, mode=<span class="str">"dynamical"</span>)
+scv.tl.velocity_graph(adata)
+scv.pl.velocity_embedding_stream(adata, basis=<span class="str">"umap"</span>, color=<span class="str">"celltype"</span>)</pre></div>
+<div class="code-tab-content" id="dyn"><pre><span class="keyword">import</span> dynamo <span class="keyword">as</span> dyn
+
+dyn.pp.recipe_monocle(adata)
+dyn.tl.dynamics(adata, model=<span class="str">"stochastic"</span>)
+dyn.tl.cell_velocities(adata)
+dyn.vf.VectorField(adata, basis=<span class="str">"umap"</span>)   <span class="comment"># 重建連續向量場</span>
+dyn.vf.jacobian(adata)                <span class="comment"># 基因調控</span>
+dyn.vf.acceleration(adata); dyn.vf.divergence(adata)</pre></div>
+<div class="code-tab-content" id="cr"><pre><span class="keyword">import</span> cellrank <span class="keyword">as</span> cr
+<span class="keyword">from</span> cellrank.kernels <span class="keyword">import</span> VelocityKernel, ConnectivityKernel
+
+vk = VelocityKernel(adata).compute_transition_matrix()
+ck = ConnectivityKernel(adata).compute_transition_matrix()
+kernel = <span class="num">0.8</span> * vk + <span class="num">0.2</span> * ck
+g = cr.estimators.GPCCA(kernel)
+g.compute_macrostates(n_states=<span class="num">5</span>); g.predict_terminal_states()
+g.compute_fate_probabilities()</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">RNA velocity 主要利用 scRNA-seq 中哪個訊號？</p><p data-lang="en">RNA velocity exploits which signal in scRNA-seq?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 細胞數量</span><span data-lang="en">A. Cell count</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. UMI 條碼</span><span data-lang="en">B. UMI barcodes</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. spliced 與 unspliced reads 的比例</span><span data-lang="en">C. Ratio of spliced and unspliced reads</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 染色體拷貝數</span><span data-lang="en">D. Chromosome copy number</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列何者最可能讓 RNA velocity 結果不可靠？</p><p data-lang="en">Which most likely makes RNA velocity unreliable?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 細胞數 > 1000</span><span data-lang="en">A. > 1000 cells</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 成熟組織、基因動力學緩慢、unspliced 訊號低</span><span data-lang="en">B. Mature tissue, slow dynamics, low unspliced signal</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 使用 10x Chromium</span><span data-lang="en">C. Using 10x Chromium</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 用 UMAP 視覺化</span><span data-lang="en">D. Using UMAP</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="manifold-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 6：Manifold</span></a>
+<a href="cycle-following.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 8：循環追蹤" data-en="Ch 8: Cycle-following">Ch 8：循環追蹤</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+const tArr=Array.from({length:120},(_,i)=>i*0.1);
+const rvChart=new Chart(document.getElementById('rvChart'),{type:'line',data:{labels:tArr.map(t=>t.toFixed(1)),datasets:[{label:'u (unspliced)',data:[],borderColor:'#C8633C',backgroundColor:'rgba(200,99,60,0.1)',fill:false,pointRadius:0},{label:'s (spliced)',data:[],borderColor:'#1A6B5A',backgroundColor:'rgba(26,107,90,0.1)',fill:false,pointRadius:0},{label:'velocity ds/dt',data:[],borderColor:'#888',borderDash:[5,5],fill:false,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{title:{display:true,text:'time'}},y:{title:{display:true,text:'amount'}}}}});
+
+function sim(){const al=+document.getElementById('sAl').value;const be=+document.getElementById('sBe').value;const ga=+document.getElementById('sGa').value;document.getElementById('vAl').textContent=al.toFixed(1);document.getElementById('vBe').textContent=be.toFixed(1);document.getElementById('vGa').textContent=ga.toFixed(1);
+let u=0,s=0;const us=[],ss=[],vs=[];const dt=0.1;
+for(let i=0;i<tArr.length;i++){const t=tArr[i];const alpha=t<6?al:0;  // induction then repression
+const du=alpha-be*u;const ds=be*u-ga*s;u+=du*dt;s+=ds*dt;us.push(u);ss.push(s);vs.push(ds);}
+rvChart.data.datasets[0].data=us;rvChart.data.datasets[1].data=ss;rvChart.data.datasets[2].data=vs;rvChart.update('none');
+const L=I18n.get();const peak=vs.indexOf(Math.max(...vs));const peakT=tArr[peak].toFixed(1);
+document.getElementById('rvMsg').innerHTML=L==='zh'?`α 在 t = 6 後關閉（轉錄停止）。velocity (ds/dt) 在約 t = <strong>${peakT}</strong> 達峰值，之後變負代表 s 開始下降——這就是「衰減期」訊號。`:`α turns off at t = 6 (transcription stops). velocity (ds/dt) peaks around t = <strong>${peakT}</strong>, then turns negative — signaling repression.`;}
+['sAl','sBe','sGa'].forEach(id=>document.getElementById(id).addEventListener('input',sim));document.addEventListener('langchange',sim);sim();
+
+window._QF={zh:{q1_y:'答對！spliced/unspliced 是核心訊號。',q1_n:'答案是 C。velocity 的根基是 splicing 動力學。',q2_y:'答對！穩態與慢動力是 velocity 主要陷阱。',q2_n:'答案是 B。velocity 在穩態與慢系統下不可靠。'},en:{q1_y:'Correct! Spliced/unspliced is the core signal.',q1_n:'Answer is C. The foundation is splicing dynamics.',q2_y:'Correct! Steady-state and slow dynamics are pitfalls.',q2_n:'Answer is B. Velocity is unreliable in steady systems.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

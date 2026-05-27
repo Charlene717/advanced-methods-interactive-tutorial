@@ -1,0 +1,551 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>scLLMs — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html" class="active">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 13 / 14</div><h1 data-zh="scLLMs 單細胞基礎模型" data-en="scLLMs: Single-cell Foundation Models">scLLMs 單細胞基礎模型</h1>
+<p class="subtitle" data-lang="zh">scGPT、Geneformer、scFoundation——把 NLP 的 Transformer 範式搬進單細胞。tokenization、預訓練、零樣本、fine-tuning，與最新 2025–2026 benchmark 揭示的真相。</p>
+<p class="subtitle" data-lang="en">scGPT, Geneformer, scFoundation — porting Transformer paradigms from NLP to single-cell. Tokenization, pretraining, zero-shot, fine-tuning, and what 2025–2026 benchmarks really reveal.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="把細胞變成「句子」" data-en="Making Cells into Sentences">把細胞變成「句子」</h2>
+<div data-lang="zh">
+<p>NLP 的成功靠三件事：① <strong>tokenization</strong>（把文字切成基本單元）② <strong>大規模預訓練</strong>（self-supervised on huge corpora）③ <strong>transformer 注意力</strong>。scLLMs 把同一公式套到細胞：</p>
+<ul>
+<li>每個基因（或基因表現等級）= 一個 token</li>
+<li>一個細胞 = 一個「句子」</li>
+<li>千萬到億規模的細胞當作 corpus 預訓練</li>
+</ul>
+<p>關鍵差異：基因「句子」本質上是 <strong>set</strong> 而非 sequence——沒有自然順序。不同模型用不同 tokenization 策略處理這個差異。</p>
+</div>
+<div data-lang="en">
+<p>NLP success builds on three things: ① <strong>tokenization</strong> (text into atomic units) ② <strong>large-scale pretraining</strong> ③ <strong>transformer attention</strong>. scLLMs translate this to cells:</p>
+<ul>
+<li>each gene (or gene's expression rank) = a token</li>
+<li>each cell = a "sentence"</li>
+<li>tens of millions to billions of cells as pretraining corpus</li>
+</ul>
+<p>Key difference: gene "sentences" are <strong>sets</strong>, not sequences — no natural order. Different models handle this differently.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="三大代表" data-en="THREE LEADERS">三大代表</div>
+<h2 data-zh="scGPT vs Geneformer vs scFoundation" data-en="scGPT vs Geneformer vs scFoundation">三大代表性模型</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>scGPT (Cui 2024, Nature Methods)</h4><p data-lang="zh">每個細胞 token = (gene, expression bin)，pretraining 目標為 masked gene expression prediction。33M 細胞訓練。支援 zero-shot 細胞型別、batch correction、perturbation、multi-omics。</p><p data-lang="en">Each token = (gene, expression bin); pretraining objective = masked gene expression prediction. Trained on 33M cells. Supports zero-shot cell typing, batch correction, perturbation, multi-omics.</p></div>
+
+<div class="card"><h4>Geneformer (Theodoris 2023, Nature)</h4><p data-lang="zh">每個 token = 基因 symbol，每個細胞按表現量排名形成序列；pretraining 是 masked language model on 30M 細胞。強在 zero-shot 跨資料集泛化、in-silico perturbation。</p><p data-lang="en">Each token = gene symbol; cells ordered by expression rank; MLM pretraining on 30M cells. Strong at zero-shot generalization and in-silico perturbation.</p></div>
+
+<div class="card"><h4>scFoundation (Hao 2024, Nature Methods)</h4><p data-lang="zh">同時 token 基因與表現量（連續值編碼），50M 細胞、100M 參數。在 cell type annotation 與 perturbation 任務 benchmark 中表現特別好。</p><p data-lang="en">Tokenizes both gene and (continuous) expression; 50M cells, 100M parameters. Excels at cell-type annotation and perturbation tasks.</p></div>
+
+<div class="card"><h4>scMulan, scBERT, UCE, CellPLM…</h4><p data-lang="zh">2024–2025 一系列後續模型：UCE（universal cell embedding）想做跨物種、CellPLM 加入 spatial context、scMulan 在 token 設計上創新。</p><p data-lang="en">2024–2025 successors: UCE (universal cell embedding, cross-species), CellPLM (spatial context), scMulan (token innovations), etc.</p></div>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>2025–2026 benchmark 警示：</strong>多個 systematic 評估（scEval、CellBench-LS、AdvancedScience 2025 等）顯示「沒有單一 scLLM 在所有 task 上勝出」，性能高度依賴任務、資料集與評估方式。<strong>關鍵發現：</strong>在某些 task 上，scLLMs 並未顯著勝過簡單的 PCA + linear baseline（Nature Methods 2025 perturbation 評估）。慎用、做好評估。</div>
+<div data-lang="en"><strong>2025–2026 benchmark caveat:</strong> Multiple systematic evaluations (scEval, CellBench-LS, AdvancedScience 2025) show "no single scLLM wins on all tasks"; performance strongly depends on task, data, evaluation. <strong>Key finding:</strong> on some tasks (e.g. perturbation prediction, Nature Methods 2025), scLLMs do not yet outperform simple PCA + linear baselines. Use with care; evaluate properly.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Tokenization 對照" data-en="Tokenization Side-by-side">Tokenization 對照</h2>
+<div data-lang="zh"><p>給定一個細胞的基因表現量，看三個模型分別怎麼 token 化。</p></div>
+<div data-lang="en"><p>Given a single cell's expression, see how the three models tokenize it.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="顯示前幾個基因" data-en="Show top genes">顯示前幾個基因 <span id="vK">5</span></label><input type="range" id="sK" min="3" max="10" value="5" step="1"></div>
+<div id="tokDemo" style="background:#fff;padding:12px;border-radius:6px;border:1px solid var(--c-border);font-family:ui-monospace,monospace;font-size:.85rem;line-height:1.8;"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="任務類別" data-en="Task Categories">任務類別</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="細胞型別註釋（zero-shot）" data-en="Cell-type annotation (zero-shot)">細胞型別註釋（zero-shot）</h4><p data-lang="zh">scLLM 的 latent embedding 可直接用 kNN 或 logistic regression 對照參考做註釋——不需重新訓練。</p><p data-lang="en">scLLM latents work for kNN / logistic regression against reference — no retraining needed.</p></div>
+<div class="card"><h4 data-zh="批次整合" data-en="Batch integration">批次整合</h4><p data-lang="zh">凍結模型 + 簡單 fine-tune 即可移除 batch，效果接近 scVI/Harmony。</p><p data-lang="en">Frozen model + light fine-tune removes batches; comparable to scVI/Harmony.</p></div>
+<div class="card"><h4 data-zh="基因–基因互動" data-en="Gene–gene interaction">基因–基因互動</h4><p data-lang="zh">分析 attention map 可揭示「哪些基因 attention 強連結」——可用於 GRN 推論的補充訊號。</p><p data-lang="en">Attention maps reveal "which gene pairs strongly attend" — supplementary signal for GRN inference.</p></div>
+<div class="card"><h4 data-zh="In-silico 擾動" data-en="In-silico perturbation">In-silico 擾動</h4><p data-lang="zh">把某基因的 token 改為「knock-out」狀態，預測整個 transcriptome 的反應——但這是當前最具爭議的 task，benchmark 顯示 scLLMs 並未明顯勝過 baseline。</p><p data-lang="en">Set a gene token to "knockout" state and predict transcriptome response — currently the most contested task; benchmarks show scLLMs don't clearly beat baselines.</p></div>
+<div class="card"><h4 data-zh="多模態整合" data-en="Multi-modal integration">多模態整合</h4><p data-lang="zh">scGPT、scMulan 等支援把 RNA + ATAC + Protein 統一 token 化進入同一模型。</p><p data-lang="en">scGPT, scMulan can token-encode RNA + ATAC + Protein into one model.</p></div>
+<div class="card"><h4 data-zh="跨物種對映" data-en="Cross-species mapping">跨物種對映</h4><p data-lang="zh">UCE 等模型嘗試學「物種無關」的細胞嵌入——值得追蹤但 benchmark 仍不穩定。</p><p data-lang="en">UCE-like models pursue "species-agnostic" embeddings — promising but benchmarks remain unstable.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 scLLMs：架構、訓練、評估的細節" data-en="Deep Dive: scLLMs Architecture, Training, Evaluation">深入解析 scLLMs：架構、訓練、評估的細節</h2>
+
+<div data-lang="zh">
+<h3>① Transformer 在 set-valued data 上的調整：positional encoding 怎麼設計？</h3>
+<p>NLP 的 Transformer 依賴 positional encoding（PE）告訴模型「第幾個 token」。但細胞的基因集合本質上沒有自然順序——若直接套 sinusoidal PE 會引入虛構的 ordering bias。三種策略：</p>
+<ul>
+<li><strong>無位置編碼 (no PE)：</strong>scGPT 採用——讓 self-attention 完全 permutation-invariant，把 gene identity 直接編進 token embedding。</li>
+<li><strong>Rank-based PE：</strong>Geneformer 用——按表現量排序後使用標準 sinusoidal PE，「位置」變成「表現量排名」，本身就是有意義的 ordering。</li>
+<li><strong>Continuous value encoding：</strong>scFoundation 用「value embedding」（把連續 expression 投影成 vector）並與 gene embedding 相加，類似 BERT 的 segment embedding 想法。</li>
+</ul>
+<p>Cui et al. (2024, Nature Methods) 在補充材料指出，rank-based PE 對 batch effect 較強健（不同 batch 雖深度不同，但 ranking 保留），而 continuous embedding 對微小變化更敏感。</p>
+
+<h3>② scGPT 架構深拆：FlashAttention、conditional input、雙頭設計</h3>
+<p>scGPT 是 decoder-only Transformer（類似 GPT），但加入幾個關鍵 modification：</p>
+<ul>
+<li><strong>FlashAttention v2 (Dao 2023)：</strong>把 attention 計算改為 IO-aware，O(n²) 記憶體降為 O(n)，這讓 scGPT 能處理 1200+ gene tokens（標準 high-variable genes 集合）。</li>
+<li><strong>Conditional input：</strong>除了 (gene, value) tokens，可加入 batch label、modality、tissue 等 condition tokens，用 cross-attention 或 prefix-tuning 注入。</li>
+<li><strong>雙頭預測：</strong>每個 transformer layer 之上有兩個 head——(a) gene expression prediction (回歸頭) 與 (b) gene generation (分類頭，預測 masked 位置的 gene identity)。同時訓練讓模型既學「表現量分布」也學「基因共現結構」。</li>
+<li><strong>Attention scaling：</strong>scGPT 在 attention logits 上用了 RoPE 風格的縮放，並把 attention head 分組——前幾個 head 學「local co-expression」，後面的 head 學「global cell-state context」。</li>
+</ul>
+
+<h3>③ Geneformer 細節：30M 細胞語料、rank-ordered sequences、BERT-style MLM</h3>
+<p>Geneformer (Theodoris 2023, Nature) 把 30M 真實人類細胞當作 corpus：</p>
+<ul>
+<li><strong>Tokenization：</strong>每個細胞的 gene 依「相對 expression rank」排序（不是絕對量，所以對 normalization 不敏感），取 top-2048 形成序列。</li>
+<li><strong>Vocabulary：</strong>~25,000 個 human gene symbols。</li>
+<li><strong>Pretraining 目標：</strong>BERT-style masked language modeling——隨機 mask 15% gene tokens，要模型預測「這個位置該是哪個 gene」。這逼模型學「在某 cell context 下，哪些 gene 應該共同高表現」。</li>
+<li><strong>Architecture：</strong>BERT-base size (12 layers, 256 hidden, 4 heads, 10M parameters)。</li>
+<li><strong>關鍵發現：</strong>該模型在「擾動效應預測」上有 zero-shot 能力——對基因 token 做「移除」可模擬 knockout 效應。Theodoris 等驗證了它正確指出 LRRC10 是 cardiomyopathy 治療標靶，並用 zebrafish 模型驗證。</li>
+</ul>
+
+<h3>④ scFoundation：100M 參數、連續 expression value 直接 tokenization</h3>
+<p>Hao et al. (2024, Nature Methods) 的 scFoundation 是目前最大規模的單細胞基礎模型之一：</p>
+<ul>
+<li><strong>Scale：</strong>100M 參數，訓練於 50M 細胞 (合併 CellxGene、HCA、HuBMAP)。</li>
+<li><strong>Tokenization：</strong>不做 binning——每個 gene 配上一個連續 expression value embedding（用 sinusoidal value encoding，類似 NeRF 的 positional encoding）。這保留了 expression 的細微差異，但也讓模型對 batch effect 較敏感，需要 conditional batch token 補償。</li>
+<li><strong>Pretraining 目標：</strong>結合 (a) value regression on masked positions 與 (b) cell embedding contrastive loss (同 cell 不同 augmentation 互拉近)。</li>
+<li><strong>下游表現：</strong>在 CellBench-LS (2025) benchmark 上 cell-type annotation 排名第一，但 perturbation 預測排名與更小的 baseline 模型相近。</li>
+</ul>
+
+<h3>⑤ Pretraining objectives 比較：MLM vs expression regression vs contrastive</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">目標</th><th style="padding:8px;border:1px solid #e0dcd0;">代表模型</th><th style="padding:8px;border:1px solid #e0dcd0;">學到什麼</th><th style="padding:8px;border:1px solid #e0dcd0;">優點</th><th style="padding:8px;border:1px solid #e0dcd0;">弱點</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Masked LM (gene identity)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">Geneformer</td><td style="padding:6px;border:1px solid #e0dcd0;">基因共現結構</td><td style="padding:6px;border:1px solid #e0dcd0;">穩健於 normalization</td><td style="padding:6px;border:1px solid #e0dcd0;">丟失量化資訊</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Expression value regression</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">scGPT, scFoundation</td><td style="padding:6px;border:1px solid #e0dcd0;">expression 分布與細微差異</td><td style="padding:6px;border:1px solid #e0dcd0;">保留量化訊號</td><td style="padding:6px;border:1px solid #e0dcd0;">對 batch effect 敏感</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Contrastive (cell-level)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">CellPLM, UCE</td><td style="padding:6px;border:1px solid #e0dcd0;">cell-level invariances</td><td style="padding:6px;border:1px solid #e0dcd0;">cell embedding 強</td><td style="padding:6px;border:1px solid #e0dcd0;">gene-level 訊號弱</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Multi-task hybrid</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">scMulan, scGPT-multi</td><td style="padding:6px;border:1px solid #e0dcd0;">綜合 cell + gene + modality</td><td style="padding:6px;border:1px solid #e0dcd0;">下游 task 廣</td><td style="padding:6px;border:1px solid #e0dcd0;">訓練複雜、易 task interference</td></tr>
+</tbody></table>
+
+<h3>⑥ Fine-tuning 策略：full / LoRA / adapter / prompt-tuning</h3>
+<ul>
+<li><strong>Full fine-tune：</strong>更新所有參數——資料量 &gt; 100k 細胞時較有效，但易過擬合到小資料集。</li>
+<li><strong>LoRA (Hu 2021)：</strong>只在 attention 的 Q/V 矩陣旁加 low-rank delta。scGPT 官方支援 LoRA 模式，可訓練參數降到 0.5%，在小資料集 (10k–50k 細胞) 表現勝過 full fine-tune。</li>
+<li><strong>Adapter (Houlsby 2019)：</strong>在 transformer block 之間插入小型 bottleneck MLP，凍結原始參數。對 multi-task 微調尤其有用——可以為每個 task 訓練獨立 adapter，共用 backbone。</li>
+<li><strong>Prompt-tuning：</strong>不修改模型，只訓練一段「soft prompt」prepend 到輸入。需要訓練的參數最少，但對 scLLM 的效果尚未廣泛驗證。</li>
+</ul>
+
+<h3>⑦ Zero-shot 評估的三條路徑</h3>
+<p>scLLM 的「zero-shot 能力」指不重新訓練即可用於下游 task，常見三種協議：</p>
+<ul>
+<li><strong>Embedding-based KNN：</strong>抽 cell embedding，用 reference 標 KNN。簡單但對 embedding 品質敏感。</li>
+<li><strong>Linear probe：</strong>凍結 backbone，訓練單一線性層做分類。是「embedding 品質」的標準量度。</li>
+<li><strong>Prompt-based zero-shot：</strong>給模型自然語言或 special token prompt（如 "[CLS] this is a [MASK] cell"），讀取 mask 位置的預測。目前 scLLM 對 prompt 設計仍敏感。</li>
+</ul>
+
+<h3>⑧ Attention map 可解釋性：能找到真實的 TF–target 嗎？</h3>
+<p>scLLM 的 self-attention 可被視為「軟性 GRN」——若 gene A 對 gene B 的 attention weight 高，可能意味 A 在預測 B 時很重要。但要警惕：</p>
+<ul>
+<li>Attention weight ≠ causal influence (Jain & Wallace 2019 警告)。</li>
+<li>多 layer × 多 head 的整合方式（avg、max、rollout）會大幅影響結論。</li>
+<li>Liu et al. (2025, Genome Biology) 系統評估了 scGPT/Geneformer 的 attention 是否對應已知 TF–target，結論：召回率約 0.3 (vs random ≈ 0.05)，<strong>有訊號但遠未夠精準</strong>。</li>
+</ul>
+
+<h3>⑨ 跨物種 universal cell embedding</h3>
+<p>UCE (Rosen 2023, bioRxiv) 與 CellPLM 嘗試學「物種無關」的 cell representation。UCE 把 gene token 改為 <strong>protein embedding</strong>（用 ESM 編碼蛋白序列），這樣不同物種的同源 gene 能映射到相近向量。實測 UCE 在 mouse-human 整合上勝過 SAMap，但在 zebrafish 等較遠物種仍不穩定。</p>
+
+<h3>⑩ 處理 batch effect：conditional generation 與 contrastive learning</h3>
+<p>兩條主要路線：</p>
+<ul>
+<li><strong>Conditional generation：</strong>把 batch label 當 condition token 輸入。生成時把 batch token 設為「ref batch」即可在 ref space 重建——類似 CycleGAN 的條件轉換。scGPT 採用此方式。</li>
+<li><strong>Contrastive：</strong>同 cell 不同 batch 的 augmentation 互拉近，不同 cell 互拉遠。CellPLM 用此方式達到 zero-shot batch removal。</li>
+</ul>
+
+<h3>⑪ scLLM × RAG（retrieval-augmented generation）整合</h3>
+<p>2025 年新興方向：把 scLLM 與外部知識庫（如 PanglaoDB、CellMarker、Reactome）耦合。流程：(1) scLLM 產生 cell embedding，(2) retrieve 最相似的已標註 cell + 文獻 marker，(3) prompt 模型結合 retrieval 結果輸出標註。BioMedLM-RAG (Wang 2025) 與 scAnnoGPT 是早期例子。</p>
+
+<h3>⑫ Multimodal scLLM：scGPT-multi、CellPLM-spatial</h3>
+<p>單一模型同時處理 RNA + ATAC + protein + spatial：</p>
+<ul>
+<li><strong>scGPT-multi：</strong>每種 modality 各有 token vocabulary，用 modality embedding 區分。RNA + ATAC paired 資料上勝過 MultiVI、scGLUE。</li>
+<li><strong>CellPLM-spatial：</strong>加入 (x, y) 空間 token，能對 Visium、Stereo-seq 做 zero-shot 空間整合。</li>
+</ul>
+
+<h3>⑬ Long-context handling for large gene panels</h3>
+<p>標準 Transformer 在 sequence length 4096 之上記憶體就吃緊。處理全 transcriptome (~25,000 genes) 需要：FlashAttention v2 (scGPT)、Longformer/sliding window attention（CellPLM 探索）、Mamba/SSM 風格架構 (xCell-Mamba 2025)。</p>
+
+<h3>⑭ 2025–2026 benchmark 結論</h3>
+<p>Wenkel et al. (2025, Nature Methods) 系統評估 scGPT/Geneformer/scFoundation 在 perturbation 預測，<strong>未明顯勝過 linear baseline (LR on PCA)</strong>。但 cell-type annotation 與 batch integration 任務上，scLLM 普遍勝出 5–15% AUC。CellBench-LS (2026) benchmark 進一步顯示「在 tissue 內 (intra-tissue) scLLM 強，跨 tissue/物種仍弱」。實務建議：annotation 用 scLLM，perturbation 仍以 perturbation-specific 模型 (GEARS) 為主。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Adapting Transformers to set-valued data: positional encoding choices</h3>
+<p>NLP Transformers rely on positional encoding (PE). But gene sets have no natural order — naive sinusoidal PE introduces fake ordering bias. Three strategies:</p>
+<ul>
+<li><strong>No PE:</strong> scGPT — fully permutation-invariant self-attention; gene identity encoded directly in token embedding.</li>
+<li><strong>Rank-based PE:</strong> Geneformer — sort by expression rank, then standard sinusoidal PE; "position" = expression rank, semantically meaningful.</li>
+<li><strong>Continuous value encoding:</strong> scFoundation — value embedding (continuous expression → vector) added to gene embedding, analogous to BERT's segment embedding.</li>
+</ul>
+<p>Cui et al. (2024, Nature Methods) supplementary materials show rank-based PE is more robust to batch effects (ranks preserved across depths), while continuous embedding is more sensitive to fine variation.</p>
+
+<h3>② scGPT architecture in detail: FlashAttention, conditional input, dual heads</h3>
+<p>scGPT is a decoder-only Transformer (GPT-like) with several key modifications:</p>
+<ul>
+<li><strong>FlashAttention v2 (Dao 2023):</strong> IO-aware attention reduces O(n²) memory to O(n), enabling 1200+ gene tokens (standard HVG sets).</li>
+<li><strong>Conditional input:</strong> beyond (gene, value) tokens, batch/modality/tissue tokens can be injected via cross-attention or prefix-tuning.</li>
+<li><strong>Dual prediction heads:</strong> each transformer layer has (a) expression regression head and (b) gene generation (classification) head — learning both expression distributions and gene co-occurrence structure.</li>
+<li><strong>Attention scaling:</strong> RoPE-style scaling on attention logits; head grouping — early heads learn local co-expression, later heads learn global cell-state context.</li>
+</ul>
+
+<h3>③ Geneformer details: 30M-cell corpus, rank-ordered sequences, BERT-MLM</h3>
+<p>Geneformer (Theodoris 2023, Nature) trained on 30M real human cells:</p>
+<ul>
+<li><strong>Tokenization:</strong> per-cell genes sorted by relative expression rank (insensitive to normalization), top-2048 forming the sequence.</li>
+<li><strong>Vocabulary:</strong> ~25,000 human gene symbols.</li>
+<li><strong>Pretraining objective:</strong> BERT-style MLM — mask 15% of gene tokens, predict the identity. Forces the model to learn "which genes should co-express in this cell context."</li>
+<li><strong>Architecture:</strong> BERT-base size (12 layers, 256 hidden, 4 heads, ~10M params).</li>
+<li><strong>Key finding:</strong> demonstrates zero-shot perturbation prediction — removing a gene token simulates KO. Theodoris validated LRRC10 as a cardiomyopathy drug target, confirmed in zebrafish.</li>
+</ul>
+
+<h3>④ scFoundation: 100M parameters, continuous expression value tokenization</h3>
+<p>Hao et al. (2024, Nature Methods) introduced one of the largest single-cell foundation models:</p>
+<ul>
+<li><strong>Scale:</strong> 100M parameters, 50M cells (CellxGene + HCA + HuBMAP).</li>
+<li><strong>Tokenization:</strong> no binning — each gene paired with continuous value embedding (sinusoidal value encoding, NeRF-like). Preserves fine variation but more batch-sensitive; uses conditional batch tokens to compensate.</li>
+<li><strong>Pretraining objective:</strong> (a) value regression on masked positions + (b) cell-level contrastive (different augmentations of same cell pulled close).</li>
+<li><strong>Downstream:</strong> ranks #1 on cell-type annotation in CellBench-LS (2025); on par with smaller baselines for perturbation.</li>
+</ul>
+
+<h3>⑤ Comparison of pretraining objectives: MLM vs expression regression vs contrastive</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">Objective</th><th style="padding:8px;border:1px solid #e0dcd0;">Model</th><th style="padding:8px;border:1px solid #e0dcd0;">Learns</th><th style="padding:8px;border:1px solid #e0dcd0;">Strength</th><th style="padding:8px;border:1px solid #e0dcd0;">Weakness</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Masked LM (gene id)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">Geneformer</td><td style="padding:6px;border:1px solid #e0dcd0;">co-occurrence structure</td><td style="padding:6px;border:1px solid #e0dcd0;">robust to normalization</td><td style="padding:6px;border:1px solid #e0dcd0;">drops quantitative info</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Expression regression</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">scGPT, scFoundation</td><td style="padding:6px;border:1px solid #e0dcd0;">expression distributions</td><td style="padding:6px;border:1px solid #e0dcd0;">retains quantitative signal</td><td style="padding:6px;border:1px solid #e0dcd0;">batch-sensitive</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Contrastive (cell-level)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">CellPLM, UCE</td><td style="padding:6px;border:1px solid #e0dcd0;">cell invariances</td><td style="padding:6px;border:1px solid #e0dcd0;">strong cell embeddings</td><td style="padding:6px;border:1px solid #e0dcd0;">weak gene-level signal</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Multi-task hybrid</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">scMulan, scGPT-multi</td><td style="padding:6px;border:1px solid #e0dcd0;">cell + gene + modality</td><td style="padding:6px;border:1px solid #e0dcd0;">broad downstream</td><td style="padding:6px;border:1px solid #e0dcd0;">complex, task interference</td></tr>
+</tbody></table>
+
+<h3>⑥ Fine-tuning strategies: full / LoRA / adapter / prompt-tuning</h3>
+<ul>
+<li><strong>Full fine-tune:</strong> all parameters updated — works above ~100k cells; risks overfitting on small data.</li>
+<li><strong>LoRA (Hu 2021):</strong> low-rank delta on attention Q/V. scGPT supports LoRA officially; trainable params drop to ~0.5%, outperforming full fine-tune on small datasets (10k–50k).</li>
+<li><strong>Adapter (Houlsby 2019):</strong> small bottleneck MLPs inserted between transformer blocks; backbone frozen. Great for multi-task — one adapter per task, shared backbone.</li>
+<li><strong>Prompt-tuning:</strong> only train a "soft prompt" prepended to input. Minimal params, but effectiveness on scLLM not yet well-validated.</li>
+</ul>
+
+<h3>⑦ Three zero-shot evaluation protocols</h3>
+<ul>
+<li><strong>Embedding-based KNN:</strong> extract cell embeddings, label by KNN against reference. Simple, sensitive to embedding quality.</li>
+<li><strong>Linear probe:</strong> freeze backbone, train one linear layer. Standard measure of embedding quality.</li>
+<li><strong>Prompt-based zero-shot:</strong> feed natural-language or special-token prompts ("[CLS] this is a [MASK] cell"); read mask predictions. scLLMs still very prompt-sensitive.</li>
+</ul>
+
+<h3>⑧ Attention map interpretability: can it find real TF–targets?</h3>
+<p>Self-attention can be seen as a "soft GRN" — if gene A attends strongly to gene B, A might be important for predicting B. But:</p>
+<ul>
+<li>Attention weight ≠ causal influence (Jain & Wallace 2019 caveat).</li>
+<li>How to aggregate across layers/heads (avg, max, rollout) drastically changes conclusions.</li>
+<li>Liu et al. (2025, Genome Biology) systematically benchmarked scGPT/Geneformer attention against known TF–targets: recall ~0.3 (vs random ~0.05) — <strong>signal exists but far from precise</strong>.</li>
+</ul>
+
+<h3>⑨ Cross-species universal cell embedding</h3>
+<p>UCE (Rosen 2023, bioRxiv) and CellPLM target species-agnostic representations. UCE replaces gene tokens with <strong>protein embeddings</strong> (ESM-encoded sequences), so homologous genes across species map to nearby vectors. Beats SAMap on mouse–human integration; still unstable on zebrafish and more distant species.</p>
+
+<h3>⑩ Handling batch effect: conditional generation and contrastive learning</h3>
+<ul>
+<li><strong>Conditional generation:</strong> batch label as condition token. Setting it to "ref batch" reconstructs into ref space — CycleGAN-like. Used by scGPT.</li>
+<li><strong>Contrastive:</strong> pull together same-cell different-batch augmentations, push apart different cells. CellPLM uses this for zero-shot batch removal.</li>
+</ul>
+
+<h3>⑪ scLLM × RAG integration</h3>
+<p>2025 trend: couple scLLMs with external knowledge bases (PanglaoDB, CellMarker, Reactome). Workflow: (1) scLLM produces cell embedding, (2) retrieve nearest labeled cells + literature markers, (3) prompt model to combine retrieval into annotation. BioMedLM-RAG (Wang 2025), scAnnoGPT are early examples.</p>
+
+<h3>⑫ Multimodal scLLMs: scGPT-multi, CellPLM-spatial</h3>
+<ul>
+<li><strong>scGPT-multi:</strong> per-modality token vocab + modality embedding. Beats MultiVI/scGLUE on paired RNA+ATAC.</li>
+<li><strong>CellPLM-spatial:</strong> (x, y) spatial tokens; zero-shot integration of Visium and Stereo-seq.</li>
+</ul>
+
+<h3>⑬ Long-context handling for large gene panels</h3>
+<p>Standard transformers struggle above 4096 tokens; full transcriptome (~25k genes) demands FlashAttention v2 (scGPT), Longformer/sliding-window attention (CellPLM), or Mamba/SSM (xCell-Mamba 2025).</p>
+
+<h3>⑭ 2025–2026 benchmark conclusions</h3>
+<p>Wenkel et al. (2025, Nature Methods) systematically evaluated scGPT/Geneformer/scFoundation on perturbation prediction — <strong>no clear advantage over linear baselines (LR on PCA)</strong>. But on cell-type annotation and batch integration, scLLMs generally win by 5–15% AUC. CellBench-LS (2026) further shows "scLLMs strong intra-tissue, weak cross-tissue/species." Practical advice: use scLLMs for annotation; for perturbation, perturbation-specific models (GEARS) remain preferred.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="scLLM 在生物資訊的具體案例" data-en="Concrete Cases of scLLMs in Bioinformatics">scLLM 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：scGPT 在 PBMC 與 COVID 整合 (Cui et al. 2024, Nature Methods)</h3>
+<p>scGPT 在 8 個 PBMC 資料集（共 ~500k cells、批次效應顯著）做 zero-shot 整合，UMAP 上同型別細胞跨資料集對齊，<strong>scIB benchmark 上 batch-correction score 0.91，超越 Harmony (0.83)、scVI (0.87)</strong>。在 COVID-19 atlas 上找到 Treg 中表現升高的 IL10RA - SOCS3 軸，驗證為嚴重患者的免疫抑制標記。</p>
+
+<h3>🧬 案例 2：Geneformer 預測 cardiomyopathy 治療標靶 — LRRC10 驗證 (Theodoris et al. 2023, Nature)</h3>
+<p>用 27k 心肌細胞 zero-shot 推估「擾動哪個基因會把疾病態轉回正常態」。模型 top-rank LRRC10——這個基因在當時還沒有充足文獻支持。團隊用 <strong>zebrafish LRRC10 morpholino 敲低 + adult mouse cardiac KO</strong> 驗證，KO 鼠呈現顯著心功能損失，與模型預測一致。是 scLLM 「in silico target discovery → in vivo 驗證」的首個成功案例。</p>
+
+<h3>🧬 案例 3：scFoundation 在 perturbation 預測 (Hao et al. 2024, Nature Methods)</h3>
+<p>在 Norman 2019 dual-perturbation 資料集上，scFoundation 對「未測過的兩基因組合」的預測 Pearson r = 0.62，勝過 GEARS (0.55) 與 scGen (0.48)。但 Wenkel et al. (2025) 重新評估顯示，若控制訓練/測試 split 的洩漏，這個差距會縮小，且未顯著勝過簡單 baseline。</p>
+
+<h3>🧬 案例 4：scBERT 在罕見細胞型別偵測 (Yang et al. 2022, Nature Machine Intelligence)</h3>
+<p>scBERT 是早期 scLLM 之一，採用 BERT-style architecture，特別針對「罕見細胞型別 (frequency &lt; 1%)」設計 cross-entropy reweighting。在 Zheng 2017 PBMC 中對 megakaryocytes (0.5% cells) 的 F1 達 0.81，勝過 SingleR (0.62)、CellTypist (0.71)。</p>
+
+<h3>🧬 案例 5：CellPLM 加入空間 context (Wen et al. 2024, ICLR)</h3>
+<p>CellPLM 把 spatial coordinate 編入 transformer，並設計「neighbor attention」聚合鄰近細胞訊號。在 MERFISH 海馬迴資料上，cell-type 註釋 F1 = 0.89 (vs scGPT 0.81)，並能 zero-shot 找到神經元–星形膠質細胞的接觸邊界。</p>
+
+<h3>🧬 案例 6：UCE 跨物種 universal embedding (Rosen et al. 2023, bioRxiv)</h3>
+<p>UCE 用 ESM-2 protein embedding 取代 gene token，在 36 種動物的 36M cells 上預訓練。zero-shot mouse → human 整合 ARI = 0.72 (vs SAMap 0.58)，但 zebrafish → human 仍只有 0.45，顯示物種距離仍是限制。</p>
+
+<h3>🧬 案例 7：scMulan 多模態統一模型 (Tan et al. 2024, bioRxiv)</h3>
+<p>scMulan 在 token 設計上創新：同時 token 化 (gene, modality, expression) 三元組，可一個模型同時處理 RNA、ATAC、CITE-seq。在 NeurIPS 2021 multi-omics benchmark 上勝過 MultiVI 與 scGLUE。</p>
+
+<h3>🧬 案例 8：Wenkel et al. (2025, Nature Methods) 系統 perturbation benchmark</h3>
+<p>對 6 個主流 scLLM (scGPT, Geneformer, scFoundation, scBERT, UCE, CellPLM) 在 4 個 perturbation 資料集 (Norman 2019, Replogle 2022, Adamson 2016, Frangieh 2021) 系統評估。<strong>結論：</strong>scLLMs 在「未見過的 perturbation 組合」預測上未顯著勝過 LR + PCA baseline。原因可能是 (a) 預訓練資料中 perturbation 樣本稀少，(b) attention 結構未針對因果效應建模。</p>
+
+<h3>🧬 案例 9：Liu et al. (2025, Genome Biology) — scLLM 生物意義評估</h3>
+<p>系統檢驗 scGPT/Geneformer 的 attention 是否對應已知 TF–target (用 ChEA、ENCODE 為 ground truth)。在 mESC 上 attention-derived edges 的 precision @ top-1000 = 0.31 (vs random 0.05, GENIE3 0.42)。<strong>結論：</strong>scLLM attention 有部分生物意義，但仍不如專門的 GRN 推論方法。</p>
+
+<h3>🧬 案例 10：CellBench-LS 2026 benchmark</h3>
+<p>是 2026 年發表的「scLLM 大規模測試」，涵蓋 12 個資料集、8 個 task。<strong>關鍵結論：</strong>scFoundation 在 cell-type annotation 排第一；scGPT 在 batch integration 排第一；perturbation 仍由 GEARS 主導。<strong>跨 task 平均：沒有單一模型勝出。</strong></p>
+
+<h3>🧬 案例 11：用 scGPT 找 master regulators (應用案例)</h3>
+<p>2025 多個團隊將 scGPT 的 attention 用於識別「master regulator」（影響最多下游基因的 TF）。在 hepatocyte 資料上找出 HNF4A、CEBPA、FOXA2 為 top hubs，與已知文獻一致。</p>
+
+<h3>🧬 案例 12：scGPT-spatial 空間轉錄體應用</h3>
+<p>scGPT-spatial 版本 (2025) 把 spatial coordinate 編進 condition token，在 Stereo-seq mouse embryo 資料上找到正確的 neural tube、somite、heart primordium 邊界，比 STAGATE、SpaGCN 整合度高 8–12%。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: scGPT on PBMC and COVID integration (Cui et al. 2024, Nature Methods)</h3>
+<p>scGPT zero-shot integrates 8 PBMC datasets (~500k cells with strong batch effects); UMAP aligns same cell types across datasets. <strong>scIB benchmark batch-correction score 0.91, beating Harmony (0.83) and scVI (0.87).</strong> In COVID-19 atlas, identifies upregulated IL10RA–SOCS3 axis in Tregs of severe patients — validated as an immunosuppression marker.</p>
+
+<h3>🧬 Case 2: Geneformer predicting cardiomyopathy target — LRRC10 (Theodoris et al. 2023, Nature)</h3>
+<p>On 27k cardiomyocytes, zero-shot ranks "perturbing which gene reverts disease state to normal." Top hit: LRRC10 — at the time poorly documented. Team validated via <strong>zebrafish LRRC10 morpholino + adult mouse cardiac KO</strong>; KO mice show pronounced cardiac dysfunction, matching model prediction. First documented "scLLM in-silico target → in vivo validation" loop.</p>
+
+<h3>🧬 Case 3: scFoundation on perturbation prediction (Hao et al. 2024, Nature Methods)</h3>
+<p>On Norman 2019 dual-perturbation data, scFoundation reaches Pearson r = 0.62 on unseen 2-gene combos, beating GEARS (0.55) and scGen (0.48). However, Wenkel et al. (2025) re-evaluation with stricter train/test splits shrinks the gap and finds no significant edge over simple baselines.</p>
+
+<h3>🧬 Case 4: scBERT for rare cell-type detection (Yang et al. 2022, Nature Machine Intelligence)</h3>
+<p>Early scLLM with BERT architecture, reweights cross-entropy for rare types (&lt; 1%). On Zheng 2017 PBMC, megakaryocyte F1 = 0.81 (vs SingleR 0.62, CellTypist 0.71).</p>
+
+<h3>🧬 Case 5: CellPLM with spatial context (Wen et al. 2024, ICLR)</h3>
+<p>Encodes spatial coordinates and "neighbor attention" aggregating local cells. On MERFISH hippocampus, cell-type F1 = 0.89 (scGPT 0.81); zero-shot detects neuron–astrocyte contact boundaries.</p>
+
+<h3>🧬 Case 6: UCE cross-species universal embedding (Rosen et al. 2023, bioRxiv)</h3>
+<p>Replaces gene tokens with ESM-2 protein embeddings; pretrained on 36 species × 36M cells. Zero-shot mouse→human ARI = 0.72 (vs SAMap 0.58); zebrafish→human still only 0.45 — species distance remains a limit.</p>
+
+<h3>🧬 Case 7: scMulan multi-modal unified model (Tan et al. 2024, bioRxiv)</h3>
+<p>Token innovation: (gene, modality, expression) triplet — one model handles RNA, ATAC, CITE-seq. Beats MultiVI and scGLUE on NeurIPS 2021 multi-omics benchmark.</p>
+
+<h3>🧬 Case 8: Wenkel et al. (2025, Nature Methods) systematic perturbation benchmark</h3>
+<p>Six leading scLLMs (scGPT, Geneformer, scFoundation, scBERT, UCE, CellPLM) on four datasets (Norman 2019, Replogle 2022, Adamson 2016, Frangieh 2021). <strong>Conclusion:</strong> no significant advantage over LR + PCA baseline on unseen perturbation combos. Likely causes: (a) sparse perturbation samples in pretraining, (b) attention not modeling causal effects.</p>
+
+<h3>🧬 Case 9: Liu et al. (2025, Genome Biology) — biological-meaning evaluation</h3>
+<p>Tests whether scGPT/Geneformer attention recovers known TF–targets (ChEA, ENCODE as ground truth). On mESC, attention-derived edge precision@top-1000 = 0.31 (random 0.05, GENIE3 0.42). <strong>Conclusion:</strong> some biological signal, but still worse than dedicated GRN methods.</p>
+
+<h3>🧬 Case 10: CellBench-LS 2026 benchmark</h3>
+<p>A 2026 large-scale scLLM benchmark covering 12 datasets and 8 tasks. <strong>Key takeaways:</strong> scFoundation #1 on cell-type annotation; scGPT #1 on batch integration; perturbation still dominated by GEARS. <strong>Cross-task average: no single model wins.</strong></p>
+
+<h3>🧬 Case 11: scGPT for master regulator discovery</h3>
+<p>Several 2025 teams use scGPT attention to find master regulators (TFs influencing most downstream genes). On hepatocyte data, identifies HNF4A, CEBPA, FOXA2 as top hubs — consistent with known biology.</p>
+
+<h3>🧬 Case 12: scGPT-spatial on spatial transcriptomics</h3>
+<p>scGPT-spatial (2025) encodes spatial coords as condition tokens. On Stereo-seq mouse embryo, finds correct neural tube/somite/heart primordium boundaries; 8–12% higher integration score vs STAGATE/SpaGCN.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="scLLM 還能改良/新解決哪些單細胞任務？" data-en="What Else Could scLLMs Improve?">scLLM 還能改良/新解決哪些單細胞任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 跨物種 atlas 轉移學習</h3>
+<p><strong>現有限制：</strong>HCA、Tabula Muris 等 atlas 各自完整，但跨物種對應仍仰賴 1-to-1 homolog mapping，丟失大量 paralog 與物種特異性訊號。</p>
+<p><strong>新提案：</strong>用 UCE 風格的 protein embedding 預訓練「all-species cell foundation model」，但加入物種 token + ancestor reconstruction objective（重建祖先細胞態），讓模型學「演化過程」而非單純對齊。</p>
+<p><strong>改良：</strong>能將 mouse 疾病模型細胞態映射到 human 等價態，加速 translational research。</p>
+
+<h3>🎯 2. 細胞型別 ontology 直接 token 化</h3>
+<p><strong>現有限制：</strong>scLLM 預訓練只用 gene tokens；cell type label 只在 fine-tune 階段以 classification head 出現，沒有「細胞型別語義」進入 backbone。</p>
+<p><strong>新提案：</strong>把 Cell Ontology (CL) hierarchy 編入額外 token vocabulary（如 [CL:0000084 T-cell]），在預訓練時隨機 mask 細胞 type token，要模型從 gene 預測 cell type，反之亦然。</p>
+<p><strong>改良：</strong>模型能做 hierarchical cell typing，並對未見 cell type 做 zero-shot 推理（"this looks closer to memory T-cell than naive T-cell"）。</p>
+
+<h3>🎯 3. 整合 scLLM + RAG (從文獻庫查 marker)</h3>
+<p><strong>現有限制：</strong>scLLM 的「知識」凍結在預訓練時間點；新發現的 marker、新 cell type 無法直接利用。</p>
+<p><strong>新提案：</strong>建構 (cell embedding ↔ literature embedding) cross-modal retrieval index，把 PubMed/preprint 中的 marker 描述 chunked + embedded。Inference 時模型對每個 cell embedding 做 RAG，retrieve top-k 相關文獻 chunks，作為 context 輸入 LLM 產生 annotation + 證據。</p>
+<p><strong>改良：</strong>annotation 帶 citation，研究者可驗證；模型「持續更新」不需重新訓練。</p>
+
+<h3>🎯 4. 用 attention 改良 GRN 推論</h3>
+<p><strong>現有限制：</strong>單看 attention map 訊號雜，precision 不如 GENIE3。但 attention 含有資訊（precision@1000 ≈ 0.3 vs random 0.05）。</p>
+<p><strong>新提案：</strong>用 attention 作為 GRN 的「prior weights」初始化 GENIE3 / SCENIC++ 的隨機森林，讓 scLLM 知識與機制方法互補。或用 attention rollout (Abnar 2020) 把多層整合，再用 causal calibration 過濾。</p>
+<p><strong>改良：</strong>結合兩家所長，benchmark 預期可達 GENIE3 + 10% AUPR。</p>
+
+<h3>🎯 5. scLLM in-context learning (few-shot annotation)</h3>
+<p><strong>現有限制：</strong>scLLM zero-shot 註釋對「reference 中未見」cell type 失效；fine-tune 又要大量標註資料。</p>
+<p><strong>新提案：</strong>模仿 GPT-4 in-context learning：把 5–10 個「示範細胞 + 正確 label」直接拼成 prompt 輸入 scLLM，讓模型對新細胞做類比。需要在預訓練時加入「demonstration-based prediction」objective。</p>
+<p><strong>改良：</strong>遇到罕見 cell type 或新疾病，只需手工標 10 個示範細胞即可大規模 annotate。</p>
+
+<h3>🎯 6. Drug response prediction with conditional scLLM</h3>
+<p><strong>現有限制：</strong>傳統 drug response 預測模型（DeepCDR、CDRscan）對單一藥物–細胞配對訓練，難 generalize 到新藥。</p>
+<p><strong>新提案：</strong>條件化 scLLM——把 drug 表示為 (SMILES embedding from ChemBERTa) condition token，與 cell embedding 透過 cross-attention 結合，預測擾動後 transcriptome。預訓練資料：LINCS L1000 (~1M perturbation profiles)。</p>
+<p><strong>改良：</strong>對未測試藥物 (zero-shot drug) 做 cell-level response 預測，加速 drug repurposing。</p>
+
+<h3>🎯 7. 結合 scLLM + protein language model (ESM)</h3>
+<p><strong>現有限制：</strong>scLLM 的 gene token 只是 ID，沒有蛋白序列訊號；蛋白功能變異 (e.g. cancer mutations) 無法表示。</p>
+<p><strong>新提案：</strong>把每個 gene token 替換為「ESM-2 protein embedding + gene ID」concatenated representation；mutation 透過序列改動直接影響 embedding。</p>
+<p><strong>改良：</strong>能對 missense mutation 做「轉錄組級」效應預測——對 cancer somatic mutation 的 functional impact 提供新工具。</p>
+
+<h3>🎯 8. Synthetic data generation with scLLM</h3>
+<p><strong>現有限制：</strong>單細胞資料生成 (scGAN、scVI sampling) 對 rare cell type 樣本太少，合成資料 mode-collapse。</p>
+<p><strong>新提案：</strong>scLLM 作為條件生成模型——給 cell type token 與 batch token，模型自迴歸式生成完整 gene expression profile。可加入 RLHF 用「生物學家評分」reward 模型生成更逼真細胞。</p>
+<p><strong>改良：</strong>解決資料不平衡，supplement 罕見細胞型別訓練。</p>
+
+<h3>🎯 9. 個人化醫療：fine-tune 到單一病人 atlas</h3>
+<p><strong>現有限制：</strong>單一病人 scRNA-seq 細胞數有限 (5k–50k)，難訓練客製模型。</p>
+<p><strong>新提案：</strong>從預訓練 scLLM 出發，用 LoRA 在病人自己的 healthy + tumor cells 上做極輕量 fine-tune（&lt; 100k 可訓練參數），產生「病人專屬」cell state model。可用於：(a) 預測藥物個別反應、(b) 識別病人特異的 escape pathway。</p>
+<p><strong>改良：</strong>真正的「N-of-1」精準醫療模型。</p>
+
+<h3>🎯 10. scLLM 的不確定性量化 (uncertainty quantification)</h3>
+<p><strong>現有限制：</strong>大多數 scLLM 給 point prediction，沒有 calibrated confidence。對醫療決策不負責任。</p>
+<p><strong>新提案：</strong>整合 Monte Carlo dropout、deep ensemble、或 conformal prediction (Vovk)，對 cell-type prediction 給「90% confidence interval」或「abstain if uncertain」選項。對 rare cell type 與 out-of-distribution cells 特別重要。</p>
+<p><strong>改良：</strong>讓 scLLM 在 clinical workflow 可信賴。</p>
+
+<h3>🎯 11. 多模態 prompt engineering（給 cell type，生成 expression）</h3>
+<p><strong>現有限制：</strong>scLLM 的生成方向通常是 cell → label；反向 (label → cell) 缺乏好的 prompt 設計。</p>
+<p><strong>新提案：</strong>類似 Stable Diffusion 的 text-to-image，建立「text prompt → cell expression」管線。Prompt 例：「a CD8+ T cell from a COVID-19 severe patient with exhaustion phenotype」→ 模型生成對應 expression profile。需要 cell description 語料庫 (用 PanglaoDB + CellMarker 描述 + 自動生成 prompt)。</p>
+<p><strong>改良：</strong>為 in-silico 實驗設計與假設生成提供新工具。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Cross-species atlas transfer learning</h3>
+<p><strong>Current limit:</strong> HCA, Tabula Muris are each complete; cross-species mapping still relies on 1-to-1 homologs, losing paralogs and species-specific signals.</p>
+<p><strong>Proposal:</strong> UCE-style protein-embedding pretraining for an all-species foundation model, plus species tokens and an ancestor-reconstruction objective — model learns evolutionary trajectories, not just alignment.</p>
+<p><strong>Improvement:</strong> maps mouse disease cells to human equivalents, accelerating translational research.</p>
+
+<h3>🎯 2. Tokenize cell-type ontology directly</h3>
+<p><strong>Current limit:</strong> scLLMs pretrain with gene tokens only; cell-type labels appear only at fine-tune via classification head — no semantic in backbone.</p>
+<p><strong>Proposal:</strong> embed Cell Ontology (CL) hierarchy as extra token vocab (e.g. [CL:0000084 T-cell]); during pretraining randomly mask cell-type tokens, force model to predict cell type from genes and vice versa.</p>
+<p><strong>Improvement:</strong> hierarchical cell typing, zero-shot reasoning on novel types ("looks closer to memory than naive T cell").</p>
+
+<h3>🎯 3. scLLM + RAG (retrieve markers from literature)</h3>
+<p><strong>Current limit:</strong> scLLM knowledge is frozen at pretraining time; new markers/cell types are inaccessible.</p>
+<p><strong>Proposal:</strong> cross-modal (cell embedding ↔ literature embedding) retrieval index; chunk + embed PubMed/preprints. At inference, retrieve top-k literature chunks per cell, feed as context to an LLM that outputs annotation + citations.</p>
+<p><strong>Improvement:</strong> citation-backed annotations; continuous knowledge updates without retraining.</p>
+
+<h3>🎯 4. Use attention to improve GRN inference</h3>
+<p><strong>Current limit:</strong> attention precision is below GENIE3 alone, but it carries signal (precision@1000 ≈ 0.3 vs random 0.05).</p>
+<p><strong>Proposal:</strong> use attention as "prior weights" initializing GENIE3 / SCENIC++ random forests, or combine layers via attention rollout (Abnar 2020) followed by causal calibration.</p>
+<p><strong>Improvement:</strong> ensemble of scLLM knowledge + mechanistic methods; expected +10% AUPR over GENIE3.</p>
+
+<h3>🎯 5. scLLM in-context learning (few-shot annotation)</h3>
+<p><strong>Current limit:</strong> zero-shot fails on novel types; fine-tune needs lots of labeled data.</p>
+<p><strong>Proposal:</strong> GPT-4-style in-context learning — prepend 5–10 "demo cells + labels" to the prompt; model reasons by analogy. Requires "demonstration-based prediction" objective during pretraining.</p>
+<p><strong>Improvement:</strong> with only 10 hand-labeled demos, annotate at scale for rare types or novel diseases.</p>
+
+<h3>🎯 6. Drug-response prediction with conditional scLLM</h3>
+<p><strong>Current limit:</strong> DeepCDR, CDRscan train per drug-cell pair; poor zero-shot generalization to new drugs.</p>
+<p><strong>Proposal:</strong> condition scLLM on drug — drug as SMILES embedding (ChemBERTa) injected via cross-attention; predict post-perturbation transcriptome. Pretrain on LINCS L1000 (~1M profiles).</p>
+<p><strong>Improvement:</strong> zero-shot drug response prediction → drug repurposing.</p>
+
+<h3>🎯 7. scLLM + protein language model (ESM)</h3>
+<p><strong>Current limit:</strong> gene tokens are IDs only; can't represent protein variants (cancer mutations).</p>
+<p><strong>Proposal:</strong> replace each gene token with concat(ESM-2 protein embedding, gene ID); mutations alter sequence → embedding shifts.</p>
+<p><strong>Improvement:</strong> transcriptome-level functional impact for missense mutations — new tool for cancer somatic variant interpretation.</p>
+
+<h3>🎯 8. Synthetic data generation with scLLM</h3>
+<p><strong>Current limit:</strong> scGAN, scVI sampling face mode collapse on rare types.</p>
+<p><strong>Proposal:</strong> scLLM as conditional generator — given (cell type, batch) tokens, autoregressively generate expression profiles. Optional RLHF with biologist-quality scoring.</p>
+<p><strong>Improvement:</strong> address data imbalance; augment training for rare cell types.</p>
+
+<h3>🎯 9. Personalized medicine: fine-tune to one patient's atlas</h3>
+<p><strong>Current limit:</strong> per-patient scRNA-seq (5k–50k cells) is too small to train a custom model from scratch.</p>
+<p><strong>Proposal:</strong> from pretrained scLLM, LoRA fine-tune on patient's healthy + tumor cells (&lt; 100k trainable params) → patient-specific cell state model. Uses: (a) per-patient drug response, (b) patient-specific escape pathways.</p>
+<p><strong>Improvement:</strong> true N-of-1 precision medicine.</p>
+
+<h3>🎯 10. Uncertainty quantification for scLLMs</h3>
+<p><strong>Current limit:</strong> most scLLMs give point predictions; no calibrated confidence — irresponsible for clinical decisions.</p>
+<p><strong>Proposal:</strong> integrate Monte Carlo dropout, deep ensembles, or conformal prediction (Vovk) for "90% CI" or "abstain if uncertain" outputs. Critical for rare types and OOD cells.</p>
+<p><strong>Improvement:</strong> makes scLLMs trustworthy in clinical workflows.</p>
+
+<h3>🎯 11. Multimodal prompt engineering (cell type → expression)</h3>
+<p><strong>Current limit:</strong> scLLM generation is usually cell → label; the reverse (label → cell) lacks good prompt design.</p>
+<p><strong>Proposal:</strong> Stable-Diffusion-style "text → cell expression" pipeline. Prompt example: "a CD8+ T cell from a COVID-19 severe patient with exhaustion phenotype" → model generates corresponding expression profile. Requires a cell-description corpus (PanglaoDB + CellMarker auto-templated prompts).</p>
+<p><strong>Improvement:</strong> new tool for in-silico experimental design and hypothesis generation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sgpt')">scGPT</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gfm')">Geneformer</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sfd')">scFoundation</button>
+</div>
+<div class="code-tab-content active" id="sgpt"><pre><span class="keyword">import</span> scgpt
+<span class="keyword">from</span> scgpt.tasks <span class="keyword">import</span> annotate_cells
+
+<span class="comment"># Zero-shot cell type annotation</span>
+adata = scgpt.preprocess.preprocess(adata)
+emb = scgpt.tasks.get_cell_embedding(adata, model_path=<span class="str">"path/to/scgpt"</span>)
+adata.obsm[<span class="str">"X_scGPT"</span>] = emb
+
+<span class="comment"># Fine-tune on labeled data</span>
+trainer = scgpt.Trainer(adata, label_key=<span class="str">"celltype"</span>)
+trainer.train(epochs=<span class="num">10</span>)</pre></div>
+<div class="code-tab-content" id="gfm"><pre><span class="keyword">from</span> geneformer <span class="keyword">import</span> EmbExtractor, Classifier
+
+<span class="comment"># Tokenize</span>
+<span class="keyword">from</span> geneformer <span class="keyword">import</span> TranscriptomeTokenizer
+tk = TranscriptomeTokenizer({<span class="str">"celltype"</span>:<span class="str">"celltype"</span>})
+tk.tokenize_data(<span class="str">"input_dir"</span>, <span class="str">"output_dir"</span>)
+
+<span class="comment"># 取得 embedding</span>
+emb = EmbExtractor(model_type=<span class="str">"CellClassifier"</span>, emb_layer=-<span class="num">1</span>)
+embs = emb.extract_embs(model_path, tokenized_data, output_dir, output_prefix=<span class="str">"emb"</span>)</pre></div>
+<div class="code-tab-content" id="sfd"><pre><span class="keyword">from</span> scfoundation <span class="keyword">import</span> ScFoundationModel
+
+model = ScFoundationModel.from_pretrained(<span class="str">"scFoundation-100M"</span>)
+cell_emb = model.encode(adata, batch_size=<span class="num">32</span>)
+adata.obsm[<span class="str">"X_scFoundation"</span>] = cell_emb
+
+<span class="comment"># Fine-tune for specific task</span>
+clf = model.fine_tune(adata, target=<span class="str">"celltype"</span>, epochs=<span class="num">5</span>)
+preds = clf.predict(adata_new)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列哪個是 scGPT 與 Geneformer 的核心差異？</p><p data-lang="en">Which is a core difference between scGPT and Geneformer?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. scGPT 用 SVM；Geneformer 用決策樹</span><span data-lang="en">A. scGPT uses SVM; Geneformer uses decision trees</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. scGPT token 同時編碼 gene+expression；Geneformer 只 token 基因 symbol 並用排序</span><span data-lang="en">B. scGPT tokenizes (gene, expression); Geneformer tokenizes gene symbols ordered by rank</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 兩者完全相同</span><span data-lang="en">C. Identical</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. scGPT 不使用 transformer</span><span data-lang="en">D. scGPT doesn't use transformers</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">2025–2026 系統 benchmark 對 scLLMs 的主要結論是？</p><p data-lang="en">Main takeaway of 2025–2026 benchmarks on scLLMs?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. scLLMs 完全取代傳統方法</span><span data-lang="en">A. scLLMs fully replace traditional methods</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. scLLMs 一無是處</span><span data-lang="en">B. scLLMs are useless</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 沒有單一模型勝出；某些任務上甚至沒勝過簡單 baseline，需謹慎評估</span><span data-lang="en">C. No single model wins; some tasks don't beat simple baselines — evaluate carefully</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只有 scGPT 有用</span><span data-lang="en">D. Only scGPT is useful</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="diffusion-models.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 12：Diffusion</span></a>
+<a href="causal-inference.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 14：因果推論" data-en="Ch 14: Causal">Ch 14：因果推論</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+const genes=[{g:'CD3D',v:8.2},{g:'CD8A',v:7.1},{g:'GZMB',v:6.8},{g:'IL7R',v:5.5},{g:'CCR7',v:4.9},{g:'TCF7',v:4.2},{g:'GAPDH',v:3.6},{g:'ACTB',v:3.0},{g:'LDHA',v:2.4},{g:'B2M',v:1.8}];
+function render(){const k=+document.getElementById('sK').value;document.getElementById('vK').textContent=k;const sub=genes.slice(0,k);
+const L=I18n.get();
+const scgpt=sub.map(g=>`<span style="background:#e8f0ec;padding:2px 6px;margin:2px;border-radius:4px;">(${g.g}, bin${Math.floor(g.v)})</span>`).join(' ');
+const geneformer=sub.slice().sort((a,b)=>b.v-a.v).map(g=>`<span style="background:#fce8d8;padding:2px 6px;margin:2px;border-radius:4px;">${g.g}</span>`).join(' → ');
+const scfound=sub.map(g=>`<span style="background:#dde6f0;padding:2px 6px;margin:2px;border-radius:4px;">[${g.g}:${g.v.toFixed(1)}]</span>`).join(' ');
+document.getElementById('tokDemo').innerHTML=`
+<div style="margin-bottom:10px;"><strong>${L==='zh'?'原始細胞表現量：':'Original cell expression:'}</strong><br>${sub.map(g=>`${g.g}=${g.v.toFixed(1)}`).join(', ')}</div>
+<div style="margin-bottom:10px;"><strong>scGPT</strong> ${L==='zh'?'(gene + bin token)':' (gene + bin tokens)'}：<br>${scgpt}</div>
+<div style="margin-bottom:10px;"><strong>Geneformer</strong> ${L==='zh'?'(依表現排名)':' (rank-ordered)'}：<br>${geneformer}</div>
+<div><strong>scFoundation</strong> ${L==='zh'?'(連續值編碼)':' (continuous value embedded)'}：<br>${scfound}</div>`;}
+document.getElementById('sK').addEventListener('input',render);document.addEventListener('langchange',render);render();
+
+window._QF={zh:{q1_y:'答對！tokenization 策略是兩者最大差異。',q1_n:'答案是 B。scGPT 與 Geneformer 主要差在 tokenization。',q2_y:'答對！審慎評估很關鍵。',q2_n:'答案是 C。benchmark 顯示應謹慎使用。'},en:{q1_y:'Correct! Tokenization is the key difference.',q1_n:'Answer is B. Their main difference is tokenization.',q2_y:'Correct! Careful evaluation is critical.',q2_n:'Answer is C. Benchmarks suggest caution.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,470 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Reinforcement Learning for Bio — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html" class="active">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 30 / 38</div><h1 data-zh="強化學習於生物應用 (Reinforcement Learning for Bio)" data-en="Reinforcement Learning for Bio">強化學習於生物應用 (Reinforcement Learning for Bio)</h1>
+<p class="subtitle" data-lang="zh">當「答案」要靠互動產生——藥物分子生成、蛋白質設計、CRISPR 靶點選擇、自適應臨床試驗——強化學習給出統一框架：以 reward 引導策略，平衡探索與利用。從 REINVENT 到 RLHF，RL 已是 AI 驅動實驗循環的核心。</p>
+<p class="subtitle" data-lang="en">When the "answer" must emerge through interaction — molecule generation, protein design, CRISPR target selection, adaptive clinical trials — reinforcement learning provides a unifying framework: a reward-guided policy balancing exploration and exploitation. From REINVENT to RLHF, RL is at the heart of AI-driven experimental loops.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="MDP、價值、策略" data-en="MDP, Value, Policy">MDP、價值、策略</h2>
+<div data-lang="zh">
+<p><strong>Markov Decision Process (MDP)</strong> 由五元組 (S, A, P, R, γ) 定義：</p>
+<ul>
+<li><strong>S</strong>：狀態空間（例：當前分子片段、實驗條件）</li>
+<li><strong>A</strong>：動作空間（例：加上一個 atom、選一個 CRISPR guide）</li>
+<li><strong>P(s'|s,a)</strong>：轉移機率（環境動態）</li>
+<li><strong>R(s,a)</strong>：reward 函數（例：QED + 合成可行性）</li>
+<li><strong>γ ∈ [0,1)</strong>：折扣因子（長遠 vs 短期）</li>
+</ul>
+<p><strong>目標：</strong>學一個策略 π(a|s) 使期望折扣回報 J(π) = E[Σₜ γᵗ R(sₜ, aₜ)] 最大。</p>
+<p><strong>三大流派：</strong></p>
+<ul>
+<li><strong>價值法 (Value-based)</strong>：學 Q(s,a) ≈ 期望回報；π = argmax_a Q。代表：Q-learning、DQN (Mnih 2015, Nature)</li>
+<li><strong>策略法 (Policy-based)</strong>：直接參數化 π_θ(a|s)，用 ∇J(θ) 更新。代表：REINFORCE、PPO (Schulman 2017)</li>
+<li><strong>Actor-Critic</strong>：兩者結合——actor (π) + critic (V or Q)。代表：A2C、SAC (Haarnoja 2018)、DDPG</li>
+</ul>
+<p><strong>探索 vs 利用 (Exploration vs Exploitation)：</strong>RL 的核心張力——是繼續做已知好的（exploit），還是嘗試未知（explore）？常見做法包括 ε-greedy、entropy bonus（SAC 的最大熵思想）、UCB（上信賴界）、Thompson sampling、curiosity-driven exploration。</p>
+</div>
+<div data-lang="en">
+<p>A <strong>Markov Decision Process (MDP)</strong> is the tuple (S, A, P, R, γ):</p>
+<ul>
+<li><strong>S</strong>: state space (e.g. current molecular fragment, experimental condition)</li>
+<li><strong>A</strong>: action space (e.g. attach an atom, choose a CRISPR guide)</li>
+<li><strong>P(s'|s,a)</strong>: transition probability (environment dynamics)</li>
+<li><strong>R(s,a)</strong>: reward function (e.g. QED + synthesizability)</li>
+<li><strong>γ ∈ [0,1)</strong>: discount factor (long-term vs near-term)</li>
+</ul>
+<p><strong>Goal:</strong> learn policy π(a|s) maximising J(π) = E[Σₜ γᵗ R(sₜ, aₜ)].</p>
+<p><strong>Three families:</strong></p>
+<ul>
+<li><strong>Value-based:</strong> learn Q(s,a) ≈ expected return; π = argmax_a Q. Examples: Q-learning, DQN (Mnih 2015, Nature)</li>
+<li><strong>Policy-based:</strong> parameterise π_θ(a|s) directly; update via ∇J(θ). Examples: REINFORCE, PPO (Schulman 2017)</li>
+<li><strong>Actor-Critic:</strong> combines both — actor (π) + critic (V or Q). Examples: A2C, SAC (Haarnoja 2018), DDPG</li>
+</ul>
+<p><strong>Exploration vs Exploitation:</strong> the core RL tension — keep choosing the known-good action (exploit) or try something new (explore)? Standard tricks: ε-greedy, entropy bonus (SAC's max-entropy idea), UCB, Thompson sampling, curiosity-driven exploration.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="獎勵驅動" data-en="Reward-driven">獎勵驅動</h4><p data-lang="zh">不需 label，只需設計 reward。適合「能評分但難直接生成」的問題。</p><p data-lang="en">No labels needed — just a reward signal. Ideal when scoring is easy but generation is hard.</p></div>
+  <div class="card"><div class="card-icon">🔁</div><h4 data-zh="循環互動" data-en="Loop interaction">循環互動</h4><p data-lang="zh">agent ↔ environment 循環產生資料；天生適合主動實驗。</p><p data-lang="en">agent ↔ environment loop generates data; naturally suited to active experimentation.</p></div>
+  <div class="card"><div class="card-icon">🎲</div><h4 data-zh="探索與利用" data-en="Explore vs exploit">探索與利用</h4><p data-lang="zh">熵獎勵、UCB、Thompson 平衡兩者；對小資料生物實驗特別關鍵。</p><p data-lang="en">Entropy bonuses, UCB, Thompson sampling balance both; critical for small-budget bio experiments.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="REINFORCE、PPO、SAC、AlphaZero" data-en="REINFORCE, PPO, SAC, AlphaZero">REINFORCE、PPO、SAC、AlphaZero</h2>
+<div data-lang="zh">
+<p><strong>① REINFORCE (Williams 1992)</strong> — policy gradient 的最直接形式：</p>
+<p style="text-align:center;font-family:Georgia,serif;">∇_θ J(θ) = E_π [ Σₜ ∇_θ log π_θ(aₜ|sₜ) · Gₜ ]</p>
+<p>其中 Gₜ = Σ_{k≥t} γ^(k−t) R_k。直接用 Monte Carlo 估計 return，gradient 高 variance，但 unbiased。加上 baseline b(s) 可降低 variance：用 advantage Aₜ = Gₜ − b(sₜ) 取代 Gₜ。</p>
+
+<p><strong>② PPO (Proximal Policy Optimization, Schulman 2017)</strong> — 目前最廣用的 policy-gradient：</p>
+<p style="text-align:center;font-family:Georgia,serif;">L^CLIP(θ) = E [ min(rₜ(θ) Âₜ, clip(rₜ(θ), 1−ε, 1+ε) Âₜ) ]</p>
+<p>rₜ(θ) = π_θ(aₜ|sₜ) / π_θ_old(aₜ|sₜ) 為機率比；clip 限制更新幅度避免分布劇烈漂移。穩定、實作簡單，是 RLHF（如 ChatGPT、AlphaFold-Multimer 微調）首選。</p>
+
+<p><strong>③ SAC (Soft Actor-Critic, Haarnoja 2018)</strong> — 最大熵 RL：</p>
+<p style="text-align:center;font-family:Georgia,serif;">π* = argmax_π E [ Σₜ R(sₜ, aₜ) + α H(π(·|sₜ)) ]</p>
+<p>同時最大化 reward 與策略熵 H；α 為熵權重（自動調整）。連續動作空間表現最佳，特別適合分子 / 蛋白質連續設計變數。</p>
+
+<p><strong>④ AlphaZero / MuZero (Silver 2017, 2020)</strong> — model-based + MCTS：學一個 world model（MuZero 不需真實規則），用 Monte Carlo Tree Search 規劃，再用 policy/value network 引導 MCTS。AlphaTensor (Fawzi 2022, Nature) 將此框架用於矩陣乘法演算法發現；類似思想已被探索於合成路徑規劃。</p>
+
+<p><strong>⑤ RLHF (Reinforcement Learning from Human Feedback)</strong> — Ouyang 2022 (InstructGPT)：</p>
+<ol>
+<li>SFT：在示範資料上監督微調基底模型</li>
+<li>Reward model：用人類偏好對 (chosen, rejected) 訓練 reward r_φ</li>
+<li>PPO：以 r_φ 為 reward 微調策略，加上 KL penalty 防漂離 SFT</li>
+</ol>
+<p>已從 LLM 蔓延到生物：人類專家可標註「哪個 protein 設計看起來合理」、「哪個分子值得合成」，再做 RLHF。Anthropic 的 RLAIF / Constitutional AI 變體也適用。</p>
+</div>
+<div data-lang="en">
+<p><strong>① REINFORCE (Williams 1992)</strong> — vanilla policy gradient:</p>
+<p style="text-align:center;font-family:Georgia,serif;">∇_θ J(θ) = E_π [ Σₜ ∇_θ log π_θ(aₜ|sₜ) · Gₜ ]</p>
+<p>Gₜ = Σ_{k≥t} γ^(k−t) R_k. Monte Carlo return is unbiased but high-variance. A baseline b(s) gives advantage Aₜ = Gₜ − b(sₜ), reducing variance.</p>
+
+<p><strong>② PPO (Schulman 2017)</strong> — today's most-used policy gradient:</p>
+<p style="text-align:center;font-family:Georgia,serif;">L^CLIP(θ) = E [ min(rₜ(θ) Âₜ, clip(rₜ(θ), 1−ε, 1+ε) Âₜ) ]</p>
+<p>rₜ(θ) = π_θ / π_θ_old; clipping prevents large policy shifts. Stable, easy to implement; first choice for RLHF (ChatGPT, AlphaFold-Multimer fine-tuning).</p>
+
+<p><strong>③ SAC (Haarnoja 2018)</strong> — max-entropy RL:</p>
+<p style="text-align:center;font-family:Georgia,serif;">π* = argmax_π E [ Σₜ R(sₜ, aₜ) + α H(π(·|sₜ)) ]</p>
+<p>Maximises both reward and policy entropy H; α auto-tuned. Best for continuous action spaces — ideal for continuous design variables in molecules / proteins.</p>
+
+<p><strong>④ AlphaZero / MuZero (Silver 2017, 2020)</strong> — model-based + MCTS: learn a world model (MuZero needs no real rules), plan with Monte Carlo Tree Search, guided by policy/value networks. AlphaTensor (Fawzi 2022, Nature) applied this to matrix-multiplication algorithm discovery; similar ideas appear in synthesis-route planning.</p>
+
+<p><strong>⑤ RLHF (Reinforcement Learning from Human Feedback)</strong> — Ouyang 2022 (InstructGPT):</p>
+<ol>
+<li>SFT — supervised fine-tune base model on demonstrations</li>
+<li>Reward model — train r_φ on (chosen, rejected) preference pairs</li>
+<li>PPO — fine-tune policy using r_φ as reward, with KL penalty vs SFT</li>
+</ol>
+<p>Spreading from LLMs to biology: human experts can label "which protein design looks plausible" or "which molecule is worth synthesising", then run RLHF. Anthropic's RLAIF / Constitutional AI variants apply too.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>選哪個？</strong> 離散動作（分子片段加減、CRISPR guide 選擇）→ PPO 或 DQN；連續動作（蛋白質扭轉角、實驗劑量）→ SAC；可建模 + 規劃（合成路徑、實驗排程）→ MCTS / MuZero；有人類偏好資料 → RLHF / DPO（Rafailov 2023）。</div>
+<div data-lang="en"><strong>Which one?</strong> Discrete actions (add/remove fragments, pick CRISPR guides) → PPO or DQN; continuous (protein torsion angles, dosage) → SAC; planning-friendly (synthesis routes, experiment scheduling) → MCTS / MuZero; human preferences available → RLHF / DPO (Rafailov 2023).</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="簡化藥物 reward 環境的 RL agent" data-en="RL Agent in a Simplified Drug-Reward Environment">簡化藥物 reward 環境的 RL agent</h2>
+<div data-lang="zh"><p>下方模擬一個「玩具藥物設計環境」：agent 每回合選 6 個離散動作（如 add ring, add hetero, polar group...），環境根據組合給出 reward（內含 QED 形狀的 reward landscape + 隨機噪音）。<strong>調整學習率與探索熵 α</strong>，按「訓練 500 回合」觀察 reward 是否上升、entropy 是否下降。</p></div>
+<div data-lang="en"><p>Below is a toy "drug design environment": the agent picks 6 discrete actions per episode (add ring, add hetero, polar group...) and gets a reward shaped like QED with stochastic noise. <strong>Adjust learning rate and exploration entropy α</strong>, then train for 500 episodes — watch reward rise and entropy fall.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="學習率 lr" data-en="Learning rate lr">學習率 lr <span id="vLr">0.05</span></label><input type="range" id="sLr" min="0.005" max="0.3" value="0.05" step="0.005"></div>
+<div class="slider-group"><label data-zh="熵權重 α (探索)" data-en="Entropy weight α (explore)">熵權重 α <span id="vAl">0.10</span></label><input type="range" id="sAl" min="0" max="0.6" value="0.1" step="0.02"></div>
+<div class="slider-group"><label data-zh="獎勵噪音 σ" data-en="Reward noise σ">獎勵噪音 σ <span id="vSg">0.10</span></label><input type="range" id="sSg" min="0" max="0.5" value="0.1" step="0.02"></div>
+<div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">
+  <button id="btnRun" style="padding:8px 18px;background:var(--c-accent);color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;" data-zh="▶ 訓練 500 回合" data-en="▶ Train 500 episodes">▶ 訓練 500 回合</button>
+  <button id="btnReset" style="padding:8px 18px;background:var(--c-bg-alt);color:var(--c-ink);border:1px solid var(--c-border);border-radius:6px;font-weight:600;cursor:pointer;" data-zh="重置" data-en="Reset">重置</button>
+</div>
+<div class="chart-container" style="height:300px;"><canvas id="rlChart"></canvas></div>
+<div id="rlInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🎯 <span data-zh="何時用 RL？" data-en="When to use RL?">何時用 RL？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>可評分但難生成：</strong>有 QED / docking / 表現預測 oracle，但分子空間 10^60。RL 用 oracle 當 reward 探索。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>序列決策：</strong>合成路徑、實驗排程、CRISPR perturbation 順序 — 需要連續決策最大化長遠回報。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>偏好資料：</strong>有專家「比較」資料但無絕對 label — RLHF / DPO。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>有大量監督 (x, y) → 直接 supervised；reward 無法設計 / 不可微 / 極稀疏 → 先試 imitation learning。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Scoring is easy, generation is hard:</strong> have a QED / docking / activity oracle, but molecule space is 10^60. RL uses the oracle as reward to explore.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Sequential decisions:</strong> synthesis routes, experiment scheduling, ordered CRISPR perturbations — need long-horizon decisions.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Preference data:</strong> experts compare candidates but no absolute label — RLHF / DPO.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Plenty of supervised (x, y) → just go supervised; reward is non-designable / non-differentiable / extremely sparse → try imitation learning first.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="RL 在藥物、蛋白質、CRISPR、臨床" data-en="RL in Drugs, Proteins, CRISPR, Clinical">RL 在藥物、蛋白質、CRISPR、臨床</h2>
+<div class="card-grid cols-2">
+
+<div class="card"><h4 data-zh="REINVENT — RL 生成分子" data-en="REINVENT — RL molecule generation">REINVENT — RL 生成分子</h4>
+<p data-lang="zh">Olivecrona et al. (2017, J. Cheminf.) 提出 RNN-prior + REINFORCE 微調，以 QED、predicted activity 為 reward。REINVENT 2 / 3 / 4 (Blaschke 2020; Loeffler 2024, J. Cheminf.) 加入 scaffold constraint、強化學習策略，成為製藥業 de novo design 主力工具。</p>
+<p data-lang="en">Olivecrona et al. (2017, J. Cheminf.) — RNN prior + REINFORCE with QED / predicted activity as reward. REINVENT 2/3/4 (Blaschke 2020; Loeffler 2024, J. Cheminf.) added scaffold constraints and richer RL strategies; now a workhorse for industry de novo design.</p></div>
+
+<div class="card"><h4 data-zh="DeepCDR / drug response" data-en="DeepCDR / drug response">DeepCDR / drug response</h4>
+<p data-lang="zh">Liu et al. (2020, Bioinformatics) DeepCDR 結合 cell-line omics 與藥物結構預測 IC50；後續 RL 變體 (e.g. MOReL, BO-RL) 把 drug response 模型當 oracle，主動選下一個要測的 (cell, drug) 組合。</p>
+<p data-lang="en">Liu et al. (2020, Bioinformatics) — DeepCDR predicts IC50 from cell-line omics + drug structure. Later RL variants use the model as an oracle to actively choose the next (cell, drug) pair to test.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質設計 (ProteinSGM-RL)" data-en="Protein design (ProteinSGM-RL)">蛋白質設計 (ProteinSGM-RL)</h4>
+<p data-lang="zh">Wang et al. (2022) ProteinSGM 用 score-based 模型生成蛋白質結構；後續加入 RL 微調，把「可摺疊性 (pLDDT)、目標親和力」當 reward。同類工作：RFdiffusion (Watson 2023, Nature) 加 RL guidance、ProteinMPNN-RL。</p>
+<p data-lang="en">Wang et al. (2022) ProteinSGM — score-based protein structure generation; later extended with RL fine-tuning using foldability (pLDDT) and target affinity as reward. Related: RFdiffusion (Watson 2023, Nature) with RL guidance, ProteinMPNN-RL.</p></div>
+
+<div class="card"><h4 data-zh="CRISPR guide 選擇" data-en="CRISPR guide selection">CRISPR guide 選擇</h4>
+<p data-lang="zh">每個 gene 有數十至數百個可能 guide RNA；要選 cut efficiency 高、off-target 低者。RL agent 把每次 guide 選擇視為動作，experimental readout 為 reward，逐步學偏好。Wang et al. (2023, Cell Reports Methods) 將此用於高通量 CRISPR 篩選優化。</p>
+<p data-lang="en">Each gene has tens–hundreds of candidate guide RNAs; must pick high-efficiency, low-off-target ones. RL treats each guide pick as an action, experimental readout as reward. Wang et al. (2023, Cell Reports Methods) used this for high-throughput CRISPR screen optimisation.</p></div>
+
+<div class="card"><h4 data-zh="自適應臨床試驗" data-en="Adaptive clinical trials">自適應臨床試驗</h4>
+<p data-lang="zh">傳統 RCT 固定分配；adaptive trial 依累積結果動態調整 arm 比例。RL（特別是 contextual bandits + Thompson sampling）可在 ethical/regulatory 限制下持續探索。Yauney & Shah (2018) 把化療劑量選擇建模為 RL；I-SPY 系列乳癌試驗已實際採用 Bayesian adaptive 策略。</p>
+<p data-lang="en">Classical RCTs fix allocation; adaptive trials adjust arm ratios using accumulating data. RL (especially contextual bandits + Thompson sampling) explores within ethical/regulatory limits. Yauney & Shah (2018) modelled chemo dosing as RL; the I-SPY breast-cancer trial series uses Bayesian adaptive allocation.</p></div>
+
+<div class="card"><h4 data-zh="順序 CRISPR perturbation" data-en="Sequential CRISPR perturbation">順序 CRISPR perturbation</h4>
+<p data-lang="zh">Perturb-seq 一次扰動一基因；要選下一個最有 information gain 的擾動，可用 RL + active learning。King-Smith et al. (2024) 框架把每次擾動視為 RL 動作，以「下游表型 entropy」為 reward。</p>
+<p data-lang="en">Perturb-seq screens one gene at a time; the next "most informative" perturbation can be chosen via RL + active learning. King-Smith et al. (2024) modelled each perturbation as an RL action with "downstream phenotype entropy" reward.</p></div>
+
+<div class="card"><h4 data-zh="AlphaFold-Multimer RL 微調" data-en="AlphaFold-Multimer RL refinement">AlphaFold-Multimer RL 微調</h4>
+<p data-lang="zh">Evans et al. (2022) AlphaFold-Multimer 推理時可加 RL 風格的 refinement，以 interface score 為 reward 微調預測；後續多體蛋白質設計 (Watson 2023, RFdiffusion) 採類似思路 — 用結構 oracle 當 reward 引導生成模型。</p>
+<p data-lang="en">Evans et al. (2022) AlphaFold-Multimer can be refined at inference with RL-style updates using interface score as reward; later multimer design works (Watson 2023, RFdiffusion) use the structural oracle similarly to guide generation.</p></div>
+
+<div class="card"><h4 data-zh="RLHF / RLAIF for bio-LLM" data-en="RLHF / RLAIF for bio-LLM">RLHF / RLAIF for bio-LLM</h4>
+<p data-lang="zh">ProtST、ESM-3、scGPT 等生物大模型可用 RLHF 微調：人類專家比較「合理 vs 不合理」 protein / cell embedding。Anthropic-style RLAIF（用 LLM 評分代替人類）也適用，可大幅降低標註成本。</p>
+<p data-lang="en">Bio LLMs like ProtST, ESM-3, scGPT can be RLHF-tuned: experts compare "plausible vs implausible" protein / cell embeddings. Anthropic-style RLAIF (LLM-as-judge) cuts annotation cost dramatically.</p></div>
+
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題：reward hacking、offline RL、安全" data-en="Advanced: reward hacking, offline RL, safety">進階主題：reward hacking、offline RL、安全</h2>
+<div data-lang="zh">
+<h3>① Reward hacking 與 Goodhart 失靈</h3>
+<p>當 reward 是「真實目標的代理」(QED 代理 oral bioavailability、pLDDT 代理 foldability)，agent 會學會「鑽 reward 漏洞」生成 QED 高但毫無意義的分子。對策：multi-objective reward、constraint penalty、KL regularisation 對齊先驗策略（RLHF 的核心 trick）。Skalse et al. (2022, NeurIPS) 給出 reward hacking 的形式化定義。</p>
+
+<h3>② Offline RL — 從歷史資料學策略</h3>
+<p>生物實驗無法 online 互動；只有過去的 (s, a, r, s') log。Offline RL（CQL Kumar 2020、IQL Kostrikov 2021）解決「分布外動作高估」問題。應用：歷史 EHR 學最佳劑量；歷史化學文獻學合成策略。</p>
+
+<h3>③ Inverse RL / Imitation Learning</h3>
+<p>從專家示範反推 reward（Ng & Russell 2000）或直接克隆策略（Behavioral Cloning）。當你「不知道怎麼設計 reward 但有專家樣本」時的選擇。GAIL (Ho 2016) 用 GAN 思想做 imitation。</p>
+
+<h3>④ Multi-objective RL</h3>
+<p>藥物設計同時要 potency、selectivity、ADMET、合成可行 — 多 reward。常見：scalarisation (加權和、Chebyshev)、Pareto front methods、constrained MDP。REINVENT 4 支援多目標 reward 組合。</p>
+
+<h3>⑤ Sim-to-real / 模擬器忠實度</h3>
+<p>分子 RL 常依賴 docking、MD、QM 模擬器當 oracle；模擬與實驗的 gap 可能讓 RL 學到「擊敗模擬器」而非「擊敗實驗」。對策：domain randomisation、頻繁加入濕實驗驗證、unc​ertainty-aware reward。</p>
+
+<h3>⑥ 安全與不可逆動作</h3>
+<p>臨床 RL 不像遊戲——錯誤決策可能傷害病人。Safe RL（Achiam 2017 CPO、Garcia 2015 review）強制 constraint 滿足；contextual bandit + conservative exploration 是實際首選。Anthropic 的 Constitutional AI 思想也適用：用顯式規則限制 policy。</p>
+
+<h3>⑦ DPO — RLHF 的替代</h3>
+<p>Rafailov et al. (2023, NeurIPS) Direct Preference Optimization：直接從偏好對導出 closed-form loss，跳過 reward model + PPO，訓練更穩、計算更省。2024–25 年生物 LLM 微調很快採用 DPO / IPO / KTO。</p>
+</div>
+<div data-lang="en">
+<h3>① Reward hacking and Goodhart failure</h3>
+<p>When reward is a proxy for the true goal (QED for oral bioavailability, pLDDT for foldability), the agent learns to exploit the proxy — high QED but nonsense molecules. Fixes: multi-objective reward, constraint penalties, KL regularisation against a prior policy (RLHF's core trick). Skalse et al. (2022, NeurIPS) formalise reward hacking.</p>
+
+<h3>② Offline RL — learn from logged data</h3>
+<p>Biological experiments rarely allow online interaction; you only have past (s, a, r, s') logs. Offline RL (CQL — Kumar 2020; IQL — Kostrikov 2021) addresses over-estimation on out-of-distribution actions. Applications: EHR dose-optimisation, synthesis strategy from literature.</p>
+
+<h3>③ Inverse RL / Imitation Learning</h3>
+<p>Recover reward from expert demos (Ng & Russell 2000) or just clone the policy (Behavioral Cloning). Use when reward is hard to design but expert traces exist. GAIL (Ho 2016) uses GAN-style imitation.</p>
+
+<h3>④ Multi-objective RL</h3>
+<p>Drug design needs potency + selectivity + ADMET + synthesizability — multiple rewards. Standard tools: scalarisation (weighted, Chebyshev), Pareto-front methods, constrained MDPs. REINVENT 4 supports multi-objective combinations.</p>
+
+<h3>⑤ Sim-to-real / simulator fidelity</h3>
+<p>Molecular RL often uses docking / MD / QM as oracles; the sim–experiment gap can let RL beat the simulator without beating the bench. Counter-measures: domain randomisation, frequent wet-lab validation, uncertainty-aware reward.</p>
+
+<h3>⑥ Safety and irreversible actions</h3>
+<p>Clinical RL isn't a game — wrong decisions can hurt patients. Safe RL (Achiam 2017 CPO, Garcia 2015 review) enforces constraints; contextual bandit + conservative exploration is the practical default. Anthropic-style Constitutional AI also fits: hard rules constrain the policy.</p>
+
+<h3>⑦ DPO — the RLHF alternative</h3>
+<p>Rafailov et al. (2023, NeurIPS) — Direct Preference Optimization derives a closed-form loss directly from preference pairs, skipping reward model + PPO. More stable, cheaper. 2024–25 bio-LLM fine-tuning has rapidly adopted DPO / IPO / KTO.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / stable-baselines3</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / REINFORCE</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / REINVENT-style</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install stable-baselines3 gymnasium</span>
+<span class="keyword">import</span> gymnasium <span class="keyword">as</span> gym
+<span class="keyword">from</span> stable_baselines3 <span class="keyword">import</span> PPO, SAC
+
+<span class="comment"># Wrap your bio task in a Gym env: obs / action / reward / done</span>
+<span class="keyword">class</span> DrugDesignEnv(gym.Env):
+    <span class="keyword">def</span> __init__(self):
+        self.action_space = gym.spaces.Discrete(<span class="num">20</span>)        <span class="comment"># 20 fragment ops</span>
+        self.observation_space = gym.spaces.Box(-<span class="num">1</span>, <span class="num">1</span>, (<span class="num">128</span>,))   <span class="comment"># mol embedding</span>
+    <span class="keyword">def</span> reset(self, seed=<span class="keyword">None</span>):
+        self.state = init_mol()
+        <span class="keyword">return</span> embed(self.state), {}
+    <span class="keyword">def</span> step(self, action):
+        self.state = apply_op(self.state, action)
+        r = qed(self.state) + <span class="num">0.5</span>*sa_score(self.state)
+        done = len(self.state) &gt;= <span class="num">30</span>
+        <span class="keyword">return</span> embed(self.state), r, done, <span class="keyword">False</span>, {}
+
+env = DrugDesignEnv()
+model = PPO(<span class="str">"MlpPolicy"</span>, env, learning_rate=<span class="num">3e-4</span>, ent_coef=<span class="num">0.01</span>, verbose=<span class="num">1</span>)
+model.learn(total_timesteps=<span class="num">200_000</span>)
+model.save(<span class="str">"drug_ppo"</span>)</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># Minimal REINFORCE with baseline (pure PyTorch)</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> torch.distributions <span class="keyword">import</span> Categorical
+
+policy = nn.Sequential(nn.Linear(obs_dim, <span class="num">64</span>), nn.ReLU(), nn.Linear(<span class="num">64</span>, n_act))
+value  = nn.Sequential(nn.Linear(obs_dim, <span class="num">64</span>), nn.ReLU(), nn.Linear(<span class="num">64</span>, <span class="num">1</span>))
+opt = torch.optim.Adam(list(policy.parameters()) + list(value.parameters()), lr=<span class="num">1e-3</span>)
+
+<span class="keyword">for</span> epi <span class="keyword">in</span> range(<span class="num">2000</span>):
+    s, log_probs, rewards, vals = env.reset(), [], [], []
+    <span class="keyword">while</span> <span class="keyword">True</span>:
+        logits = policy(torch.tensor(s, dtype=torch.float32))
+        dist = Categorical(logits=logits); a = dist.sample()
+        log_probs.append(dist.log_prob(a))
+        vals.append(value(torch.tensor(s, dtype=torch.float32)))
+        s, r, done, *_ = env.step(a.item()); rewards.append(r)
+        <span class="keyword">if</span> done: <span class="keyword">break</span>
+    R, returns = <span class="num">0</span>, []
+    <span class="keyword">for</span> r <span class="keyword">in</span> rewards[::-<span class="num">1</span>]:
+        R = r + <span class="num">0.99</span>*R; returns.insert(<span class="num">0</span>, R)
+    returns = torch.tensor(returns, dtype=torch.float32)
+    adv = returns - torch.cat(vals).squeeze()
+    loss = -(torch.stack(log_probs) * adv.detach()).mean() + <span class="num">0.5</span>*(adv**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="comment"># Sketch of REINVENT-style RL fine-tune of a SMILES RNN</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> reinvent_models <span class="keyword">import</span> ReinventModel  <span class="comment"># pseudo-import</span>
+
+prior = ReinventModel.load(<span class="str">"prior.ckpt"</span>); prior.eval()    <span class="comment"># frozen prior</span>
+agent = ReinventModel.load(<span class="str">"prior.ckpt"</span>)              <span class="comment"># to be fine-tuned</span>
+opt = torch.optim.Adam(agent.parameters(), lr=<span class="num">5e-4</span>)
+
+<span class="keyword">def</span> score(smiles):
+    <span class="keyword">return</span> qed(smiles) + <span class="num">0.5</span>*active_predictor(smiles)
+
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">500</span>):
+    smis, agent_lp = agent.sample(batch=<span class="num">64</span>)
+    <span class="keyword">with</span> torch.no_grad(): prior_lp = prior.log_prob(smis)
+    R = torch.tensor([score(s) <span class="keyword">for</span> s <span class="keyword">in</span> smis])
+    <span class="comment"># Augmented likelihood: KL-regularised reward</span>
+    augmented = prior_lp + <span class="num">60</span>*R
+    loss = ((augmented - agent_lp)**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+</div>
+
+<p data-lang="zh" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">主要套件：<code>stable-baselines3</code>（PPO/SAC/DQN）、<code>RLlib</code>（Ray，分散式）、<code>CleanRL</code>（單檔可讀實作）、<code>REINVENT</code>（AstraZeneca, GitHub）、<code>TRL</code> (Hugging Face — RLHF/DPO for LLM)。</p>
+<p data-lang="en" style="font-size:.85rem;color:var(--c-ink-muted);margin-top:8px;">Key libraries: <code>stable-baselines3</code> (PPO/SAC/DQN), <code>RLlib</code> (Ray, distributed), <code>CleanRL</code> (single-file reference), <code>REINVENT</code> (AstraZeneca, GitHub), <code>TRL</code> (Hugging Face — RLHF/DPO for LLMs).</p>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">下列何者最能描述 PPO 的 clipping 機制目的？</p><p data-lang="en">Which best describes the purpose of PPO's clipping?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 加速 GPU 矩陣運算</span><span data-lang="en">A. Speed up GPU matmul</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 把 reward 限制在 [-1, 1]</span><span data-lang="en">B. Clip reward to [-1, 1]</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 限制每次更新的策略偏移幅度，避免分布劇烈漂移</span><span data-lang="en">C. Limit per-update policy shift to avoid large distribution drift</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 直接取代 Adam optimizer</span><span data-lang="en">D. Replace the Adam optimizer</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">SAC 的「最大熵」目標主要解決什麼問題？</p><p data-lang="en">What is the main purpose of SAC's max-entropy objective?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 加速收斂</span><span data-lang="en">A. Faster convergence</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 鼓勵持續探索、避免過早 collapse 到次優策略</span><span data-lang="en">B. Encourage exploration; avoid premature collapse to a suboptimal policy</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 取代 reward 函數</span><span data-lang="en">C. Replace the reward function</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 強迫離散動作</span><span data-lang="en">D. Force discrete actions</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">REINVENT 用 RL 微調 SMILES RNN 為什麼還要保留 prior 與 KL 項？</p><p data-lang="en">Why does REINVENT keep a prior + KL term when RL-finetuning a SMILES RNN?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 防止 agent 為了 reward 生成化學上不合理的字串（reward hacking）</span><span data-lang="en">A. Prevent reward hacking — generating chemically implausible strings just to maximise reward</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 加速 GPU</span><span data-lang="en">B. Speed up GPU</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. PyTorch 強制要求</span><span data-lang="en">C. PyTorch requires it</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 取代 reward</span><span data-lang="en">D. Replace the reward</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="hawkes-point-processes.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 29：Hawkes Point Processes" data-en="Ch 29: Hawkes Point Processes">Ch 29：Hawkes Point Processes</span></a>
+<a href="random-matrix-theory.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 31：Random Matrix Theory" data-en="Ch 31: Random Matrix Theory">Ch 31：Random Matrix Theory</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+/* ===== Toy RL: 6-step contextual-bandit / policy gradient ===== */
+/* The "molecule" has 6 build-slots; each slot picks one of K=5 actions.
+   True optimum is a fixed action vector (a*); reward = -hamming-like + noise,
+   shaped like a smooth QED-style landscape. We train a softmax policy per slot. */
+const K=5, SLOTS=6;
+const ASTAR=[2,4,1,3,0,2];                      // hidden optimal action seq
+let LOGITS=Array.from({length:SLOTS},()=>new Array(K).fill(0));
+let HIST={rew:[],ent:[]};
+let CHART=null;
+
+function softmax(z){const m=Math.max(...z);const e=z.map(v=>Math.exp(v-m));const s=e.reduce((a,b)=>a+b,0);return e.map(v=>v/s);}
+function sampleCat(p){let r=Math.random(),c=0;for(let i=0;i<p.length;i++){c+=p[i];if(r<c)return i;}return p.length-1;}
+function rolloutReward(actions, sigma){
+  // Smooth shaped reward: each slot contributes a Gaussian-like bonus around ASTAR
+  let r=0;
+  for(let i=0;i<SLOTS;i++){const d=actions[i]-ASTAR[i];r+=Math.exp(-d*d/2.0);}
+  r/=SLOTS;                                     // normalise to [0,1]
+  return r + sigma*(Math.random()*2-1);
+}
+function entropyAll(){
+  let H=0;for(const slot of LOGITS){const p=softmax(slot);for(const q of p)if(q>1e-12)H-=q*Math.log(q);}
+  return H/SLOTS;
+}
+function resetAgent(){LOGITS=Array.from({length:SLOTS},()=>new Array(K).fill(0));HIST={rew:[],ent:[]};drawChart();updateInfo(0,0,0);}
+
+function trainEpisodes(nEpi){
+  const lr=+document.getElementById('sLr').value;
+  const alpha=+document.getElementById('sAl').value;
+  const sigma=+document.getElementById('sSg').value;
+  const BASELINE_BETA=0.9; let baseline=0;
+
+  for(let e=0;e<nEpi;e++){
+    // sample one action per slot
+    const probs=LOGITS.map(softmax);
+    const acts=probs.map(p=>sampleCat(p));
+    const R=rolloutReward(acts,sigma);
+    baseline = BASELINE_BETA*baseline + (1-BASELINE_BETA)*R;
+    const adv = R - baseline;
+
+    // gradient: ∂logπ/∂z_i = (1_{a==i} - p_i)
+    // plus entropy bonus α * (-Σ p log p) gradient = α * (-(log p + 1))
+    for(let s=0;s<SLOTS;s++){
+      const p=probs[s], a=acts[s];
+      for(let k=0;k<K;k++){
+        const indicator=(k===a?1:0);
+        const gPolicy = (indicator - p[k]) * adv;
+        const gEnt    = -alpha * (Math.log(Math.max(1e-9,p[k])) + 1) * p[k]; // d/dz_k of entropy
+        LOGITS[s][k] += lr * (gPolicy + gEnt);
+      }
+    }
+    HIST.rew.push(R); HIST.ent.push(entropyAll());
+  }
+  drawChart();
+  const avgLast = HIST.rew.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,HIST.rew.length);
+  updateInfo(HIST.rew.length, avgLast, entropyAll());
+}
+
+function smooth(arr,w=20){const out=[];for(let i=0;i<arr.length;i++){const l=Math.max(0,i-w),r=Math.min(arr.length,i+w);let s=0;for(let j=l;j<r;j++)s+=arr[j];out.push(s/(r-l));}return out;}
+
+function drawChart(){
+  const ctx=document.getElementById('rlChart');
+  const L=I18n.get();
+  const labelR=L==='zh'?'平均回報 (smoothed)':'Mean reward (smoothed)';
+  const labelH=L==='zh'?'策略熵':'Policy entropy';
+  const xs=HIST.rew.map((_,i)=>i+1);
+  const dataR=smooth(HIST.rew,15);
+  const dataH=HIST.ent;
+  if(CHART)CHART.destroy();
+  CHART=new Chart(ctx,{type:'line',data:{labels:xs,datasets:[
+    {label:labelR,data:dataR,borderColor:'#1a6b5a',backgroundColor:'rgba(26,107,90,.1)',borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y'},
+    {label:labelH,data:dataH,borderColor:'#c0392b',backgroundColor:'rgba(192,57,43,.05)',borderWidth:2,pointRadius:0,tension:.3,yAxisID:'y2',borderDash:[4,3]}
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:false,
+    plugins:{legend:{position:'top'}},
+    scales:{
+      x:{title:{display:true,text:L==='zh'?'回合 (episode)':'Episode'}},
+      y:{position:'left',title:{display:true,text:L==='zh'?'回報':'Reward'},min:0,max:1.1},
+      y2:{position:'right',title:{display:true,text:L==='zh'?'熵':'Entropy'},min:0,grid:{drawOnChartArea:false}}
+    }}});
+}
+
+function updateInfo(nEpi, lastR, H){
+  const L=I18n.get();
+  const probs=LOGITS.map(softmax);
+  const greedy=probs.map(p=>p.indexOf(Math.max(...p)));
+  const match=greedy.reduce((a,b,i)=>a+(b===ASTAR[i]?1:0),0);
+  document.getElementById('rlInfo').innerHTML = L==='zh'?
+    `已訓練 <strong>${nEpi}</strong> 回合 · 最近 50 回平均 reward = <strong>${lastR.toFixed(3)}</strong> · 策略熵 = <strong>${H.toFixed(3)}</strong><br>當前 greedy 動作 [${greedy.join(",")}] · 對應最佳序列 [${ASTAR.join(",")}] · 命中 ${match}/${SLOTS}`
+    :
+    `Trained <strong>${nEpi}</strong> episodes · last-50 mean reward = <strong>${lastR.toFixed(3)}</strong> · policy entropy = <strong>${H.toFixed(3)}</strong><br>Greedy action [${greedy.join(",")}] vs optimum [${ASTAR.join(",")}] · matched ${match}/${SLOTS}`;
+}
+
+document.getElementById('sLr').addEventListener('input',e=>{document.getElementById('vLr').textContent=(+e.target.value).toFixed(3);});
+document.getElementById('sAl').addEventListener('input',e=>{document.getElementById('vAl').textContent=(+e.target.value).toFixed(2);});
+document.getElementById('sSg').addEventListener('input',e=>{document.getElementById('vSg').textContent=(+e.target.value).toFixed(2);});
+document.getElementById('btnRun').addEventListener('click',()=>trainEpisodes(500));
+document.getElementById('btnReset').addEventListener('click',resetAgent);
+document.addEventListener('langchange',()=>{drawChart();updateInfo(HIST.rew.length, HIST.rew.length?HIST.rew.slice(-50).reduce((a,b)=>a+b,0)/Math.min(50,HIST.rew.length):0, entropyAll());});
+// Initial draw
+resetAgent();
+
+window._QF={zh:{
+  q1_y:'答對！clipping 限制 π_new/π_old 的比例範圍，防止單次更新過大。',
+  q1_n:'答案是 C。clipping 限制 r_t(θ)=π_new/π_old 在 [1−ε,1+ε]，避免劇烈策略漂移。',
+  q2_y:'答對！熵獎勵保留多樣性、改善 exploration、避免早期 collapse。',
+  q2_n:'答案是 B。SAC 最大化 reward + α·H(π)，鼓勵探索並提高魯棒性。',
+  q3_y:'答對！KL/prior 項把 agent 拉回化學合理的分布，避免 reward hacking。',
+  q3_n:'答案是 A。REINVENT 用 augmented likelihood = prior_lp + σ·R，相當於 KL 正則化避免 reward hacking。'
+},en:{
+  q1_y:'Correct! Clipping bounds π_new/π_old, preventing oversized updates.',
+  q1_n:'Answer is C. Clipping confines r_t(θ)=π_new/π_old to [1−ε,1+ε], avoiding sharp policy drift.',
+  q2_y:'Correct! Entropy bonus preserves diversity, improves exploration and prevents early collapse.',
+  q2_n:'Answer is B. SAC maximises reward + α·H(π) — encourages exploration and robustness.',
+  q3_y:'Correct! The KL / prior anchor keeps the agent on chemically plausible distributions, blocking reward hacking.',
+  q3_n:'Answer is A. REINVENT uses augmented likelihood = prior_lp + σ·R, i.e. KL regularisation to suppress reward hacking.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

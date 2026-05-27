@@ -1,0 +1,370 @@
+<!DOCTYPE html><html lang="zh-Hant"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Sheaf &amp; Cellular Sheaves — Adv. Methods Tutorial</title>
+<link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner">
+<a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a>
+<ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html" class="active">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero">
+<div class="step-badge">CH 25 / 26</div>
+<h1 data-zh="Sheaf 與 Cellular Sheaves" data-en="Sheaves &amp; Cellular Sheaves">Sheaf 與 Cellular Sheaves</h1>
+<p class="subtitle" data-lang="zh">Graph Laplacian 的代數幾何推廣——當「節點之間有 disagreement」時，sheaf 把不同模態、不同切片、不同標籤的訊號縫合起來，並偵測無法調和的衝突。</p>
+<p class="subtitle" data-lang="en">An algebraic-geometric generalization of the graph Laplacian — when nodes "disagree," sheaves stitch signals across modalities, slices, and labels, while flagging irreconcilable inconsistencies.</p>
+</header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 graph 到 sheaf" data-en="From graph to sheaf">從 graph 到 sheaf</h2>
+<div data-lang="zh">
+<p>一張 graph 在每個節點放一個 <em>純量</em>（基因表現、温度），透過 graph Laplacian L = D − A 可做 smoothing、Fourier 分析（Ch 9）。但生物資料 <strong>每個節點通常是一個向量</strong>——一群基因、一個細胞的 multi-omics 多模態 profile——而且邊上兩端的「向量空間」常常不一樣（節點 A 是 RNA 維度、節點 B 是 ATAC 維度）。</p>
+<p><strong>Cellular sheaf (Hansen &amp; Ghrist 2019)</strong> 解決這個問題：</p>
+<ul>
+<li>在每個節點 v 上指派一個 <em>vector space</em> F(v)（稱為 stalk）。</li>
+<li>在每條邊 e = (u, v) 上指派一條 <em>線性對映</em> F<sub>u≤e</sub>: F(u) → F(e) 和 F<sub>v≤e</sub>: F(v) → F(e)，稱為 <strong>restriction map</strong>。</li>
+<li>一個 <strong>section</strong>（全域訊號）是每節點各選一個向量 x<sub>v</sub> ∈ F(v)，使得邊上兩端透過 restriction map 後相等：F<sub>u≤e</sub>(x<sub>u</sub>) = F<sub>v≤e</sub>(x<sub>v</sub>)。</li>
+</ul>
+<p>當邊兩端 restriction map 完全一致時，sheaf 就退化回普通 graph。當不一致時，sheaf 量化「整體有多協調」——這就是 sheaf cohomology。</p>
+</div>
+<div data-lang="en">
+<p>A graph puts a <em>scalar</em> at each node (gene expression, temperature) and analyzes it with the graph Laplacian L = D − A (Ch 9). But biological data typically has <strong>a vector at each node</strong>: a gene module, a multi-omics cell profile — and the "spaces" on either side of an edge may differ (node A is in RNA space, node B in ATAC space).</p>
+<p><strong>Cellular sheaves (Hansen &amp; Ghrist 2019)</strong> handle this:</p>
+<ul>
+<li>Assign each node v a <em>vector space</em> F(v) (called the stalk).</li>
+<li>For each edge e = (u, v), give two <em>linear maps</em> F<sub>u≤e</sub>: F(u) → F(e) and F<sub>v≤e</sub>: F(v) → F(e), the <strong>restriction maps</strong>.</li>
+<li>A <strong>section</strong> (global signal) is a choice of x<sub>v</sub> ∈ F(v) per node, with F<sub>u≤e</sub>(x<sub>u</sub>) = F<sub>v≤e</sub>(x<sub>v</sub>) on every edge.</li>
+</ul>
+<p>When all restriction maps agree, sheaves reduce to ordinary graphs. When they disagree, sheaves quantify "how globally consistent" — that's sheaf cohomology.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🧩</div><h4 data-zh="向量值節點" data-en="Vector-valued nodes">向量值節點</h4><p data-lang="zh">每節點是 vector space，可放多模態 embedding。</p><p data-lang="en">Each node is a vector space; multi-modal embeddings fit naturally.</p></div>
+  <div class="card"><div class="card-icon">🔗</div><h4 data-zh="Restriction map" data-en="Restriction map">Restriction map</h4><p data-lang="zh">邊上的線性對映描述「不同空間如何溝通」。</p><p data-lang="en">Linear maps on edges describe how different spaces communicate.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="Cohomology" data-en="Cohomology">Cohomology</h4><p data-lang="zh">H⁰ 量「全域共識」；H¹ 量「無法調和的衝突」。</p><p data-lang="en">H⁰ measures global consensus; H¹ measures irreconcilable inconsistencies.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Sheaf Laplacian 與計算" data-en="Sheaf Laplacian and Computation">Sheaf Laplacian 與計算</h2>
+<div data-lang="zh">
+<p><strong>Sheaf Laplacian (Hansen &amp; Ghrist 2019, J Appl Comput Topol)：</strong>類比 graph Laplacian，定義 coboundary 算子 δ: C⁰ → C¹，把節點上的訊號 x = (x<sub>v</sub>)<sub>v</sub> 對映到邊上的 mismatch：(δx)<sub>e</sub> = F<sub>v≤e</sub>(x<sub>v</sub>) − F<sub>u≤e</sub>(x<sub>u</sub>)。Sheaf Laplacian 即 L<sub>F</sub> = δᵀδ，是個半正定對稱矩陣。</p>
+<ol>
+<li><strong>H⁰(F) = ker(L<sub>F</sub>)：</strong>「全域 section 的空間」——所有邊都調和的訊號。dim H⁰ 量「獨立的全域共識通道」。</li>
+<li><strong>H¹(F) = ker(δᵀ) / im(δ)：</strong>「衝突空間」——當有「在每條邊看起來都自洽，但全域湊不起來」的訊號時 H¹ &gt; 0。生物上代表「局部一致、全域矛盾」。</li>
+<li><strong>Sheaf diffusion：</strong>ẋ = −L<sub>F</sub> x — 把訊號 smooth 到 ker(L<sub>F</sub>) 上，類比 heat equation。</li>
+<li><strong>Sheaf eigendecomposition：</strong>L<sub>F</sub> 的小特徵值對應 sheaf-aware 的低頻成分——sheaf 版的 spectral clustering。</li>
+</ol>
+
+<h3>Sheaf Neural Network (Bodnar et al. 2022, NeurIPS)</h3>
+<p>把 sheaf 結構嵌入 GNN：每層更新規則是 x ← x − α·L<sub>F</sub>·MLP(x)，且 restriction map 是 <strong>學習出來</strong> 的而非固定。實證上比普通 GCN 在 heterophilic graph（鄰居 label 常不同）上勝出 5–15 個百分點，且能在「over-smoothing」的層數下仍保留鑑別力。</p>
+</div>
+
+<div data-lang="en">
+<p><strong>Sheaf Laplacian (Hansen &amp; Ghrist 2019, J Appl Comput Topol):</strong> analogous to the graph Laplacian, define coboundary δ: C⁰ → C¹ mapping a node signal x = (x<sub>v</sub>) to the per-edge mismatch (δx)<sub>e</sub> = F<sub>v≤e</sub>(x<sub>v</sub>) − F<sub>u≤e</sub>(x<sub>u</sub>). Then L<sub>F</sub> = δᵀδ, positive-semidefinite and symmetric.</p>
+<ol>
+<li><strong>H⁰(F) = ker(L<sub>F</sub>):</strong> the space of global sections — signals agreeing on every edge. dim H⁰ counts independent global-consensus channels.</li>
+<li><strong>H¹(F) = ker(δᵀ) / im(δ):</strong> the inconsistency space — non-zero when "every edge looks fine but globally nothing fits." Biologically: locally consistent, globally contradictory.</li>
+<li><strong>Sheaf diffusion:</strong> ẋ = −L<sub>F</sub> x — smoothing toward ker(L<sub>F</sub>), the sheaf heat equation.</li>
+<li><strong>Sheaf eigendecomposition:</strong> small eigenvalues of L<sub>F</sub> give sheaf-aware low-frequency components — sheaf spectral clustering.</li>
+</ol>
+
+<h3>Sheaf Neural Network (Bodnar et al. 2022, NeurIPS)</h3>
+<p>Embed sheaves in GNNs: per-layer update x ← x − α·L<sub>F</sub>·MLP(x), where restriction maps are <strong>learned</strong>, not fixed. Empirically beats plain GCN by 5–15 points on heterophilic graphs (neighbors with different labels) and resists over-smoothing across deep stacks.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>直覺：</strong>graph Laplacian 假設「鄰居應該相似」；sheaf Laplacian 假設「鄰居應該透過某個學到的對映 R 相似」——這非常符合多模態資料（RNA → ATAC 的對應不是 identity，而是某種已知或學到的線性對映）。</div>
+<div data-lang="en"><strong>Intuition:</strong> the graph Laplacian assumes "neighbors should be similar"; the sheaf Laplacian assumes "neighbors should be similar after some learned map R" — perfectly matching multi-modal data (RNA → ATAC is not identity but a learned linear map).</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Sheaf cohomology 視覺化" data-en="Sheaf Cohomology Visualizer">Sheaf cohomology 視覺化</h2>
+<div data-lang="zh"><p>一個 4-節點 cycle graph，每節點上有個向量 (2D stalk)。每條邊有一個「旋轉角度」θ<sub>e</sub> 作為 restriction map。當所有 θ 加起來 = 0 (mod 2π)，存在 global section (H¹ = 0)；否則旋轉繞一圈無法回到原點，H¹ &gt; 0。調整下方滑桿觀察。</p></div>
+<div data-lang="en"><p>A 4-node cycle graph with 2D vectors on each node. Each edge has a rotation θ<sub>e</sub> as restriction map. When the sum of θs is 0 (mod 2π), a global section exists (H¹ = 0); otherwise rotation around the loop can't close up and H¹ &gt; 0. Drag the sliders.</p></div>
+
+<div class="interactive-panel">
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+<div class="slider-group"><label>θ₁ <span id="vT1">0.5</span></label><input type="range" id="sT1" min="-3.14" max="3.14" value="0.5" step="0.05"></div>
+<div class="slider-group"><label>θ₂ <span id="vT2">0.5</span></label><input type="range" id="sT2" min="-3.14" max="3.14" value="0.5" step="0.05"></div>
+<div class="slider-group"><label>θ₃ <span id="vT3">0.5</span></label><input type="range" id="sT3" min="-3.14" max="3.14" value="0.5" step="0.05"></div>
+<div class="slider-group"><label>θ₄ <span id="vT4">-1.5</span></label><input type="range" id="sT4" min="-3.14" max="3.14" value="-1.5" step="0.05"></div>
+</div>
+<svg id="sheafSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="sheafReport" style="margin-top:10px;padding:12px;border-radius:6px;font-size:.92rem;"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 sheaf？" data-en="When to use sheaves?">什麼時候用 sheaf？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>異質節點：</strong>節點上是不同類型的資料（RNA + ATAC + protein），不能直接平均。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>多視角整合：</strong>多個 batch / patient / 切片各自有 cell-type，要找全域一致 labeling。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>偵測「不一致」：</strong>H¹ &gt; 0 直接指出哪些邊或迴圈無法調和——可作為 QC 工具。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Heterogeneous nodes:</strong> different data types per node (RNA + ATAC + protein) — can't be averaged directly.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Multi-view integration:</strong> multiple batches / patients / slices each with their own cell types — find a globally consistent label.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Inconsistency detection:</strong> H¹ &gt; 0 pinpoints irreconcilable edges or loops — a QC tool.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Sheaf 在 omics 的應用" data-en="Sheaves in omics">Sheaf 在 omics 的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Multi-omics consistency (Wang 2023)" data-en="Multi-omics consistency">Multi-omics consistency</h4>
+<p data-lang="zh">Wang et al. (2023) 把 paired scRNA + scATAC 視為 sheaf：節點是細胞、stalk 是 (RNA, ATAC) 向量、restriction map 學習「peak → gene」對應。H¹ 量化每個區域的 RNA-ATAC 不一致程度，幫助找「regulatory mismatch」（peak 開但 gene 不表現）。</p>
+<p data-lang="en">Wang et al. (2023) treat paired scRNA + scATAC as a sheaf: nodes are cells, stalk = (RNA, ATAC) vector, restriction map learns peak→gene mapping. H¹ quantifies regional RNA-ATAC mismatch, finding "regulatory dissonance" (peak open but gene silent).</p></div>
+
+<div class="card"><h4 data-zh="Spatial signal processing" data-en="Spatial signal processing">空間訊號處理</h4>
+<p data-lang="zh">Stereo-seq / MERFISH 的空間轉錄體：邊 = 物理相鄰、stalk = 多基因表現向量、restriction map 學習組織型別間的「轉換邏輯」。sheaf low-pass filter 比普通 spatial Laplacian smoothing 更好保留 tissue boundary。</p>
+<p data-lang="en">For Stereo-seq / MERFISH spatial transcriptomics: edges = physical adjacency, stalk = multi-gene vector, restriction map learns tissue-type transitions. Sheaf low-pass preserves tissue boundaries better than ordinary spatial Laplacian.</p></div>
+
+<div class="card"><h4 data-zh="PPI inconsistencies" data-en="PPI inconsistencies">PPI 不一致性</h4>
+<p data-lang="zh">在 protein-protein interaction network 上以 protein domain composition 為 stalk，restriction map 為 domain compatibility。H¹ 找出「sub-network 內報告衝突的實驗結果」，輔助 STRING / BioGRID 資料品控。</p>
+<p data-lang="en">On PPI networks with domain composition as stalk and domain compatibility as restriction map, H¹ pinpoints subnetworks with conflicting experimental reports — QC for STRING / BioGRID.</p></div>
+
+<div class="card"><h4 data-zh="TCR-pMHC sheaf" data-en="TCR-pMHC sheaf">TCR-pMHC sheaf</h4>
+<p data-lang="zh">免疫識別建模：T cell receptor 的 CDR3 序列空間與 pMHC 結合模式空間以 sheaf 連結，restriction map 為「結合幾何」對映。H⁰ 給出穩定的識別語意。</p>
+<p data-lang="en">Immune recognition: link TCR CDR3 sequence space and pMHC binding-pose space via a sheaf, with restriction maps as binding-geometry projections. H⁰ yields stable recognition semantics.</p></div>
+
+<div class="card"><h4 data-zh="Cross-species alignment" data-en="Cross-species alignment">跨物種對齊</h4>
+<p data-lang="zh">跨物種 GRN 對齊：節點是 ortholog gene、stalk 是物種特定的表現向量、restriction map 學「物種間映射」。H¹ 找出「物種間調控不保留」的迴路——演化生物學新工具。</p>
+<p data-lang="en">Cross-species GRN alignment: nodes are ortholog genes, stalks are species-specific expression, restriction maps learn cross-species translation. H¹ finds regulatory loops not conserved across species — a new evolutionary tool.</p></div>
+
+<div class="card"><h4 data-zh="Connectomics" data-en="Connectomics">連結組學</h4>
+<p data-lang="zh">神經迴路拓撲分析：每個神經元的活動模式為 stalk、突觸的訊號轉導為 restriction map，sheaf cohomology 量化「迴路一致 firing pattern」。</p>
+<p data-lang="en">Neural-circuit topology: each neuron's activity pattern is a stalk; synaptic signal transduction is the restriction map; sheaf cohomology quantifies consistent firing patterns.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Sheaf 還能解決哪些難題？" data-en="Where else could sheaves help?">Sheaf 還能解決哪些難題？</h2>
+<div data-lang="zh">
+<h3>🎯 1. scRNA-ATAC paired consistency QC</h3>
+<p>用 sheaf cohomology 自動偵測「sample 內 RNA 與 ATAC 矛盾的細胞」——這些常是 doublet 或污染。比目前的 quality filter（總 UMI、percent_mt）更具結構資訊。</p>
+<h3>🎯 2. 跨切片 spatial sheaf</h3>
+<p>連續組織切片之間 sheaf 對齊（取代或補充 PASTE 的 Gromov-Wasserstein）。H¹ 顯示哪些區域「無法 3D 重建」——可能是組織損傷或 acquisition 誤差。</p>
+<h3>🎯 3. 多病人 atlas sheaf</h3>
+<p>把每個病人視為一個 stalk，restriction map 學「病人間 cell-type 對映」。H¹ &gt; 0 的迴路指出「在某些病人組合下無法找到一致 cell-type」——可能對應疾病亞型或 patient-specific subset。</p>
+<h3>🎯 4. 跨物種 GRN inconsistency</h3>
+<p>結合 evolutionary biology 與 sheaf — 找「人/鼠/魚的 GRN 在哪些 module 上保留結構但 strength 不同」、「在哪些 module 上連結構都改變」。</p>
+<h3>🎯 5. Cell-type assignment uncertainty</h3>
+<p>把 scLLM 的 cell-type 預測視為 sheaf section；用 H¹ 偵測「鄰近細胞的 label 互相衝突區域」——這正是需要人工標註的 boundary region。比 confidence score 提供更豐富的不確定性訊號。</p>
+</div>
+<div data-lang="en">
+<h3>🎯 1. scRNA-ATAC paired consistency QC</h3>
+<p>Sheaf cohomology automatically flags cells with internal RNA-ATAC contradictions — often doublets or contamination. Structurally richer than total-UMI / pct_mt filters.</p>
+<h3>🎯 2. Cross-slice spatial sheaf</h3>
+<p>Sheaf alignment across serial slices (replacing/complementing PASTE's GW). H¹ reveals regions that cannot be 3D-reconstructed — likely tissue damage or acquisition error.</p>
+<h3>🎯 3. Multi-patient atlas sheaf</h3>
+<p>Treat each patient as a stalk; restriction maps learn cross-patient cell-type correspondence. Non-zero H¹ on a loop indicates "no consistent cell type across this patient combination" — may correspond to disease subtypes.</p>
+<h3>🎯 4. Cross-species GRN inconsistency</h3>
+<p>Combine evolutionary biology with sheaves to find modules whose structure is conserved across human/mouse/fish but with different strengths — and modules where even structure changes.</p>
+<h3>🎯 5. Cell-type assignment uncertainty</h3>
+<p>Treat scLLM cell-type predictions as a sheaf section; H¹ pinpoints regions where neighboring labels conflict — exactly the boundary cells worth manual annotation. Richer than a confidence score.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sheaflap')">Sheaf Laplacian (NumPy)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'pysheaf')">pysheaf</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sheafnn')">Sheaf NN (PyTorch)</button>
+</div>
+
+<div class="code-tab-content active" id="sheaflap"><pre><span class="comment"># Build sheaf Laplacian by hand: nodes have d-dim stalks</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> sheaf_laplacian(n_nodes, d, edges, R):
+    <span class="comment"># edges: list of (u, v); R[e] = (R_u, R_v) restriction maps</span>
+    rows = len(edges) * d
+    cols = n_nodes * d
+    delta = np.zeros((rows, cols))
+    <span class="keyword">for</span> e, (u, v) <span class="keyword">in</span> enumerate(edges):
+        R_u, R_v = R[e]
+        delta[e*d:(e+<span class="num">1</span>)*d, u*d:(u+<span class="num">1</span>)*d] = -R_u
+        delta[e*d:(e+<span class="num">1</span>)*d, v*d:(v+<span class="num">1</span>)*d] =  R_v
+    L = delta.T @ delta            <span class="comment"># sheaf Laplacian</span>
+    <span class="keyword">return</span> L, delta
+
+<span class="comment"># H^0 = nullspace(L) = global sections</span>
+L, delta = sheaf_laplacian(n, d, edges, R)
+eigvals, _ = np.linalg.eigh(L)
+n_H0 = np.sum(eigvals &lt; <span class="num">1e-8</span>)    <span class="comment"># dim of consensus space</span></pre></div>
+
+<div class="code-tab-content" id="pysheaf"><pre><span class="comment"># pip install pysheaf (research-grade)</span>
+<span class="keyword">import</span> pysheaf <span class="keyword">as</span> ps
+
+shf = ps.Sheaf()
+shf.AddCell(<span class="str">"v1"</span>, ps.Cell(<span class="str">"R2"</span>))
+shf.AddCell(<span class="str">"v2"</span>, ps.Cell(<span class="str">"R2"</span>))
+shf.AddCell(<span class="str">"e12"</span>, ps.Cell(<span class="str">"R2"</span>))
+shf.AddCoface(<span class="str">"v1"</span>, <span class="str">"e12"</span>, ps.Coface(<span class="str">"R2"</span>, <span class="str">"R2"</span>, R_v1))
+shf.AddCoface(<span class="str">"v2"</span>, <span class="str">"e12"</span>, ps.Coface(<span class="str">"R2"</span>, <span class="str">"R2"</span>, R_v2))
+
+shf.GetCell(<span class="str">"v1"</span>).SetDataAssignment(x_v1)
+shf.GetCell(<span class="str">"v2"</span>).SetDataAssignment(x_v2)
+incons = shf.ConsistencyRadius()    <span class="comment"># H^1-flavored measure</span></pre></div>
+
+<div class="code-tab-content" id="sheafnn"><pre><span class="comment"># Sheaf Neural Network — Bodnar 2022 sketch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> SheafLayer(nn.Module):
+    <span class="keyword">def</span> __init__(self, d, hidden):
+        super().__init__()
+        self.predict_R = nn.Sequential(   <span class="comment"># learn restriction maps</span>
+            nn.Linear(<span class="num">2</span>*d, hidden), nn.ReLU(),
+            nn.Linear(hidden, d*d),
+        )
+        self.W = nn.Linear(d, d)
+
+    <span class="keyword">def</span> forward(self, x, edge_index):
+        <span class="comment"># x: (N, d). For each edge predict R_uv, R_vu (d x d)</span>
+        u, v = edge_index
+        h_uv = torch.cat([x[u], x[v]], dim=-<span class="num">1</span>)
+        R = self.predict_R(h_uv).view(-<span class="num">1</span>, d, d)
+        <span class="comment"># Sheaf diffusion step: x ← x - α L_F W(x)</span>
+        msg = torch.einsum(<span class="str">"eij,ej-&gt;ei"</span>, R, self.W(x[u]))
+        out = x.clone()
+        out.index_add_(<span class="num">0</span>, v, msg - self.W(x[v]))
+        <span class="keyword">return</span> out</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Cellular sheaf 相對於 plain graph 的核心差異是？</p><p data-lang="en">What is the core difference between cellular sheaves and plain graphs?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Sheaf 只支援無向 graph</span><span data-lang="en">A. Sheaves only support undirected graphs</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 每節點是 vector space，邊上有 restriction map</span><span data-lang="en">B. Each node is a vector space; edges carry restriction maps</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Sheaf 不能用 Laplacian</span><span data-lang="en">C. Sheaves can't use a Laplacian</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 邊權重必須為 1</span><span data-lang="en">D. Edge weights must be 1</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">H¹(F) &gt; 0 在生物資料上的意義是？</p><p data-lang="en">What does H¹(F) &gt; 0 mean for biological data?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 資料完全一致</span><span data-lang="en">A. The data is fully consistent</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 沒有訊號</span><span data-lang="en">B. There is no signal</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 存在「局部自洽但全域矛盾」的訊號 — 揭示資料中的衝突</span><span data-lang="en">C. There are locally consistent but globally contradictory signals — revealing inconsistency</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 必須重採樣</span><span data-lang="en">D. Re-sample is required</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Sheaf Neural Network (Bodnar 2022) 主要在哪種 graph 上勝過 GCN？</p><p data-lang="en">Where do sheaf neural networks (Bodnar 2022) outperform plain GCNs?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Heterophilic graph（鄰居 label 常常不同）</span><span data-lang="en">A. Heterophilic graphs (neighbors with different labels)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 完全同質的 graph</span><span data-lang="en">B. Perfectly homophilic graphs</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只有 3 個節點的 graph</span><span data-lang="en">C. Graphs with only 3 nodes</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 無邊的 graph</span><span data-lang="en">D. Edge-less graphs</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="symbolic-regression.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 24：符號回歸" data-en="Ch 24: Symbolic Reg">Ch 24：符號回歸</span></a>
+<a href="geometric-dl.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 26：幾何深度學習" data-en="Ch 26: Geometric DL">Ch 26：幾何深度學習</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: 4-node cycle sheaf =====
+const nodes = [
+  {x:150, y:80, label:'v₁'},
+  {x:450, y:80, label:'v₂'},
+  {x:450, y:280, label:'v₃'},
+  {x:150, y:280, label:'v₄'},
+];
+const edges = [[0,1],[1,2],[2,3],[3,0]];
+
+function renderSheaf(){
+  const t = [+document.getElementById('sT1').value,
+             +document.getElementById('sT2').value,
+             +document.getElementById('sT3').value,
+             +document.getElementById('sT4').value];
+  ['vT1','vT2','vT3','vT4'].forEach((id,i)=>document.getElementById(id).textContent=t[i].toFixed(2));
+
+  // accumulate rotation around the cycle starting from v1 with vector (1,0)
+  const vecs = [{x:1,y:0}];
+  let angle = 0;
+  for(let i=0;i<4;i++){
+    angle += t[i];
+    const c = Math.cos(angle), s = Math.sin(angle);
+    if(i<3) vecs.push({x:c, y:s});
+  }
+  // closure: after going round we should return to start
+  const totalAngle = t[0]+t[1]+t[2]+t[3];
+  const closureErr = Math.abs(((totalAngle + Math.PI) % (2*Math.PI)) - Math.PI);
+  const isConsistent = closureErr < 0.05;
+
+  let svg = '';
+  // edges
+  edges.forEach((e,ei)=>{
+    const a=nodes[e[0]], b=nodes[e[1]];
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    svg += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#999" stroke-width="2"/>`;
+    svg += `<text x="${mx}" y="${my-8}" font-size="13" fill="#666" text-anchor="middle">θ${ei+1}=${t[ei].toFixed(2)}</text>`;
+  });
+  // nodes with vector arrows
+  nodes.forEach((n,i)=>{
+    svg += `<circle cx="${n.x}" cy="${n.y}" r="32" fill="${isConsistent?'#d4ecdf':'#fde0e0'}" stroke="${isConsistent?'#1A6B5A':'#c44'}" stroke-width="2"/>`;
+    svg += `<text x="${n.x}" y="${n.y-40}" font-size="14" font-weight="600" text-anchor="middle">${n.label}</text>`;
+    // draw vector
+    const vx = vecs[i].x*22, vy = vecs[i].y*22;
+    svg += `<line x1="${n.x}" y1="${n.y}" x2="${n.x+vx}" y2="${n.y+vy}" stroke="${isConsistent?'#1A6B5A':'#c44'}" stroke-width="3" marker-end="url(#arr)"/>`;
+  });
+  // closure visualization: ghost vector at v1 showing where we end up
+  if(!isConsistent){
+    const finalAngle = totalAngle;
+    const fx = Math.cos(finalAngle)*22, fy = Math.sin(finalAngle)*22;
+    svg += `<line x1="${nodes[0].x}" y1="${nodes[0].y}" x2="${nodes[0].x+fx}" y2="${nodes[0].y+fy}" stroke="#c44" stroke-width="2" stroke-dasharray="4,3" opacity="0.7"/>`;
+  }
+  svg = `<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/></marker></defs>` + svg;
+
+  document.getElementById('sheafSvg').innerHTML = svg;
+  const L = (typeof I18n!=='undefined') ? I18n.get() : 'zh';
+  const box = document.getElementById('sheafReport');
+  if(isConsistent){
+    box.style.background = '#e8f0ec';
+    box.style.borderLeft = '4px solid #1A6B5A';
+    box.innerHTML = L==='zh'
+      ? `<strong>✅ 一致 (consistent)</strong> &nbsp; Σθ ≈ 0 mod 2π，存在 global section。<br>dim H⁰(F) = 1 （consensus）, dim H¹(F) = 0（無衝突）。`
+      : `<strong>✅ Consistent</strong> &nbsp; Σθ ≈ 0 mod 2π — a global section exists.<br>dim H⁰(F) = 1 (consensus), dim H¹(F) = 0 (no inconsistency).`;
+  } else {
+    box.style.background = '#fde8e8';
+    box.style.borderLeft = '4px solid #c44';
+    box.innerHTML = L==='zh'
+      ? `<strong>⚠ 不一致 (inconsistent)</strong> &nbsp; Σθ = ${totalAngle.toFixed(3)} ≠ 0 mod 2π，繞圈後向量旋轉了 ${(closureErr).toFixed(3)} rad，無法回到原點。<br>dim H⁰(F) = 0, dim H¹(F) ≥ 1（迴圈內存在無法調和的衝突）。`
+      : `<strong>⚠ Inconsistent</strong> &nbsp; Σθ = ${totalAngle.toFixed(3)} ≠ 0 mod 2π — rotation around the loop misses by ${(closureErr).toFixed(3)} rad.<br>dim H⁰(F) = 0, dim H¹(F) ≥ 1 (irreconcilable conflict in this loop).`;
+  }
+}
+['sT1','sT2','sT3','sT4'].forEach(id=>document.getElementById(id).addEventListener('input',renderSheaf));
+document.addEventListener('langchange', renderSheaf);
+renderSheaf();
+
+window._QF={zh:{
+  q1_y:'答對！sheaf 的核心是「節點 = vector space + 邊 = restriction map」。',
+  q1_n:'答案是 B。Sheaf 把每節點換成 vector space，並在邊上加 restriction map。',
+  q2_y:'答對！H¹ &gt; 0 直指「局部一致但全域矛盾」的訊號——資料 QC 的強工具。',
+  q2_n:'答案是 C。H¹ &gt; 0 表示存在無法湊回去的局部訊號。',
+  q3_y:'答對！sheaf 的優勢正在 heterophilic graph 上——learned restriction map 能對應「不同類」鄰居。',
+  q3_n:'答案是 A。Sheaf NN 在 heterophilic graph 表現最突出。'
+},en:{
+  q1_y:'Correct! Sheaves = "nodes as vector spaces + edges with restriction maps."',
+  q1_n:'Answer is B. Sheaves upgrade nodes to vector spaces and add restriction maps.',
+  q2_y:'Correct! H¹ &gt; 0 directly flags locally consistent but globally contradictory data — strong QC tool.',
+  q2_n:'Answer is C. H¹ &gt; 0 means there are locally consistent yet non-gluable signals.',
+  q3_y:'Correct! Sheaf NNs shine on heterophilic graphs — learned restriction maps handle dissimilar neighbors.',
+  q3_n:'Answer is A. Sheaf NNs win on heterophilic graphs.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>
