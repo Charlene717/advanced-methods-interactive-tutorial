@@ -1,0 +1,480 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Compressed Sensing — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html" class="active">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 33 / 38</div><h1 data-zh="壓縮感知 (Compressed Sensing)" data-en="Compressed Sensing">壓縮感知 (Compressed Sensing)</h1>
+<p class="subtitle" data-lang="zh">如果信號本質「稀疏」，那麼只用遠少於 Nyquist 取樣定理所要求的量測，就能完整恢復——這就是 Candès, Romberg &amp; Tao (2006) 與 Donoho (2006) 開創的壓縮感知。MERFISH 用 100 個探針偵測 1000+ 基因、Cell Painting 壓縮成像、稀疏 PRS——壓縮感知早已是現代生物資訊的隱形支柱。</p>
+<p class="subtitle" data-lang="en">If a signal is intrinsically sparse, you can fully recover it from far fewer measurements than Nyquist demands — this is compressed sensing, pioneered by Candès, Romberg &amp; Tao (2006) and Donoho (2006). MERFISH detects 1000+ genes with just 100 probes, compressed Cell Painting, sparse PRS — compressed sensing is a silent backbone of modern bioinformatics.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="稀疏 + 隨機投影 = 可恢復" data-en="Sparsity + Random Projection = Recovery">稀疏 + 隨機投影 = 可恢復</h2>
+<div data-lang="zh">
+<p><strong>傳統取樣的痛點：</strong>Shannon–Nyquist 定理說「採樣率必須 ≥ 2×最高頻率」。但對生醫信號——基因表現、影像、磁振造影——大部分維度其實是 0 或近 0。<strong>為什麼還要花這麼多 measurement？</strong></p>
+<p><strong>壓縮感知三要素：</strong></p>
+<ol>
+<li><strong>稀疏性 (sparsity)：</strong>信號 x ∈ ℝ^N 可以寫成 x = Ψ s，其中 s 只有 K ≪ N 個非零項（K-sparse）。Ψ 是某個 dictionary——可以是 wavelet basis、DCT、學到的字典等。</li>
+<li><strong>線性量測 (incoherent sensing)：</strong>量測 y = Φ x ∈ ℝ^M，其中 M ≪ N。Φ 通常是隨機矩陣（Gaussian、Bernoulli、subsampled Fourier），重點是要與 Ψ <strong>incoherent</strong>。</li>
+<li><strong>稀疏恢復 (sparse recovery)：</strong>解 min ‖s‖_1 s.t. y = Φ Ψ s（L1 凸鬆弛，等價於 L0 計數最小化）。</li>
+</ol>
+<p><strong>RIP (Restricted Isometry Property, Candès &amp; Tao 2005)：</strong>若 Φ 對所有 2K-sparse 向量 v 都滿足 (1 − δ) ‖v‖² ≤ ‖Φv‖² ≤ (1 + δ) ‖v‖²（δ &lt; √2 − 1），則 L1 最小化保證唯一恢復原 s。<strong>關鍵結論：</strong>隨機 Gaussian 矩陣只需 M ≈ K log(N/K) 列就以高機率滿足 RIP——遠低於 Nyquist。</p>
+</div>
+<div data-lang="en">
+<p><strong>Pain point of classical sampling:</strong> Shannon–Nyquist requires sampling at twice the highest frequency. But biomedical signals — gene expression, imaging, MRI — are mostly zero or near-zero. <strong>Why pay for so many measurements?</strong></p>
+<p><strong>Three ingredients of compressed sensing:</strong></p>
+<ol>
+<li><strong>Sparsity:</strong> signal x ∈ ℝ^N can be written as x = Ψ s where s has only K ≪ N non-zero entries (K-sparse). Ψ is a dictionary — wavelet basis, DCT, learned dictionary, etc.</li>
+<li><strong>Incoherent sensing:</strong> measurements y = Φ x ∈ ℝ^M with M ≪ N. Φ is typically a random matrix (Gaussian, Bernoulli, subsampled Fourier), <strong>incoherent</strong> with Ψ.</li>
+<li><strong>Sparse recovery:</strong> solve min ‖s‖_1 s.t. y = Φ Ψ s (convex L1 relaxation, equivalent to L0 counting).</li>
+</ol>
+<p><strong>RIP (Restricted Isometry Property, Candès &amp; Tao 2005):</strong> if Φ satisfies (1 − δ) ‖v‖² ≤ ‖Φv‖² ≤ (1 + δ) ‖v‖² for all 2K-sparse v (δ &lt; √2 − 1), then L1 minimization recovers s uniquely. <strong>Key result:</strong> random Gaussian matrices satisfy RIP with high probability using only M ≈ K log(N/K) rows — far below Nyquist.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📉</div><h4 data-zh="少即是多" data-en="Less is more">少即是多</h4><p data-lang="zh">M ≈ K log(N/K) 量測就能恢復 K-sparse 信號，K ≪ N。</p><p data-lang="en">M ≈ K log(N/K) measurements suffice for K-sparse signals, K ≪ N.</p></div>
+  <div class="card"><div class="card-icon">🎲</div><h4 data-zh="隨機性是優勢" data-en="Randomness as feature">隨機性是優勢</h4><p data-lang="zh">隨機矩陣以高機率滿足 RIP——比設計確定性矩陣更實用。</p><p data-lang="en">Random matrices satisfy RIP w.h.p. — easier than designing deterministic ones.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="L1 = 凸 + 稀疏" data-en="L1 = convex + sparse">L1 = 凸 + 稀疏</h4><p data-lang="zh">L1 是 L0 的最緊凸鬆弛，可用 LASSO 高效求解。</p><p data-lang="en">L1 is the tightest convex relaxation of L0 — efficiently solved by LASSO.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 LASSO 到 AMP 與 LISTA" data-en="From LASSO to AMP and LISTA">從 LASSO 到 AMP 與 LISTA</h2>
+<div data-lang="zh">
+<p><strong>① Basis Pursuit / LASSO：</strong>標準凸最佳化形式</p>
+<p style="text-align:center;font-family:Georgia,serif;">ŝ = argmin_s ½ ‖y − A s‖² + λ ‖s‖_1   (A = Φ Ψ)</p>
+<p>可用 coordinate descent (scikit-learn Lasso)、FISTA、ADMM 求解。λ 控制稀疏程度。當 noise → 0 時退化為 Basis Pursuit (BP)：min ‖s‖_1 s.t. As = y。</p>
+<p><strong>② OMP (Orthogonal Matching Pursuit, Pati 1993; Tropp &amp; Gilbert 2007)：</strong>貪婪法。每次選擇與當前 residual 最相關的 atom，加入 active set，重解 least squares 更新 residual。<strong>O(KMN)</strong>，比 L1 求解器快很多。當稀疏度極高（K 很小）時，OMP 已能達到接近最佳的恢復。</p>
+<p><strong>③ AMP (Approximate Message Passing, Donoho, Maleki &amp; Montanari 2009)：</strong>把 message passing 從 dense graph 簡化為迭代閾值法，並用 Onsager correction 校正自相關：</p>
+<p style="text-align:center;font-family:Georgia,serif;">s^{t+1} = η(A^T r^t + s^t; τ_t),  r^{t+1} = y − A s^{t+1} + (1/M) ‖s^{t+1}‖_0 r^t</p>
+<p>η 是 soft-thresholding。AMP 在 i.i.d. Gaussian Φ 下，<strong>state evolution</strong> 可精確預測每步 MSE——是極少數有 sharp phase transition 理論的演算法。</p>
+<p><strong>④ Deep CS / LISTA (Gregor &amp; LeCun 2010)：</strong>把 ISTA / AMP 的迭代「展開」成神經網路：每層權重學出來，比固定 iteration 快數十倍，且能學到非高斯訊號的 prior。後續 ADMM-Net、LDAMP、Deep K-SVD 等都是這個概念的延伸。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Basis Pursuit / LASSO:</strong> standard convex optimization</p>
+<p style="text-align:center;font-family:Georgia,serif;">ŝ = argmin_s ½ ‖y − A s‖² + λ ‖s‖_1   (A = Φ Ψ)</p>
+<p>Solved by coordinate descent (scikit-learn Lasso), FISTA, or ADMM. λ controls sparsity. As noise → 0, reduces to Basis Pursuit (BP): min ‖s‖_1 s.t. As = y.</p>
+<p><strong>② OMP (Orthogonal Matching Pursuit, Pati 1993; Tropp &amp; Gilbert 2007):</strong> greedy. Pick the atom most correlated with the current residual, add to the active set, re-solve least squares, update residual. <strong>O(KMN)</strong> — much faster than L1 solvers. For very sparse signals (small K), OMP is near-optimal.</p>
+<p><strong>③ AMP (Approximate Message Passing, Donoho, Maleki &amp; Montanari 2009):</strong> simplifies dense-graph message passing into iterative thresholding plus an Onsager correction:</p>
+<p style="text-align:center;font-family:Georgia,serif;">s^{t+1} = η(A^T r^t + s^t; τ_t),  r^{t+1} = y − A s^{t+1} + (1/M) ‖s^{t+1}‖_0 r^t</p>
+<p>η is soft-thresholding. Under i.i.d. Gaussian Φ, <strong>state evolution</strong> predicts MSE per iteration exactly — one of very few algorithms with a sharp phase-transition theory.</p>
+<p><strong>④ Deep CS / LISTA (Gregor &amp; LeCun 2010):</strong> unroll ISTA / AMP iterations into a neural network with learnable weights — orders of magnitude faster than fixed iterations and adapts to non-Gaussian priors. Followups: ADMM-Net, LDAMP, Deep K-SVD.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Phase transition：</strong>Donoho &amp; Tanner (2009) 證明在大維度 (N → ∞)，恢復成功與否取決於兩個比率：<strong>δ = M/N</strong>（量測比率）與 <strong>ρ = K/M</strong>（相對稀疏度）。在 (δ, ρ) 平面有一條 sharp 曲線——上方失敗、下方完美恢復。AMP 演算法達到此理論曲線。</div>
+<div data-lang="en"><strong>Phase transition:</strong> Donoho &amp; Tanner (2009) showed that for large N, recovery success depends on two ratios: <strong>δ = M/N</strong> (undersampling) and <strong>ρ = K/M</strong> (relative sparsity). There is a sharp curve in the (δ, ρ) plane — above it, failure; below, exact recovery. AMP attains this theoretical curve.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="調整 M / K，觀察稀疏恢復何時成功" data-en="Slide M / K and Watch Sparse Recovery Succeed or Fail">調整 M / K，觀察稀疏恢復何時成功</h2>
+<div data-lang="zh"><p>底下模擬：N = 128 維的稀疏信號 x（只有 K 個位置非零），用 M × N 高斯隨機矩陣 Φ 量測 y = Φx，再用 OMP（簡化版）試圖恢復。藍色 = 原信號、紅色 = 恢復結果。<strong>當 M 太小或 K 太大時恢復就會失敗</strong>——這正是 phase transition。</p></div>
+<div data-lang="en"><p>Simulation: a sparse signal x ∈ ℝ^128 with K non-zeros, measured by a Gaussian random Φ giving y = Φx, then recovered by a simplified OMP. Blue = original, red = recovered. <strong>Recovery breaks when M is too small or K too large</strong> — that's the phase transition.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="量測數 M" data-en="Measurements M">M <span id="vM">40</span> / 128</label><input type="range" id="sM" min="8" max="120" value="40" step="2"></div>
+<div class="slider-group"><label data-zh="稀疏度 K (非零項)" data-en="Sparsity K (non-zeros)">K <span id="vK">8</span></label><input type="range" id="sK" min="1" max="40" value="8" step="1"></div>
+<div class="slider-group"><label data-zh="雜訊強度 σ" data-en="Noise σ">σ <span id="vS">0.00</span></label><input type="range" id="sS" min="0" max="0.3" value="0" step="0.01"></div>
+<button id="reseed" style="margin:8px 0 12px;padding:6px 14px;font-size:.85rem;border:1px solid var(--c-border);background:#fff;border-radius:6px;cursor:pointer;" data-zh="🎲 重抽信號" data-en="🎲 Re-sample">🎲 重抽信號</button>
+<div style="position:relative;height:240px;"><canvas id="csChart"></canvas></div>
+<div id="csInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用壓縮感知？" data-en="When to use compressed sensing?">什麼時候用壓縮感知？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>量測昂貴、信號稀疏</strong>——MRI、空間轉錄體探針設計、CRISPR 池化篩選。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>已知或可學 sparsifying basis</strong>——影像 wavelet、基因表現 PCA、自編字典。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>需要解析度高於 Nyquist</strong>——super-resolution microscopy (DNA-PAINT, STORM)。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>信號不稀疏（如連續濃淡的自然影像，且無 wavelet 稀疏先驗），或量測本身已很便宜時——增加量測比學 CS 更直接。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Expensive measurements, sparse signal</strong> — MRI, spatial transcriptomics probe design, pooled CRISPR screens.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Known or learnable sparsifying basis</strong> — image wavelets, gene-expression PCA, learned dictionaries.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Need super-Nyquist resolution</strong> — super-resolution microscopy (DNA-PAINT, STORM).</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Signals that aren't sparse in any known basis, or when more measurements are cheap — just sample more.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="壓縮感知在單細胞、影像與基因體" data-en="Compressed Sensing in Single-cell, Imaging and Genomics">壓縮感知在單細胞、影像與基因體</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="MERFISH / seqFISH" data-en="MERFISH / seqFISH">MERFISH / seqFISH</h4>
+<p data-lang="zh">Moffitt et al. (2016, Science / PNAS) 把 1001 個基因編成 16-bit 二元碼字、只用 16 輪雜交（共~100 個探針）即可解碼。本質上就是 CS：基因表現在任一細胞 sparse（只有少量同時高表現），量測矩陣為 binary code book。後續 MERFISH 商業化（Vizgen），seqFISH+ (Eng 2019) 把概念推到 10000 基因。</p>
+<p data-lang="en">Moffitt et al. (2016, Science / PNAS) encoded 1001 genes into 16-bit binary codewords, decoded from ~100 probes across 16 hybridization rounds. Pure CS: per-cell expression is sparse, the measurement matrix is the codebook. Commercialized as MERFISH (Vizgen); seqFISH+ (Eng 2019) pushed to 10000 genes.</p></div>
+
+<div class="card"><h4 data-zh="DNA-PAINT super-resolution" data-en="DNA-PAINT super-resolution">DNA-PAINT super-resolution</h4>
+<p data-lang="zh">Jungmann et al. (2014, Nature Methods) 用瞬時 DNA 雜交「閃光」單分子定位。CS 重建（Min 2014, Nature Methods）：稀疏 emitter prior + 偽 PSF 量測，比傳統 single-molecule fitting 在高密度區更穩。</p>
+<p data-lang="en">Jungmann et al. (2014, Nature Methods) use transient DNA hybridization for single-molecule "blinks". CS reconstruction (Min 2014, Nature Methods): sparse emitter prior + pseudo-PSF measurement — more robust than single-molecule fitting in dense regions.</p></div>
+
+<div class="card"><h4 data-zh="LASSO-PRS 稀疏多基因評分" data-en="LASSO-PRS sparse polygenic score">LASSO-PRS 稀疏多基因評分</h4>
+<p data-lang="zh">PRS 傳統用所有 SNP 加權求和；LASSO-PRS（Mak et al. 2017, Genet Epidemiol; lassosum）把它變成 CS 問題：少量「真因果」SNP 構成稀疏信號，GWAS summary stats 是量測，L1 罰項挑出 active SNP，預測力與可解釋性同時提升。</p>
+<p data-lang="en">PRS traditionally sums over all SNPs; LASSO-PRS (Mak et al. 2017, Genet Epidemiol; lassosum) frames it as CS: few causal SNPs form a sparse signal, GWAS summary stats are measurements, L1 picks active SNPs — better prediction and interpretability.</p></div>
+
+<div class="card"><h4 data-zh="Compressed Cell Painting" data-en="Compressed Cell Painting">Compressed Cell Painting</h4>
+<p data-lang="zh">Bray et al. (2016, Nature Protocols) 之 Cell Painting 用 5 染料拍 5 通道。Way et al. (2021) 與 Caicedo 後續研究顯示：morphology feature 在 PCA 後極稀疏，可用 CS-like 隨機投影壓縮 50%–80% 仍保留 MoA 訊號——讓 high-content screening 更便宜。</p>
+<p data-lang="en">Cell Painting (Bray 2016, Nature Protocols) uses 5 dyes / 5 channels. Way et al. (2021) and Caicedo lab follow-ups show morphology features are highly sparse after PCA — random projections compress by 50–80% while preserving MoA signal, lowering HCS costs.</p></div>
+
+<div class="card"><h4 data-zh="CITE-seq panel design" data-en="CITE-seq panel design">CITE-seq panel design</h4>
+<p data-lang="zh">CITE-seq 用抗體偵測蛋白質——預算只有 ~100 種抗體，卻想覆蓋 1000+ marker。Cleary et al. (2017, Cell) 提出 composite measurement（多種抗體共 barcode）+ CS 解碼，理論上可從 100 measurements 恢復 1000 protein abundances。</p>
+<p data-lang="en">CITE-seq uses antibodies to read proteins — limited to ~100 antibodies but wants to cover 1000+ markers. Cleary et al. (2017, Cell) proposed composite measurements (multi-antibody barcodes) + CS decoding — recovering 1000 protein levels from 100 measurements.</p></div>
+
+<div class="card"><h4 data-zh="CRISPR pooled screen + CS decoder" data-en="CRISPR pooled screen + CS decoder">CRISPR pooled screen + CS decoder</h4>
+<p data-lang="zh">Pooled CRISPR screen 用 barcode 把 sgRNA 識別出來。Adamson et al. (2016, Cell) 的 Perturb-seq 與後續 compressed Perturb-seq (Yao 2023, biorXiv) 採用 CS 思想：同時擾動多個基因、用 L1 解碼真正活性基因，降低 library 成本。</p>
+<p data-lang="en">Pooled CRISPR screens identify sgRNAs by barcode. Adamson et al. (2016, Cell) Perturb-seq and follow-up compressed Perturb-seq (Yao 2023, bioRxiv) use CS: perturb many genes at once, L1-decode active ones — cuts library cost.</p></div>
+
+<div class="card"><h4 data-zh="Sparse imaging mass spectrometry" data-en="Sparse imaging mass spec">Sparse imaging mass spectrometry</h4>
+<p data-lang="zh">代謝物 MSI 像素 × m/z 維度爆炸——但每像素只有少量 metabolite 顯著。Bemis et al. (2015, Bioinformatics) 用 CS 重建 sparse spatial-spectral map，速度 + 解析度同升。</p>
+<p data-lang="en">Metabolite MSI has huge pixel × m/z dimension, yet each pixel has few significant metabolites. Bemis et al. (2015, Bioinformatics) reconstruct sparse spatial-spectral maps with CS — faster and higher-resolution.</p></div>
+
+<div class="card"><h4 data-zh="Tasic 2018 — sparse marker cell typing" data-en="Tasic 2018 — sparse markers">Tasic 2018 — sparse marker cell typing</h4>
+<p data-lang="zh">Tasic et al. (2018, Nature) 在 mouse cortex 用稀疏 panel of marker gene 識別 ~100 神經細胞型別。本質上是「在低維 marker 空間中保持階層 cluster 可分」——LASSO + 階層 selection 的 CS 變體。</p>
+<p data-lang="en">Tasic et al. (2018, Nature) identify ~100 cortical cell types with a sparse marker panel — keeping clusters separable in low-dim marker space, a CS variant with LASSO + hierarchical selection.</p></div>
+
+<div class="card"><h4 data-zh="Imaging mass cytometry 重建" data-en="Imaging mass cytometry reconstruction">Imaging mass cytometry 重建</h4>
+<p data-lang="zh">IMC 同時量 40+ marker，但取樣慢。Compressed acquisition (Schapiro 2017; Bodenmiller lab) 採用稀疏隨機取樣 + sparse-in-wavelet prior 重建，把成像時間縮短一半。</p>
+<p data-lang="en">IMC measures 40+ markers but acquisition is slow. Compressed acquisition (Schapiro 2017; Bodenmiller lab) uses sparse random sampling + wavelet sparsity to halve scan time.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="壓縮感知的進階主題" data-en="Advanced Topics in Compressed Sensing">壓縮感知的進階主題</h2>
+<div data-lang="zh">
+<h3>① 結構化稀疏 (Structured Sparsity)</h3>
+<p>實務信號常不只「稀疏」——還有結構（block-sparse、group-sparse、tree-sparse）。Group LASSO（Yuan &amp; Lin 2006）、model-based CS（Baraniuk 2010, IEEE TIT）利用結構先驗，可進一步減少所需量測 M。</p>
+
+<h3>② Total Variation (TV) 與 MRI</h3>
+<p>MRI 影像稀疏於 gradient（鄰像素差很小）——min ‖∇x‖_1 即 TV-CS。Lustig et al. (2007, MRM) 把 CS 引入 MRI 加速 4–6×，現已成商業 MRI 標配（GE/Siemens "Compressed Sensing" mode）。</p>
+
+<h3>③ Dictionary Learning</h3>
+<p>當預設 basis (DCT/Wavelet) 不夠稀疏，可從資料學 dictionary：K-SVD (Aharon 2006, IEEE TSP)、Online dictionary learning (Mairal 2009)。生物應用：Cell Painting feature dictionary、ATAC-seq motif dictionary。</p>
+
+<h3>④ Bayesian CS</h3>
+<p>Ji, Xue &amp; Carin (2008, IEEE TSP) 把 sparse prior 換成 Laplace 或 spike-and-slab，做 MCMC / VB 推論，得到 posterior。優點：自然提供 uncertainty——在臨床預測尤為重要。</p>
+
+<h3>⑤ One-bit CS</h3>
+<p>Boufounos &amp; Baraniuk (2008) 把量測量化為 ±1（只取 sign），仍可恢復方向。對 ADC 受限的硬體（生物感測器、IoT）非常實用。</p>
+
+<h3>⑥ Generative / Plug-and-Play Prior</h3>
+<p>除了 L1，可用 deep generative model（VAE/GAN/Diffusion）當 prior：Bora et al. (2017, ICML) 證明在 m = O(k log n) 量測下，generative prior 比 L1 表現更好。Score-based Diffusion + CS（Chung 2022）成為當前最強 MRI/CT 重建 SOTA。</p>
+
+<h3>⑦ 與 sketching / random feature 的關係</h3>
+<p>CS 的 Φ ≈ 隨機投影，與 dimensionality reduction (Johnson–Lindenstrauss)、kernel sketching、隨機 forest 同源。CS 為這些方法提供 sample complexity 下界。</p>
+
+<h3>⑧ 為何 L1 work？</h3>
+<p>L1 是 L0 (counting) 的最緊凸鬆弛，幾何上「L1 球的角」剛好落在稀疏軸上。Candès 證在 RIP 下，L1 解 = L0 解。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Structured sparsity</h3>
+<p>Real signals often have structure beyond mere sparsity — block-sparse, group-sparse, tree-sparse. Group LASSO (Yuan &amp; Lin 2006), model-based CS (Baraniuk 2010, IEEE TIT) exploit structural priors to further reduce M.</p>
+
+<h3>② Total Variation (TV) + MRI</h3>
+<p>MRI images are sparse in gradient — min ‖∇x‖_1 is TV-CS. Lustig et al. (2007, MRM) brought CS to MRI for 4–6× acceleration, now standard in commercial scanners (GE/Siemens "Compressed Sensing" mode).</p>
+
+<h3>③ Dictionary learning</h3>
+<p>When fixed bases (DCT/wavelet) aren't sparse enough, learn a dictionary from data: K-SVD (Aharon 2006, IEEE TSP), online DL (Mairal 2009). Biology: Cell Painting feature dictionaries, ATAC-seq motif dictionaries.</p>
+
+<h3>④ Bayesian CS</h3>
+<p>Ji, Xue &amp; Carin (2008, IEEE TSP) replace the sparse prior with Laplace or spike-and-slab and do MCMC / VB to get a posterior — natural uncertainty quantification, vital for clinical prediction.</p>
+
+<h3>⑤ One-bit CS</h3>
+<p>Boufounos &amp; Baraniuk (2008) quantize measurements to ±1 (sign only) and still recover the direction. Useful for ADC-limited hardware (biosensors, IoT).</p>
+
+<h3>⑥ Generative / plug-and-play priors</h3>
+<p>Beyond L1, use deep generative models (VAE/GAN/Diffusion) as priors: Bora et al. (2017, ICML) showed generative priors beat L1 at m = O(k log n). Score-based diffusion + CS (Chung 2022) is now SOTA for MRI/CT reconstruction.</p>
+
+<h3>⑦ Relation to sketching / random features</h3>
+<p>CS's Φ ≈ random projection, related to JL dimensionality reduction, kernel sketching, random forests. CS gives sample-complexity bounds for these.</p>
+
+<h3>⑧ Why does L1 work?</h3>
+<p>L1 is the tightest convex relaxation of L0; geometrically, the L1 ball's corners lie on sparse axes. Under RIP, L1's solution equals L0's.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="壓縮感知還能改良哪些任務？" data-en="What Else Could CS Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Compressed scRNA-seq 探針設計</h3>
+<p>目前 single-cell platforms（10x, Visium）量所有基因。<strong>提案：</strong>設計「composite primer」混合多個 gene 的訊號，用 CS 解碼出單細胞表現，降低 sequencing 成本 5–10×。</p>
+
+<h3>🎯 2. CS-based GWAS replication</h3>
+<p>大型 GWAS 重複常需重新基因型化。<strong>提案：</strong>只 genotype 隨機選 K log(N/K) 個 SNP，配合 LD reference 用 CS 重建全 panel——大幅降低重現成本。</p>
+
+<h3>🎯 3. 動態壓縮感知 single-cell longitudinal</h3>
+<p>追蹤 patient 動態 transcriptome 時，連續 timepoint 差異稀疏。<strong>提案：</strong>每個 timepoint 只測 Δ-CS（差異稀疏採樣），重建完整 trajectory。</p>
+
+<h3>🎯 4. Compressed Cryo-EM particle picking</h3>
+<p>Cryo-EM micrograph 大部分是冰、極少 particle。<strong>提案：</strong>用 CS-like sparse acquisition 加速 particle picking，配合 diffusion prior 做缺失恢復。</p>
+
+<h3>🎯 5. 整合 CS + Diffusion model 用於 spatial 重建</h3>
+<p>Spatial transcriptomics 解析度受限。<strong>提案：</strong>把 ST 視為 sparse subsampling，用 score-based diffusion prior 做 super-resolution——比現有 deep ST 模型更穩健。</p>
+
+<h3>🎯 6. Compressed multiplexed metabolomics</h3>
+<p>單一細胞代謝體幾百個分子，但每細胞只測 10–20 個。<strong>提案：</strong>用 CS 設計「複合質譜標籤」，從少量探針恢復數百代謝物濃度。</p>
+
+<h3>🎯 7. 壓縮感知 + Federated learning</h3>
+<p>聯邦學習頻寬瓶頸：gradient 上傳成本高。<strong>提案：</strong>每 client 對 gradient 做 CS 壓縮，server 端解碼——維持 privacy 又降低通訊（生醫聯邦尤其重要）。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Compressed scRNA-seq probe design</h3>
+<p>Current platforms (10x, Visium) measure all genes. <strong>Proposal:</strong> design composite primers mixing many gene signals, CS-decode to per-cell expression — 5–10× cheaper sequencing.</p>
+
+<h3>🎯 2. CS-based GWAS replication</h3>
+<p>Replication often re-genotypes everyone. <strong>Proposal:</strong> genotype only K log(N/K) random SNPs and CS-reconstruct the full panel via LD reference — slashes replication cost.</p>
+
+<h3>🎯 3. Dynamic CS for longitudinal single-cell</h3>
+<p>For patient time-courses, transcriptome differences between timepoints are sparse. <strong>Proposal:</strong> Δ-CS sampling per timepoint, reconstruct full trajectory.</p>
+
+<h3>🎯 4. Compressed cryo-EM particle picking</h3>
+<p>Most micrograph pixels are ice. <strong>Proposal:</strong> CS-like sparse acquisition for picking, with diffusion priors filling missing regions.</p>
+
+<h3>🎯 5. CS + diffusion priors for spatial</h3>
+<p>ST resolution is limited. <strong>Proposal:</strong> treat ST as sparse subsampling and use a score-based diffusion prior for super-resolution — more robust than current deep-ST models.</p>
+
+<h3>🎯 6. Compressed multiplexed metabolomics</h3>
+<p>Per-cell metabolomes have hundreds of metabolites but few measured. <strong>Proposal:</strong> CS-designed composite MS tags to recover hundreds from a small panel.</p>
+
+<h3>🎯 7. CS + federated learning</h3>
+<p>Federated learning is bandwidth-limited. <strong>Proposal:</strong> CS-compress per-client gradients, decode at server — preserves privacy, reduces communication. Especially valuable for biomedical federation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / scikit-learn Lasso</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / OMP</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / cvxpy BP</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py4')">Python / pylops</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># Compressed sensing via LASSO</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> sklearn.linear_model <span class="keyword">import</span> Lasso
+
+N, K, M = <span class="num">256</span>, <span class="num">10</span>, <span class="num">60</span>
+<span class="comment"># Sparse signal</span>
+s = np.zeros(N)
+idx = np.random.choice(N, K, replace=<span class="keyword">False</span>)
+s[idx] = np.random.randn(K) * <span class="num">3</span>
+<span class="comment"># Random Gaussian sensing matrix</span>
+Phi = np.random.randn(M, N) / np.sqrt(M)
+y = Phi @ s + <span class="num">0.01</span> * np.random.randn(M)
+
+<span class="comment"># Recover with LASSO (L1 regularized regression)</span>
+model = Lasso(alpha=<span class="num">0.01</span>, max_iter=<span class="num">5000</span>)
+model.fit(Phi, y)
+s_hat = model.coef_
+err = np.linalg.norm(s - s_hat) / np.linalg.norm(s)
+print(<span class="str">f"relative error: {err:.4f}"</span>)</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># Orthogonal Matching Pursuit (OMP)</span>
+<span class="keyword">from</span> sklearn.linear_model <span class="keyword">import</span> OrthogonalMatchingPursuit
+
+omp = OrthogonalMatchingPursuit(n_nonzero_coefs=K)
+omp.fit(Phi, y)
+s_hat = omp.coef_
+
+<span class="comment"># Manual OMP (educational)</span>
+<span class="keyword">def</span> omp_manual(Phi, y, K):
+    r = y.copy(); support = []
+    <span class="keyword">for</span> _ <span class="keyword">in</span> range(K):
+        j = np.argmax(np.abs(Phi.T @ r))
+        support.append(j)
+        s_act, *_ = np.linalg.lstsq(Phi[:, support], y, rcond=<span class="keyword">None</span>)
+        r = y - Phi[:, support] @ s_act
+    s = np.zeros(Phi.shape[<span class="num">1</span>]); s[support] = s_act
+    <span class="keyword">return</span> s</pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="comment"># Basis Pursuit via cvxpy</span>
+<span class="keyword">import</span> cvxpy <span class="keyword">as</span> cp
+
+s_var = cp.Variable(N)
+problem = cp.Problem(cp.Minimize(cp.norm1(s_var)),
+                     [Phi @ s_var == y])
+problem.solve(solver=cp.ECOS)
+s_hat = s_var.value
+
+<span class="comment"># Basis Pursuit Denoising (BPDN) — handles noise</span>
+eps = <span class="num">0.05</span>
+problem_bpdn = cp.Problem(
+    cp.Minimize(cp.norm1(s_var)),
+    [cp.norm(Phi @ s_var - y, <span class="num">2</span>) &lt;= eps])
+problem_bpdn.solve()</pre></div>
+
+<div class="code-tab-content" id="py4"><pre><span class="comment"># Large-scale CS with pylops (matrix-free linear ops)</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> pylops <span class="keyword">import</span> MatrixMult
+<span class="keyword">from</span> pylops.optimization.sparsity <span class="keyword">import</span> FISTA, OMP
+
+Phi_op = MatrixMult(Phi)
+<span class="comment"># FISTA for L1-regularised problem (fast)</span>
+s_hat = FISTA(Phi_op, y, niter=<span class="num">200</span>, eps=<span class="num">0.01</span>)[<span class="num">0</span>]
+
+<span class="comment"># Production: wavelet-CS for MRI</span>
+<span class="comment"># from pylops.signalprocessing import DWT2D</span>
+<span class="comment"># A = SubsampledFourier * DWT2D — solves min ‖Wx‖_1 s.t. y = SFx</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">壓縮感知能用比 Nyquist 少很多的量測恢復信號，最關鍵的前提是？</p><p data-lang="en">CS can recover from far fewer measurements than Nyquist. The most crucial prerequisite is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 信號頻率必須低</span><span data-lang="en">A. The signal must be low-frequency</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 量測矩陣必須是滿秩方陣</span><span data-lang="en">B. Sensing matrix must be full-rank square</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 信號在某個 basis 下是稀疏的</span><span data-lang="en">C. The signal is sparse in some basis</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 必須有 GPU</span><span data-lang="en">D. GPU is required</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼在 CS 中常用 L1 而非 L0 作為稀疏代理？</p><p data-lang="en">Why use L1 instead of L0 as the sparsity proxy in CS?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. L1 比 L0 更稀疏</span><span data-lang="en">A. L1 is sparser than L0</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. L1 是 L0 的最緊凸鬆弛，可高效求解，且在 RIP 條件下解相同</span><span data-lang="en">B. L1 is the tightest convex relaxation of L0, efficiently solvable, and equals L0 under RIP</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. L0 不存在</span><span data-lang="en">C. L0 doesn't exist</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. L1 是 L2 的平方根</span><span data-lang="en">D. L1 is the square root of L2</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">MERFISH 用 ~100 個探針偵測 1000+ 個基因——對應 CS 中哪個概念？</p><p data-lang="en">MERFISH detects 1000+ genes using ~100 probes — which CS concept does this correspond to?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 每細胞表現稀疏 + 二元碼字當 sensing matrix + CS 解碼</span><span data-lang="en">A. Sparse per-cell expression + binary codebook as sensing matrix + CS decoding</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 隨機猜測</span><span data-lang="en">B. Random guessing</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. PCR amplification</span><span data-lang="en">C. PCR amplification</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. UMI deduplication</span><span data-lang="en">D. UMI deduplication</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="sliced-wasserstein.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 32：Sliced Wasserstein" data-en="Ch 32: Sliced Wasserstein">Ch 32：Sliced Wasserstein</span></a>
+<a href="wavelets-multires.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 34：Wavelets &amp; Multi-resolution" data-en="Ch 34: Wavelets &amp; Multi-resolution">Ch 34：Wavelets</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Compressed sensing recovery =====
+const N=128;
+let trueSignal=null, signalIdx=null;
+function reseed(){
+  const K=+document.getElementById('sK').value;
+  trueSignal=new Array(N).fill(0);
+  const idx=[];
+  while(idx.length<K){const j=Math.floor(Math.random()*N);if(!idx.includes(j))idx.push(j);}
+  signalIdx=idx;
+  idx.forEach(j=>trueSignal[j]=(Math.random()*2-1)*(0.5+Math.random()*1.5));
+}
+reseed();
+
+// Box-Muller
+function gauss(){const u=Math.random()||1e-9,v=Math.random()||1e-9;return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+function genPhi(M){const Phi=[];for(let i=0;i<M;i++){const row=new Array(N);for(let j=0;j<N;j++)row[j]=gauss()/Math.sqrt(M);Phi.push(row);}return Phi;}
+function matvec(A,x){return A.map(r=>r.reduce((s,v,i)=>s+v*x[i],0));}
+function matTvec(A,y){const M=A.length;const out=new Array(N).fill(0);for(let j=0;j<N;j++){let s=0;for(let i=0;i<M;i++)s+=A[i][j]*y[i];out[j]=s;}return out;}
+
+// Simplified OMP recovery
+function omp(Phi,y,K){
+  const M=Phi.length;
+  let r=y.slice();
+  const support=[];
+  const sHat=new Array(N).fill(0);
+  for(let it=0;it<K;it++){
+    const corr=matTvec(Phi,r);
+    let best=-1,bestv=-1;
+    for(let j=0;j<N;j++){if(support.includes(j))continue;const a=Math.abs(corr[j]);if(a>bestv){bestv=a;best=j;}}
+    if(best<0)break;
+    support.push(best);
+    // Least squares on support via normal equations (small support so direct)
+    const k=support.length;
+    const G=Array.from({length:k},()=>new Array(k).fill(0));
+    const b=new Array(k).fill(0);
+    for(let i=0;i<k;i++){
+      for(let j=0;j<k;j++){let s=0;for(let m=0;m<M;m++)s+=Phi[m][support[i]]*Phi[m][support[j]];G[i][j]=s;}
+      let s=0;for(let m=0;m<M;m++)s+=Phi[m][support[i]]*y[m];b[i]=s;
+    }
+    // Gaussian elimination
+    for(let i=0;i<k;i++){
+      let piv=i;for(let p=i+1;p<k;p++)if(Math.abs(G[p][i])>Math.abs(G[piv][i]))piv=p;
+      if(piv!==i){[G[i],G[piv]]=[G[piv],G[i]];[b[i],b[piv]]=[b[piv],b[i]];}
+      const d=G[i][i];if(Math.abs(d)<1e-12)continue;
+      for(let j=i;j<k;j++)G[i][j]/=d;b[i]/=d;
+      for(let p=0;p<k;p++)if(p!==i){const f=G[p][i];for(let j=i;j<k;j++)G[p][j]-=f*G[i][j];b[p]-=f*b[i];}
+    }
+    // sHat reset
+    for(let j=0;j<N;j++)sHat[j]=0;
+    support.forEach((j,i)=>sHat[j]=b[i]);
+    // Update residual
+    const Ax=matvec(Phi,sHat);
+    r=y.map((yi,i)=>yi-Ax[i]);
+  }
+  return sHat;
+}
+
+let chart=null;
+function render(){
+  const M=+document.getElementById('sM').value;
+  const K=+document.getElementById('sK').value;
+  const sigma=+document.getElementById('sS').value;
+  document.getElementById('vM').textContent=M;
+  document.getElementById('vK').textContent=K;
+  document.getElementById('vS').textContent=sigma.toFixed(2);
+
+  const Phi=genPhi(M);
+  const y=matvec(Phi,trueSignal).map(v=>v+sigma*gauss());
+  const sHat=omp(Phi,y,Math.min(K+2,M-1));
+
+  // Recovery error
+  let nT=0,nE=0;
+  for(let i=0;i<N;i++){nT+=trueSignal[i]*trueSignal[i];nE+=(trueSignal[i]-sHat[i])**2;}
+  const relErr=Math.sqrt(nE/Math.max(nT,1e-9));
+  const success=relErr<0.15;
+
+  const labels=Array.from({length:N},(_,i)=>i);
+  if(chart)chart.destroy();
+  const ctx=document.getElementById('csChart').getContext('2d');
+  chart=new Chart(ctx,{type:'bar',data:{labels:labels,datasets:[
+    {label:'True signal',data:trueSignal,backgroundColor:'rgba(37,99,168,0.85)',borderColor:'rgba(37,99,168,1)',borderWidth:0,categoryPercentage:1.0,barPercentage:1.0,order:2},
+    {label:'OMP recovery',data:sHat,backgroundColor:'rgba(192,57,43,0.55)',borderColor:'rgba(192,57,43,0.9)',borderWidth:0,categoryPercentage:1.0,barPercentage:0.45,order:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{ticks:{display:false},grid:{display:false}},y:{title:{display:true,text:'amplitude'}}},plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}}}});
+
+  const L=I18n.get();
+  document.getElementById('csInfo').innerHTML=L==='zh'?
+    `量測 / 維度比率 δ = M/N = <strong>${(M/N).toFixed(2)}</strong>，相對稀疏度 ρ = K/M = <strong>${(K/M).toFixed(2)}</strong>。<br>相對恢復誤差 = <strong>${relErr.toFixed(3)}</strong> ${success?'✅ 恢復成功':'❌ 恢復失敗 — 提高 M 或降低 K'}.<br>Donoho–Tanner 相變理論：當 (δ, ρ) 落在某曲線下方，L1/OMP 可完美恢復；上方則失敗。`
+    :
+    `Sampling ratio δ = M/N = <strong>${(M/N).toFixed(2)}</strong>, relative sparsity ρ = K/M = <strong>${(K/M).toFixed(2)}</strong>.<br>Relative error = <strong>${relErr.toFixed(3)}</strong> ${success?'✅ Recovery success':'❌ Recovery fails — increase M or reduce K'}.<br>Donoho–Tanner phase transition: below a curve in (δ, ρ), L1/OMP recovers; above, it fails.`;
+}
+
+document.getElementById('sM').addEventListener('input',render);
+document.getElementById('sK').addEventListener('input',()=>{reseed();render();});
+document.getElementById('sS').addEventListener('input',render);
+document.getElementById('reseed').addEventListener('click',()=>{reseed();render();});
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！稀疏性 + RIP 是 CS 的兩大基石。',
+  q1_n:'答案是 C。CS 的關鍵假設是「信號在某個 basis 下是稀疏的」。',
+  q2_y:'答對！L1 為凸鬆弛、可高效解、且在 RIP 條件下與 L0 解相同。',
+  q2_n:'答案是 B。L1 是 L0 的最緊凸鬆弛，能高效求解，並在 RIP 條件下達到 L0 同解。',
+  q3_y:'答對！這正是 MERFISH 的 CS 邏輯。',
+  q3_n:'答案是 A。MERFISH 利用基因表現的稀疏性 + 二元碼字 sensing matrix + CS 解碼。'
+},en:{
+  q1_y:'Correct! Sparsity + RIP are the two pillars of CS.',
+  q1_n:'Answer is C. The core assumption is that the signal is sparse in some basis.',
+  q2_y:'Correct! L1 is the tightest convex relaxation, efficient, and equals L0 under RIP.',
+  q2_n:'Answer is B. L1 is the tightest convex relaxation of L0, efficiently solvable, and yields the same solution under RIP.',
+  q3_y:'Correct! This is exactly the CS logic of MERFISH.',
+  q3_n:'Answer is A. MERFISH uses sparse per-cell expression + binary codebook as sensing matrix + CS decoding.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,368 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>HSIC &amp; dCor — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html" class="active">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 2 / 14</div><h1 data-zh="HSIC 與 Distance Correlation" data-en="HSIC &amp; Distance Correlation">HSIC 與 Distance Correlation</h1>
+<p class="subtitle" data-lang="zh">基於核方法 (kernel) 與能量距離 (energy distance) 的獨立性檢定——可推廣到向量、矩陣、甚至圖等任意結構的隨機變數。</p>
+<p class="subtitle" data-lang="en">Kernel-based and energy-distance independence tests — generalizable to vectors, matrices, and even graph-valued random variables.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="兩派思路：核 vs 距離" data-en="Two Schools: Kernel vs Distance">兩派思路：核 vs 距離</h2>
+<div data-lang="zh">
+<p><strong>HSIC (Hilbert-Schmidt Independence Criterion, Gretton 2005)：</strong>把 X、Y 透過核函數映射到 RKHS（再生核 Hilbert 空間），計算映射後的協方差算子的 Hilbert-Schmidt 範數。獨立 ⇔ HSIC = 0（用「characteristic kernel」如 Gaussian/RBF 時）。</p>
+<p><strong>Distance Correlation, dCor (Székely 2007)：</strong>用 X 與 Y 的成對距離矩陣（中心化後）的相關來衡量依賴。獨立 ⇔ dCor = 0，這是一個比 Pearson 強得多的等價條件。</p>
+<p>兩者數學上等價——HSIC 用核技巧描述、dCor 用距離描述，但本質都是「距離–距離相關」家族。</p>
+</div>
+<div data-lang="en">
+<p><strong>HSIC (Hilbert-Schmidt Independence Criterion, Gretton 2005):</strong> Map X, Y into a reproducing kernel Hilbert space (RKHS) via kernel functions; measure the Hilbert-Schmidt norm of the cross-covariance operator. Independence ⇔ HSIC = 0 (with a characteristic kernel like Gaussian/RBF).</p>
+<p><strong>Distance Correlation, dCor (Székely 2007):</strong> Use the correlation of (centered) pairwise distance matrices of X and Y. Independence ⇔ dCor = 0 — far stronger than Pearson.</p>
+<p>The two are mathematically equivalent — HSIC speaks the kernel language, dCor speaks distances, but both belong to the "distance–distance correlation" family.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🔮</div><h4 data-zh="任意維度" data-en="Any dimension">任意維度</h4><p data-lang="zh">X 與 Y 可以是不同維度的向量——例如 X 是 50D PCA 嵌入、Y 是細胞型別 one-hot。</p><p data-lang="en">X and Y can have different dimensions — e.g. X is 50D PCA embedding, Y is one-hot cell type.</p></div>
+<div class="card"><div class="card-icon">🎯</div><h4 data-zh="獨立性檢定" data-en="Independence test">獨立性檢定</h4><p data-lang="zh">虛無假設 H₀：X ⫫ Y 可透過 permutation 檢定取得 p 值。</p><p data-lang="en">Null H₀: X ⫫ Y can be tested via permutation to obtain p-values.</p></div>
+<div class="card"><div class="card-icon">🧪</div><h4 data-zh="非線性敏感" data-en="Non-linear sensitive">非線性敏感</h4><p data-lang="zh">和 Chatterjee 一樣對非單調關係敏感，且擴展到多變量。</p><p data-lang="en">Sensitive to non-monotonic relationships like Chatterjee, but generalizes to multivariate.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="HSIC 與 dCor 的計算式" data-en="HSIC and dCor Formulas">計算式</h2>
+<div data-lang="zh">
+<p><strong>HSIC：</strong>給定核矩陣 K（X 的）、L（Y 的），令 H = I − (1/n)11ᵀ 為中心化矩陣：</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">HSIC<sub>n</sub>(X,Y) = (1/(n−1)²) · tr(KHLH)</p>
+<p>常用 Gaussian kernel：k(x, x') = exp(−‖x−x'‖² / 2σ²)，σ 用 median heuristic。</p>
+<p><strong>dCor：</strong>計算 X 與 Y 的歐式距離矩陣，雙重中心化得 A、B，定義 dCov² = (1/n²) Σᵢⱼ Aᵢⱼ Bᵢⱼ，再標準化：dCor = dCov / √(dVar(X) · dVar(Y))。</p>
+</div>
+<div data-lang="en">
+<p><strong>HSIC:</strong> Given kernel matrices K (on X), L (on Y), with centering matrix H = I − (1/n)11ᵀ:</p>
+<p style="text-align:center;font-family:Georgia,serif;font-size:1.05rem;">HSIC<sub>n</sub>(X,Y) = (1/(n−1)²) · tr(KHLH)</p>
+<p>Gaussian kernel commonly used: k(x, x') = exp(−‖x−x'‖² / 2σ²) with σ from median heuristic.</p>
+<p><strong>dCor:</strong> Compute pairwise Euclidean distance matrices of X and Y; double-center to get A, B; define dCov² = (1/n²) Σᵢⱼ Aᵢⱼ Bᵢⱼ; normalize: dCor = dCov / √(dVar(X) · dVar(Y)).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>核心直覺：</strong>如果 X 和 Y 獨立，那麼「X 兩兩之間有多遠」應與「Y 兩兩之間有多遠」毫無關係。HSIC/dCor 量化的正是這兩個距離模式的相關性。</div>
+<div data-lang="en"><strong>Core intuition:</strong> If X ⫫ Y, then "how far apart X pairs are" should be unrelated to "how far apart Y pairs are." HSIC/dCor quantify exactly that correlation between distance patterns.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="觀察 dCor 如何看見隱藏依賴" data-en="Watch dCor Detect Hidden Dependencies">觀察 dCor 如何看見隱藏依賴</h2>
+<div data-lang="zh"><p>調整關係強度與噪音，比較 Pearson 與 Distance Correlation 的差異。在非線性情境下 dCor 更敏感。</p></div>
+<div data-lang="en"><p>Adjust strength and noise; compare Pearson vs Distance Correlation. dCor wins under non-linear settings.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="關係類型" data-en="Relationship">關係類型</label>
+  <select id="rel2" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="lin">Linear / 線性</option>
+    <option value="circ" selected>Circle / 圓形（隱藏依賴）</option>
+    <option value="cross">Cross / 十字</option>
+    <option value="indep">Independent / 獨立</option>
+  </select>
+</div>
+<div class="slider-group"><label>n <span id="valN">200</span></label><input type="range" id="sliderN" min="50" max="500" value="200" step="50"></div>
+<div class="chart-container" style="height:280px;"><canvas id="chart2"></canvas></div>
+<div class="card-grid cols-2" style="margin-top:14px;">
+  <div class="card"><h4>Pearson r</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="pe2">—</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>Distance Corr</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="dc2">—</p></div>
+</div>
+<div id="msg2" style="margin-top:10px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="在 scRNA-seq / 空間 / 多體學的應用" data-en="Applications">在 scRNA-seq / 空間 / 多體學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="多體學模態對齊" data-en="Multi-omics modality matching">多體學模態對齊</h4><p data-lang="zh">RNA × ATAC × Protein 在同一細胞測得時，用 HSIC 衡量跨模態的「對齊度」，比 CCA 更靈活（不要求線性）。</p><p data-lang="en">For paired RNA × ATAC × Protein, HSIC measures cross-modal alignment more flexibly than CCA (no linearity assumption).</p></div>
+<div class="card"><h4 data-zh="批次效應檢定" data-en="Batch effect testing">批次效應檢定</h4><p data-lang="zh">檢驗高維嵌入（PCA/UMAP）與 batch label 的獨立性——HSIC 對非線性偏移敏感。</p><p data-lang="en">Test independence between high-dim embedding (PCA/UMAP) and batch labels — HSIC is sensitive to non-linear shifts.</p></div>
+<div class="card"><h4 data-zh="空間鄰近依賴" data-en="Spatial neighborhood dependency">空間鄰近依賴</h4><p data-lang="zh">在 spatial transcriptomics 中，HSIC 可量測「基因表現 vs 空間座標」的依賴，作為 SVG 的另一視角。</p><p data-lang="en">In spatial transcriptomics, HSIC quantifies "gene expression vs spatial coordinates" — another view for SVG detection.</p></div>
+<div class="card"><h4 data-zh="高維 GRN 推論" data-en="High-dim GRN inference">高維 GRN 推論</h4><p data-lang="zh">當「自變數」是一組共調控基因的向量、「應變數」是另一基因時，dCor 能整體偵測依賴而非逐對比較。</p><p data-lang="en">When the predictor is a vector of co-regulated genes and the response is another gene, dCor detects dependency holistically rather than pairwise.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="HSIC / dCor 的實務細節" data-en="HSIC / dCor: Practical Details">實務細節</h2>
+
+<div data-lang="zh">
+<h3>① Kernel 怎麼選？「characteristic kernel」的意義</h3>
+<p>HSIC 的「獨立性 ⇔ HSIC=0」這個等價條件，需要核函數是 <strong>characteristic kernel</strong>（嵌入到 RKHS 的映射是單射）。常用的 characteristic kernel：</p>
+<ul>
+<li><strong>Gaussian/RBF：</strong>k(x,y) = exp(−‖x−y‖²/2σ²)，最常用。對連續變數通用。</li>
+<li><strong>Laplacian：</strong>k(x,y) = exp(−‖x−y‖/σ)，比 Gaussian 對 outlier 更穩健。</li>
+<li><strong>Energy kernel：</strong>k(x,y) = ½(‖x‖+‖y‖−‖x−y‖)，與 distance correlation 等價。</li>
+</ul>
+<p><strong>非 characteristic 的 kernel（要避免）：</strong>純線性 kernel（HSIC 退化成 Pearson²）、多項式 kernel（看不出某些非線性關係）。</p>
+
+<h3>② σ 的選擇：median heuristic 與多核整合</h3>
+<p>Gaussian kernel 的頻寬 σ 通常用 <strong>median heuristic：</strong>σ = median{‖xᵢ − xⱼ‖ : i &lt; j}。理論最佳但對極端數據敏感。實務上做 GRN 推論時建議用 <strong>multi-kernel HSIC</strong>：取多個 σ（如 0.5×, 1×, 2× median）取最大值，提升對不同尺度依賴的偵測力。</p>
+
+<h3>③ 計算複雜度與大規模擴展</h3>
+<p>naive HSIC 與 dCor 都是 O(n²) 記憶體 + O(n²) 計算——對 10⁴ 細胞已經吃緊。三個加速法：</p>
+<ul>
+<li><strong>Block HSIC：</strong>把資料切成 B 塊各算 HSIC、取平均。複雜度降至 O(n × block_size)。</li>
+<li><strong>Nyström approximation：</strong>用 m 個 anchor points 近似核矩陣，O(n × m²)。</li>
+<li><strong>RFF (Random Fourier Features)：</strong>把 Gaussian kernel 近似為線性內積，HSIC 退化成 O(n × D) 其中 D 為特徵數。在 scRNA-seq atlas-scale (10⁶ 細胞) 唯一可行的選擇。</li>
+</ul>
+
+<h3>④ HSIC 與 dCor 何時不等價？</h3>
+<p>用 <strong>energy kernel</strong> 的 HSIC 數學上 ≡ dCor 的平方。用 Gaussian kernel 的 HSIC 對「波長相符的非線性」更敏感（取決於 σ），但對極端的高頻變化（如鋸齒狀）可能不如 dCor。實務上：dCor 不需調參、HSIC 可透過 σ 適配資料尺度——選哪個看你願不願意花時間調 kernel。</p>
+
+<h3>⑤ HSIC Lasso：當特徵選擇遇上 HSIC</h3>
+<p>Yamada et al. (2014) 提出 HSIC Lasso：把目標變數 y 與每個候選特徵 x_k 的 HSIC 視為「相關性」分數，在凸最佳化框架下選出最相關且彼此非冗餘的特徵子集。比 mRMR、Boruta 等更善於處理非線性與高維。在 scRNA-seq 上特別適合篩選與細胞型別 label 強依賴的 HVG。</p>
+
+<h3>⑥ Conditional HSIC：控制 confounder 的獨立性檢定</h3>
+<p>cHSIC(X, Y | Z) 檢驗「給定 Z 後 X 與 Y 是否獨立」——這在生物學中至關重要（控制 cell cycle、batch、library size 等 confounder）。Fukumizu (2008) 與 Park (2020) 提供了一致估計子。<strong>實務應用：</strong>在做 GRN 推論時用 cHSIC 排除「兩基因都受第三基因驅動」的偽相關。</p>
+
+<h3>⑦ 變異數與 p-value 計算</h3>
+<p>HSIC 在虛無下的漸近分布是 χ² 加權和（樣本 HSIC 乘以 n 後）。實務上做檢定有三種選擇：</p>
+<ol>
+<li><strong>Permutation test（最準但慢）：</strong>對 Y 隨機洗牌 B 次，計算 null 分布。</li>
+<li><strong>Gamma approximation：</strong>用 null 的前兩階動差 fit gamma 分布，比 permutation 快數百倍且足夠準確。</li>
+<li><strong>Block-wise HSIC + CLT：</strong>對 block HSIC 用 central limit theorem 直接給 z-test。</li>
+</ol>
+</div>
+
+<div data-lang="en">
+<h3>① Choosing a kernel: what "characteristic kernel" means</h3>
+<p>HSIC = 0 ⇔ independence requires a <strong>characteristic kernel</strong> (the RKHS embedding is injective). Common ones:</p>
+<ul>
+<li><strong>Gaussian/RBF:</strong> k(x,y) = exp(−‖x−y‖²/2σ²). Default for continuous data.</li>
+<li><strong>Laplacian:</strong> k(x,y) = exp(−‖x−y‖/σ). More outlier-robust than Gaussian.</li>
+<li><strong>Energy kernel:</strong> k(x,y) = ½(‖x‖+‖y‖−‖x−y‖). Equivalent to distance correlation.</li>
+</ul>
+<p><strong>Non-characteristic kernels to avoid:</strong> linear kernel (HSIC reduces to Pearson²), polynomial kernel (misses many non-linearities).</p>
+
+<h3>② Choosing σ: median heuristic + multi-kernel</h3>
+<p>For Gaussian kernel: σ = median{‖xᵢ − xⱼ‖} works well in theory but is sensitive to outliers. For GRN inference, use <strong>multi-kernel HSIC</strong>: try σ ∈ {0.5×, 1×, 2× median} and take the max — boosts detection across scales.</p>
+
+<h3>③ Compute and scaling</h3>
+<p>Naive HSIC and dCor are O(n²) memory and time — tight by 10⁴ cells. Three speed-ups:</p>
+<ul>
+<li><strong>Block HSIC:</strong> split into B blocks, compute HSIC per block, average. O(n × block_size).</li>
+<li><strong>Nyström approximation:</strong> use m anchor points, O(n × m²).</li>
+<li><strong>Random Fourier Features (RFF):</strong> approximate Gaussian kernel as linear inner product, HSIC → O(n × D). The only viable option at atlas-scale (10⁶ cells).</li>
+</ul>
+
+<h3>④ When do HSIC and dCor differ?</h3>
+<p>HSIC with energy kernel ≡ dCor². Gaussian-HSIC adapts to data scale via σ but may underperform dCor on extreme high-frequency variation. Practical pick: dCor for hands-off; HSIC if you can tune σ.</p>
+
+<h3>⑤ HSIC Lasso: feature selection meets HSIC</h3>
+<p>Yamada et al. (2014): treat HSIC(y, x_k) as a relevance score; pick non-redundant features in a convex framework. Beats mRMR and Boruta on non-linear high-dim data. Great for picking HVGs with strong dependence on cell-type labels.</p>
+
+<h3>⑥ Conditional HSIC: testing independence given confounders</h3>
+<p>cHSIC(X, Y | Z) tests whether X ⫫ Y | Z — vital for controlling cell cycle, batch, library size. Fukumizu (2008), Park (2020) provide consistent estimators. <strong>Use case:</strong> remove "two genes both driven by a third" spurious correlations in GRN inference.</p>
+
+<h3>⑦ Variance and p-values</h3>
+<p>Under H₀, HSIC has an asymptotic weighted-χ² distribution. Three test choices:</p>
+<ol>
+<li><strong>Permutation:</strong> shuffle Y B times — accurate but slow.</li>
+<li><strong>Gamma approximation:</strong> fit gamma to first two null moments — hundreds of times faster, near-equivalent accuracy.</li>
+<li><strong>Block HSIC + CLT:</strong> z-test directly from block-averaged HSIC.</li>
+</ol>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="HSIC / dCor 在生物資訊的具體應用" data-en="Concrete Bioinformatics Applications">在生物資訊的具體應用</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：MOFA / MOFA+ 中的因子顯著性檢定</h3>
+<p>MOFA+ (Argelaguet 2020, Genome Biology) 用 group-factor analysis 學跨模態 latent factor。每個 factor 對每個模態的「解釋變異」是 HSIC-like 量——測試「這個 factor 是否真的與這個 modality 有關」。在 CITE-seq、scNMT-seq 等多體學資料是標準分析步驟。</p>
+
+<h3>🧬 案例 2：cellAlign 與 SCOT 的對齊評估</h3>
+<p>cellAlign（Alpert 2018, Nature Methods）對齊不同條件下的 pseudotime 軌跡時，用 dCor 衡量「對齊後兩軌跡的相似度」——比 Pearson 對齊更穩健。SCOT 在無監督對齊不同模態時用 Gromov-HSIC 衡量「結構保持」。</p>
+
+<h3>🧬 案例 3：HSIC-based GRN 推論（GENIE3 變體）</h3>
+<p>GENIE3 是經典樹狀 GRN 方法，用 Random Forest variable importance。<strong>HSIC-Lasso GRN</strong>（Slawski et al. 2010 啟發）改用 HSIC Lasso 篩選每個目標基因的調控者——在 DREAM5 challenge benchmark 上比 GENIE3 在某些非線性 motif 上勝出。</p>
+
+<h3>🧬 案例 4：批次效應評估 — kBET, LISI, HSIC</h3>
+<p>kBET (Büttner 2019) 用 k-nearest-neighbor 統計檢定批次混合度；其變體用 HSIC(embedding, batch_label) 衡量「整合後是否還殘留 batch 訊號」。HSIC 對小規模殘留 batch effect 比 kBET 更敏感。</p>
+
+<h3>🧬 案例 5：CITE-seq 蛋白–RNA 對應的 dCor 篩選</h3>
+<p>給定 ~200 個蛋白抗體 panel，哪些 ADT 訊號真的與其對應的 mRNA 有關（很多抗體有 nonspecific binding）？dCor(ADT, mRNA) 比 Pearson 更敏感，能找到「在某 expression 區段才相關」的真實對應，幫助清理 panel。</p>
+
+<h3>🧪 案例 6：藥物機制研究</h3>
+<p>L1000 / Connectivity Map：給定 10⁵ 藥物擾動 × 1000 landmark genes，用 HSIC 衡量「藥物相似性」（兩藥物在 1000 維 expression 空間是否相關擾動）。比 Pearson 更能找到「機制相同但 magnitude 不同」的藥物。</p>
+
+<h3>🧪 案例 7：空間轉錄體的 spatial-feature dependence</h3>
+<p>Hotspot (DeTomaso & Yosef 2021) 用 local autocorrelation + HSIC 變體找空間變異基因，比 Moran's I 處理 zero-inflation 與 over-dispersion 更穩健。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Factor significance in MOFA / MOFA+</h3>
+<p>MOFA+ (Argelaguet 2020, Genome Biology) uses group-factor analysis. Each factor's "variance explained" per modality is an HSIC-like quantity — testing whether the factor truly relates to the modality. Standard step in CITE-seq, scNMT-seq.</p>
+
+<h3>🧬 Case 2: cellAlign / SCOT alignment evaluation</h3>
+<p>cellAlign (Alpert 2018) uses dCor to compare aligned pseudotime trajectories across conditions — more robust than Pearson. SCOT uses Gromov-HSIC for unsupervised modality alignment, measuring "structure preservation."</p>
+
+<h3>🧬 Case 3: HSIC-based GRN inference</h3>
+<p>An HSIC-Lasso GRN variant of GENIE3 beats Random Forest baselines on non-linear motifs in DREAM5 benchmark.</p>
+
+<h3>🧬 Case 4: Batch effect evaluation — kBET, LISI, HSIC</h3>
+<p>kBET (Büttner 2019) and HSIC(embedding, batch) variants quantify residual batch signal post-integration. HSIC is more sensitive to small residuals than kBET.</p>
+
+<h3>🧬 Case 5: CITE-seq protein–RNA correspondence screening</h3>
+<p>Which ADT signals truly correspond to their mRNA (many antibodies have nonspecific binding)? dCor(ADT, mRNA) finds segment-specific real correspondences — helps clean panels.</p>
+
+<h3>🧪 Case 6: Drug mechanism studies</h3>
+<p>L1000 / Connectivity Map: HSIC between drug-perturbation profiles in 1000-D expression space identifies mechanism-similar drugs better than Pearson.</p>
+
+<h3>🧪 Case 7: Spatial feature dependence</h3>
+<p>Hotspot (DeTomaso & Yosef 2021) uses local autocorrelation + HSIC-like measures for SVGs, more robust to zero-inflation than Moran's I.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="HSIC / dCor 還能解決哪些問題？" data-en="What else could HSIC / dCor solve?">還能解決哪些問題？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 「多基因聯合 vs 表現型」依賴測試</h3>
+<p>傳統 GWAS 一次測一個 SNP；多基因聯合效應（epistasis）難測。HSIC(SNP_panel, phenotype) 把 SNP 組視為向量，直接測「整組是否依賴 phenotype」。<strong>提案：</strong>用於 polygenic risk score 開發前的「基因集是否真的有用」過濾。</p>
+
+<h3>🎯 2. scLLM embedding vs 細胞型別的全局評估</h3>
+<p>scGPT/Geneformer 的 cell embedding 怎麼評估「好不好」？HSIC(embedding, cell_type_one_hot) 給一個單一數字衡量「embedding 整體保留多少 cell type 訊息」——比 silhouette score 對非凸 cluster 更穩健。</p>
+
+<h3>🎯 3. 細胞–細胞通訊的「全模組」對應</h3>
+<p>CellChat 個別測 L–R 對。若一個訊號路徑涉及多 ligand + 多 receptor + 多 downstream effector，傳統法看不到全局。HSIC(ligand_set, receptor_set | spatial_proximity) 能測「ligand 整組與 receptor 整組是否依賴」。<strong>提案：</strong>「pathway-level」cell communication 分析。</p>
+
+<h3>🎯 4. 跨切片 spatial transcriptomics 對齊評估</h3>
+<p>連續切片之間的空間結構應該保留——但「保留多少」很難量化。dCor(slice1_gene_matrix, slice2_gene_matrix) 在對齊後給出單一相似度分數，可作為 PASTE/STAlign 等對齊方法的客觀評估。</p>
+
+<h3>🎯 5. 多體學 latent space 對齊驗證</h3>
+<p>MultiVI、totalVI 等模型把 RNA 與 ATAC/Protein 對應到共同 latent。HSIC(latent_RNA, latent_ATAC | cell_type) 檢驗「對齊後是否真的還保留模態特有結構」——若太低代表 modality collapse。</p>
+
+<h3>🎯 6. Variance-based DE（找變異度有差異的基因）</h3>
+<p>大部分 DE 找均值差異；某些疾病狀態下基因 mean 不變但 variance 增加（noisy gene expression）。HSIC(disease_label, gene_value) 同時敏感於均值與分布形狀變化。<strong>提案：</strong>autoimmune disease、senescence 等「expression noise」相關研究的標準工具。</p>
+
+<h3>🎯 7. CRISPR knockout screen 中的非線性 fitness</h3>
+<p>有些基因敲除單獨無顯著影響，但與其他基因組合敲除時有強效應（合成致死）。HSIC(perturbation_vector, fitness) 整體測試非線性 interaction。<strong>提案：</strong>取代/補充 MAGeCK 的線性測試。</p>
+
+<h3>🎯 8. 跨物種 atlas 整合的「真實對齊」驗證</h3>
+<p>跨物種 reference atlas 整合（人 ↔ 鼠 ↔ 斑馬魚）時，dCor 可衡量「同源細胞型別」在嵌入空間的真正對應。比 silhouette、ARI 更穩健於 cell-count imbalance。</p>
+
+<h3>🎯 9. 動態系統的「初始 vs 終態」依賴</h3>
+<p>在 fate decision 研究中：初期細胞狀態與最終 fate 的依賴有多強？HSIC(initial_state_vector, final_celltype) 可量化「fate 在多大程度由初期 state 決定」。<strong>提案：</strong>與 lineage tracing (CellTagging, LARRY) 整合。</p>
+
+<h3>🎯 10. scLLM fine-tune 的層級重要性分析</h3>
+<p>fine-tune 一個 scGPT 時，哪一層 attention 對特定下游 task 貢獻最大？HSIC(layer_i_activation, task_label) 給單一分數，比 gradient-based attribution 更穩健。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. "Multi-gene joint vs phenotype" dependency test</h3>
+<p>GWAS tests one SNP at a time; epistasis is hard. HSIC(SNP_panel, phenotype) treats the SNP group as a vector. <strong>Proposal:</strong> filter "is this gene set useful at all" before building polygenic risk scores.</p>
+
+<h3>🎯 2. Global scLLM embedding vs cell-type evaluation</h3>
+<p>How to evaluate scGPT/Geneformer cell embeddings? HSIC(embedding, cell_type_one_hot) gives a single number — more robust than silhouette for non-convex clusters.</p>
+
+<h3>🎯 3. Pathway-level cell communication</h3>
+<p>CellChat tests individual L–R pairs. HSIC(ligand_set, receptor_set | spatial_proximity) tests whole-pathway dependence. <strong>Proposal:</strong> pathway-level cell communication analysis.</p>
+
+<h3>🎯 4. Spatial transcriptomics slice alignment evaluation</h3>
+<p>dCor(slice1, slice2) gives an objective similarity score for evaluating PASTE/STAlign-style spatial alignment.</p>
+
+<h3>🎯 5. Multi-omics latent alignment verification</h3>
+<p>HSIC(latent_RNA, latent_ATAC | cell_type) checks whether MultiVI/totalVI preserves modality-specific structure or has collapsed.</p>
+
+<h3>🎯 6. Variance-based DE</h3>
+<p>Most DE finds mean differences; some diseases change variance not mean. HSIC catches both. <strong>Proposal:</strong> standard tool for expression-noise diseases (autoimmunity, senescence).</p>
+
+<h3>🎯 7. Non-linear fitness in CRISPR screens</h3>
+<p>Synthetic lethality involves gene-gene combinations. HSIC(perturbation_vector, fitness) tests non-linear interactions holistically.</p>
+
+<h3>🎯 8. Cross-species atlas integration validation</h3>
+<p>dCor verifies whether homologous cell-types truly correspond in joint embeddings — more robust than silhouette / ARI to cell-count imbalance.</p>
+
+<h3>🎯 9. "Initial vs terminal state" dependence in dynamics</h3>
+<p>HSIC(initial_state_vector, final_celltype) quantifies how strongly fate is determined by initial state. <strong>Proposal:</strong> integrate with lineage tracing (CellTagging, LARRY).</p>
+
+<h3>🎯 10. Layer-wise importance in scLLM fine-tuning</h3>
+<p>Which attention layer contributes most to a downstream task? HSIC(layer_i_activation, task_label) — more robust than gradient attribution.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'r2')">R</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python</button>
+</div>
+<div class="code-tab-content active" id="r2"><pre><span class="comment"># install.packages(c("dHSIC","energy"))</span>
+<span class="keyword">library</span>(dHSIC); <span class="keyword">library</span>(energy)
+
+<span class="comment"># HSIC 獨立性檢定</span>
+res &lt;- dhsic.test(x, y, method = <span class="str">"permutation"</span>, B = <span class="num">200</span>)
+res$statistic; res$p.value
+
+<span class="comment"># Distance correlation</span>
+dcor(x, y)
+dcor.test(x, y, R = <span class="num">200</span>)
+
+<span class="comment"># 多變量：X 為矩陣（cells × features），y 為向量</span>
+dcor(pca_embedding, batch_label)</pre></div>
+<div class="code-tab-content" id="py2"><pre><span class="keyword">import</span> dcor
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+dcor.distance_correlation(x, y)
+dcor.independence.distance_covariance_test(x, y, num_resamples=<span class="num">200</span>)
+
+<span class="comment"># HSIC via pyhsiclasso or custom</span>
+<span class="keyword">from</span> sklearn.metrics.pairwise <span class="keyword">import</span> rbf_kernel
+<span class="keyword">def</span> hsic(X, Y, sigma=<span class="keyword">None</span>):
+    n = X.shape[<span class="num">0</span>]
+    K = rbf_kernel(X.reshape(-<span class="num">1</span>,<span class="num">1</span>) <span class="keyword">if</span> X.ndim==<span class="num">1</span> <span class="keyword">else</span> X)
+    L = rbf_kernel(Y.reshape(-<span class="num">1</span>,<span class="num">1</span>) <span class="keyword">if</span> Y.ndim==<span class="num">1</span> <span class="keyword">else</span> Y)
+    H = np.eye(n) - <span class="num">1</span>/n
+    <span class="keyword">return</span> np.trace(K @ H @ L @ H) / (n-<span class="num">1</span>)**<span class="num">2</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">HSIC 等於 0 的等價條件是？（在 characteristic kernel 下）</p><p data-lang="en">When does HSIC = 0 (with a characteristic kernel)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. X 與 Y 線性無關</span><span data-lang="en">A. X and Y are linearly uncorrelated</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. X 與 Y 統計獨立 (X ⫫ Y)</span><span data-lang="en">B. X and Y are statistically independent (X ⫫ Y)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 樣本數小於 30</span><span data-lang="en">C. Sample size < 30</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. X 和 Y 都服從常態分布</span><span data-lang="en">D. X and Y are both normal</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">下列哪一情境最適合使用 HSIC/dCor 而非 Pearson？</p><p data-lang="en">Which scenario most favors HSIC/dCor over Pearson?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 兩個一維變數的簡單線性回歸</span><span data-lang="en">A. Two 1D variables, simple linear regression</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 計算單一基因的均值</span><span data-lang="en">B. Computing mean of a single gene</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 檢驗 50 維 PCA embedding 與 batch label 的依賴性</span><span data-lang="en">C. Testing dependence between 50-D PCA embedding and batch labels</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 把 UMAP 座標畫出來</span><span data-lang="en">D. Plotting UMAP coordinates</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="chatterjee.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 1：Chatterjee ξ" data-en="Ch 1: Chatterjee ξ">Ch 1：Chatterjee ξ</span></a>
+<a href="mutual-information.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 3：互資訊估計" data-en="Ch 3: Mutual Information">Ch 3：互資訊估計</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+function pearson(x,y){const n=x.length;const mx=x.reduce((a,b)=>a+b,0)/n,my=y.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){const a=x[i]-mx,b=y[i]-my;num+=a*b;dx+=a*a;dy+=b*b;}return num/Math.sqrt(dx*dy);}
+function dcor(x,y){const n=x.length;const A=Array.from({length:n},()=>new Array(n));const B=Array.from({length:n},()=>new Array(n));for(let i=0;i<n;i++)for(let j=0;j<n;j++){A[i][j]=Math.abs(x[i]-x[j]);B[i][j]=Math.abs(y[i]-y[j]);}
+function center(M){const rm=M.map(r=>r.reduce((a,b)=>a+b,0)/n);const cm=new Array(n).fill(0);for(let i=0;i<n;i++)for(let j=0;j<n;j++)cm[j]+=M[i][j]/n;const gm=rm.reduce((a,b)=>a+b,0)/n;const C=Array.from({length:n},()=>new Array(n));for(let i=0;i<n;i++)for(let j=0;j<n;j++)C[i][j]=M[i][j]-rm[i]-cm[j]+gm;return C;}
+const Ac=center(A),Bc=center(B);let dCov=0,dVx=0,dVy=0;for(let i=0;i<n;i++)for(let j=0;j<n;j++){dCov+=Ac[i][j]*Bc[i][j];dVx+=Ac[i][j]*Ac[i][j];dVy+=Bc[i][j]*Bc[i][j];}
+return Math.sqrt(Math.max(0,dCov))/Math.pow(dVx*dVy,0.25);}
+
+function gen(type,n){const x=[],y=[];for(let i=0;i<n;i++){const t=Math.random()*2*Math.PI;let xi,yi;switch(type){case'lin':xi=Math.random()*2-1;yi=xi*0.8+(Math.random()-0.5)*0.3;break;case'circ':xi=Math.cos(t)+(Math.random()-0.5)*0.1;yi=Math.sin(t)+(Math.random()-0.5)*0.1;break;case'cross':if(Math.random()<0.5){xi=Math.random()*2-1;yi=(Math.random()-0.5)*0.15;}else{xi=(Math.random()-0.5)*0.15;yi=Math.random()*2-1;}break;case'indep':xi=Math.random()*2-1;yi=Math.random()*2-1;break;}x.push(xi);y.push(yi);}return{x,y};}
+
+const ch2=new Chart(document.getElementById('chart2'),{type:'scatter',data:{datasets:[{data:[],backgroundColor:'rgba(26,107,90,0.55)',pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'X'}},y:{title:{display:true,text:'Y'}}}}});
+
+function upd2(){const t=document.getElementById('rel2').value;const n=+document.getElementById('sliderN').value;document.getElementById('valN').textContent=n;const {x,y}=gen(t,n);ch2.data.datasets[0].data=x.map((xv,i)=>({x:xv,y:y[i]}));ch2.update('none');const p=pearson(x,y),d=dcor(x,y);document.getElementById('pe2').textContent=p.toFixed(3);document.getElementById('dc2').textContent=d.toFixed(3);const L=I18n.get();const msgs={lin:{zh:'線性 — Pearson 與 dCor 數值相近。',en:'Linear — Pearson and dCor are similar.'},circ:{zh:'圓形 — Pearson ≈ 0，但 dCor 仍能偵測到隱藏依賴！這就是 dCor 的價值。',en:'Circle — Pearson ≈ 0, but dCor still detects the hidden dependency! This is dCor’s power.'},cross:{zh:'十字 — 同樣 Pearson 失效，dCor 看得到。',en:'Cross — Pearson fails again; dCor sees it.'},indep:{zh:'獨立 — 兩者都應該接近 0。',en:'Independent — both should be near 0.'}};document.getElementById('msg2').innerHTML=msgs[t][L];}
+document.getElementById('rel2').addEventListener('change',upd2);document.getElementById('sliderN').addEventListener('input',upd2);document.addEventListener('langchange',upd2);upd2();
+
+window._QF={zh:{q1_y:'答對！HSIC = 0 ⇔ 完全獨立（用 characteristic kernel 時）。',q1_n:'答案是 B。HSIC 是完整獨立性的等價條件，不只是線性無關。',q2_y:'答對！高維 + 非線性正是 HSIC/dCor 大顯身手之處。',q2_n:'答案是 C。HSIC/dCor 在高維與非線性情境下優於 Pearson。'},en:{q1_y:'Correct! HSIC = 0 ⇔ full independence (with characteristic kernel).',q1_n:'Answer is B. HSIC tests full independence, not just linear.',q2_y:'Correct! High-dim + non-linear is where HSIC/dCor shine.',q2_n:'Answer is C. HSIC/dCor excel in high-dim non-linear settings.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

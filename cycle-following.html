@@ -1,0 +1,425 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Cycle-following — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html" class="active">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 8 / 14</div><h1 data-zh="循環追蹤 (Cycle-following)" data-en="Cycle-following">循環追蹤 (Cycle-following)</h1>
+<p class="subtitle" data-lang="zh">不是所有軌跡都有起點與終點——細胞週期、晝夜節律、振盪基因網路都是「圓環」。如何在 360° 上定位細胞？</p>
+<p class="subtitle" data-lang="en">Not all trajectories have a start and an end — cell cycle, circadian rhythm, oscillating gene networks are loops. How to localize cells on a 360° circle?</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="線性 pseudotime 在循環過程中崩潰" data-en="Why Linear Pseudotime Breaks">線性 pseudotime 在循環過程中崩潰</h2>
+<div data-lang="zh">
+<p>標準軌跡推論方法（Monocle、Slingshot、PAGA）預設「樹狀」或「線性」結構——指定一個起點，計算到每個細胞的距離當 pseudotime。但細胞週期沒有起點：G1 → S → G2 → M → G1 是個圓。如果硬塞進線性 pseudotime，G1 起點與 G1 終點會被當成不同狀態。</p>
+<p>循環追蹤方法把細胞的「相位」(phase) 定義在 [0, 2π) 圓上，明確處理週期性。對細胞週期、晝夜節律、神經元振盪、發炎基因週期都至關重要。</p>
+</div>
+<div data-lang="en">
+<p>Standard trajectory tools (Monocle, Slingshot, PAGA) assume tree or linear structure — pick a root and compute distances. But the cell cycle has no root: G1 → S → G2 → M → G1 is a loop. Forcing it into linear pseudotime makes start-G1 and end-G1 look like different states.</p>
+<p>Cycle-following methods define cell <strong>phase</strong> on the circle [0, 2π), explicitly handling periodicity — essential for cell cycle, circadian rhythm, neuronal oscillation, and inflammatory cycles.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">🔁</div><h4 data-zh="不需起點" data-en="No root needed">不需起點</h4><p data-lang="zh">圓上沒有「第一個」細胞——只有相對相位。</p><p data-lang="en">No "first" cell on a circle — only relative phase.</p></div>
+<div class="card"><div class="card-icon">📐</div><h4 data-zh="連續值" data-en="Continuous">連續值</h4><p data-lang="zh">相位是 [0, 2π) 連續值，比 G1/S/G2/M 離散分類更精細。</p><p data-lang="en">Phase is continuous on [0, 2π) — finer than G1/S/G2/M discrete classes.</p></div>
+<div class="card"><div class="card-icon">🧪</div><h4 data-zh="效應控制" data-en="Effect control">效應控制</h4><p data-lang="zh">下游分析時把細胞週期相位當共變量回歸掉，可看純粹的生物變異。</p><p data-lang="en">Regress out phase in downstream analysis to reveal pure biological variation.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="主要方法" data-en="METHODS">主要方法</div>
+<h2 data-zh="五種代表性方法" data-en="Five Representative Methods">五種代表性方法</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>Tricycle (Zheng 2022, Genome Biol)</h4><p data-lang="zh">用「Go transfer learning」概念——預訓練一個「circular embedding」於 human/mouse 標準資料，新樣本投影上去即得相位。最簡單、最穩健。</p><p data-lang="en">Uses transfer learning — a circular embedding pretrained on human/mouse reference; new samples project onto it. Simplest and most robust.</p></div>
+<div class="card"><h4>Cyclum (Liang 2020)</h4><p data-lang="zh">非線性自編碼器把資料投影到「螺旋線」上，分離「圓周成分」與「線性成分」。適合分化過程中疊加細胞週期。</p><p data-lang="en">Non-linear autoencoder projects data onto a helix, separating circular and linear components. Good when cell cycle overlays differentiation.</p></div>
+<div class="card"><h4>reCAT (Liu 2017)</h4><p data-lang="zh">先 PCA 取 marker 基因，再用 TSP（旅行推銷員問題）找最佳「閉合路徑」——把細胞排成一個圓。</p><p data-lang="en">PCA on marker genes, then TSP (traveling salesman) to find the optimal closed path — orders cells into a loop.</p></div>
+<div class="card"><h4>CYCLOPS (Anafi 2017)</h4><p data-lang="zh">最早的圓嵌入方法之一，autoencoder 強制 bottleneck 為 2D 單位圓——專為晝夜節律設計。</p><p data-lang="en">One of the earliest — autoencoder forces a 2D unit circle bottleneck. Designed for circadian rhythm.</p></div>
+<div class="card"><h4>CCPE (2022)</h4><p data-lang="zh">用 discriminative helix 同時建模圓周與時間軸，提供 pseudotime 與離散 phase 雙重輸出。</p><p data-lang="en">Discriminative helix models both circle and time axis; outputs both continuous pseudotime and discrete phase.</p></div>
+<div class="card"><h4 data-zh="TDA-based" data-en="TDA-based">基於拓撲的方法</h4><p data-lang="zh">直接用 persistent H₁ 偵測迴圈，計算 「circular coordinates」（Perea & Harer 2015）— 完全不依賴 marker 基因。</p><p data-lang="en">Detect loops via persistent H₁ and compute circular coordinates (Perea & Harer 2015) — no marker genes required.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="用兩個振盪基因定位細胞相位" data-en="Phase from Two Oscillating Genes">用兩個振盪基因定位細胞相位</h2>
+<div data-lang="zh"><p>細胞週期通常用兩組基因量化：S-phase markers 與 G2/M markers。它們的相對水準在圓周上「轉」一圈，arctan2(G2M, S) 即可給出相位。調整噪音觀察恢復品質。</p></div>
+<div data-lang="en"><p>Cell cycle is often quantified by S-phase and G2/M marker scores. Their relative levels trace a circle; arctan2(G2M, S) gives the phase. Adjust noise to see recovery.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="噪音" data-en="Noise">噪音 <span id="cyN">0.20</span></label><input type="range" id="sCy" min="0" max="0.6" value="0.20" step="0.02"></div>
+<div class="slider-group"><label data-zh="樣本數" data-en="n cells">樣本數 <span id="cyM">200</span></label><input type="range" id="sCm" min="50" max="500" value="200" step="50"></div>
+<svg id="cySvg" viewBox="0 0 600 280" style="width:100%;height:280px;background:#fafafa;border-radius:6px;"></svg>
+<div id="cyMsg" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="實務情境" data-en="Practical Scenarios">實務情境</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="細胞週期效應控制" data-en="Cell cycle effect control">細胞週期效應控制</h4><p data-lang="zh">在 DE 分析或 clustering 前，用 tricycle 相位 ψ 當共變量：lm(expr ~ condition + sin(ψ) + cos(ψ))。比 Seurat::CellCycleScoring 的離散分類更精細。</p><p data-lang="en">Before DE or clustering, use tricycle phase ψ as covariate: lm(expr ~ condition + sin(ψ) + cos(ψ)). Finer than Seurat's discrete CellCycleScoring.</p></div>
+<div class="card"><h4 data-zh="晝夜節律" data-en="Circadian rhythm">晝夜節律</h4><p data-lang="zh">CYCLOPS 用在無時間標記的樣本（如人類大腦死後組織），仍能還原 24 小時節律的相位。</p><p data-lang="en">CYCLOPS recovers 24-hour phases even in untimed samples (e.g. post-mortem human brain).</p></div>
+<div class="card"><h4 data-zh="振盪基因偵測" data-en="Oscillating gene detection">振盪基因偵測</h4><p data-lang="zh">給定圓周相位，做 cosinor 回歸 expr = M + A·cos(ψ − φ)，A 大且顯著 = 振盪基因。MetaCycle、RAIN 等工具是經典做法。</p><p data-lang="en">With phase, cosinor regression expr = M + A·cos(ψ − φ) identifies oscillators by significant amplitude A. MetaCycle, RAIN are classic tools.</p></div>
+<div class="card"><h4 data-zh="癌細胞異常週期" data-en="Aberrant tumor cycle">癌細胞異常週期</h4><p data-lang="zh">許多腫瘤的細胞週期相位分布偏離正常組織（特定相位停滯）——可作為惡性程度指標。</p><p data-lang="en">Tumor cell phase distributions deviate from normal (stalled at specific phases) — a potential malignancy marker.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 Cycle-following：拓撲、座標、振盪估計" data-en="Deep Dive: Topology, Coordinates & Oscillation Estimation">深入解析 Cycle-following：拓撲、座標、振盪估計</h2>
+
+<div data-lang="zh">
+<h3>① 為何「圓」是合適的拓撲？從 H₁ 說起</h3>
+<p>細胞週期是封閉迴路 G1 → S → G2 → M → G1，這種「回到起點」的軌跡無法用線性 pseudotime 表示——任何單調 t ∈ [0, 1] 都會在 G1 處出現「跳躍」。<strong>拓撲學告訴我們</strong>：軌跡是迴圈時，其同調群 H₀ = ℤ 與 <strong>H₁ = ℤ</strong>（一個非平凡 1-cycle）。當 persistent homology 偵測到 H₁ ≠ 0，正確的座標就應該是圓上的點 ψ ∈ S¹ = [0, 2π)，而非線段。這是「圓座標」的拓撲學基礎，由 Perea &amp; Harer (2015, Found Comput Math) 提出。</p>
+
+<h3>② 從 H₁ 到 circular coordinates（TDA-based 方法）</h3>
+<p>Perea–Harer 的 <strong>SCOOP (Sliding-Window persistence + Cohomology Optimization for Periodic data)</strong> 流程：</p>
+<ul>
+<li><strong>(1) 計算 persistent cohomology：</strong>找出 H¹ 的 representative cocycle α（即偵測哪個 1-cycle 主導）。</li>
+<li><strong>(2) Lift 到 ℝ-valued cocycle：</strong>把模 p 表示的 cocycle 提升到實值。</li>
+<li><strong>(3) 解 harmonic representative：</strong>最小化 ‖dθ − α‖² 求 circular function θ : data → S¹。</li>
+<li>θ 即為每個資料點的「圓相位」，是 topologically-justified 的座標。</li>
+</ul>
+<p>這個方法的優點是不需要預設「circular gene set」——拓撲直接告訴你資料有無圓結構。缺點是計算量大 (n &gt; 5000 慢)，且需要密集軌跡。</p>
+
+<h3>③ Tricycle 演算法（Zheng et al. 2022, Nat Commun）</h3>
+<p>Tricycle 用更實用的「reference-based projection」：</p>
+<ul>
+<li><strong>(1) Reference embedding：</strong>用 mouse neural progenitor 已知 cycle phase 資料，對 GO cell-cycle 基因（500 個）做 PCA，前 2 個 PC 自然形成圓。</li>
+<li><strong>(2) 投影新樣本：</strong>把新資料的 cycle gene expression 用同一旋轉矩陣投到 reference PC1–PC2 平面。</li>
+<li><strong>(3) 取 angular coordinate：</strong>ψᵢ = atan2(PC2ᵢ, PC1ᵢ) ∈ [−π, π]，即為「tricycle position」。</li>
+</ul>
+<p>優點：(i) 連續，比 discrete G1/S/G2M 細緻；(ii) 跨物種轉移（reference 是 mouse，可用於 human）；(iii) 對 amplitude 不敏感（投影後標準化）。已成 Bioconductor 標準工具。</p>
+
+<h3>④ Discrete vs continuous resolution</h3>
+<p>不同方法的「解析度」差異實際後果：</p>
+<ul>
+<li><strong>Seurat::CellCycleScoring：</strong>把細胞分成 G1 / S / G2M 三類，使用 Tirosh et al. (2016) 的兩組 marker score。對「DE 控制」夠用，但無法分析 S 中期 vs S 晚期。</li>
+<li><strong>Schwabe et al. (2020) stages：</strong>5 stage 細分（G1, G1/S, S, G2, G2/M），中度解析。</li>
+<li><strong>Tricycle continuous ψ：</strong>連續角度——可做「ψ 對 expression」的 cosinor regression，找出在特定 narrow window 振盪的基因。從 Schwabe stages 到 tricycle 的轉換經 Zheng 2022 表 S3 提供查表。</li>
+</ul>
+
+<h3>⑤ 處理多週期疊加（cycle + circadian + ultradian）</h3>
+<p>細胞同時受多週期影響：~24 hr 細胞週期、~24 hr circadian、~12 hr ultradian、~90 min ATP 振盪。要分離需要：</p>
+<ul>
+<li><strong>(1) Tricycle ψ_cc 校正細胞週期</strong>後，殘差仍含其他週期；</li>
+<li><strong>(2) 對殘差做 second-pass circular coordinate</strong>（用 circadian gene set 如 BMAL1, PER1, CRY1, NR1D1 重做 PCA）；</li>
+<li><strong>(3) 多週期 cosinor model：</strong>expr = M + A₁·cos(ψ_cc − φ₁) + A₂·cos(ψ_cir − φ₂) + ε。R 套件 <code>circacompare</code>、<code>discoRhythm</code> 可做這類分析。</li>
+</ul>
+
+<h3>⑥ Cosinor regression 與 harmonic regression 的數學</h3>
+<p>對連續相位 ψ，振盪基因模型：expr(ψ) = M + A·cos(ψ − φ) = M + β₁·cos(ψ) + β₂·sin(ψ)。線性 fit 後：</p>
+<ul>
+<li><strong>Amplitude A = √(β₁² + β₂²)</strong></li>
+<li><strong>Phase φ = atan2(β₂, β₁)</strong></li>
+<li><strong>F-test on (β₁, β₂)</strong> 同為 0 → 「無振盪」H₀。</li>
+</ul>
+<p><strong>Harmonic regression</strong> 把 1st、2nd 諧波同列：expr = M + Σₖ Aₖ·cos(kψ − φₖ)，可偵測「雙峰」週期（如 M 與 S 都有 peak 的基因）。</p>
+
+<h3>⑦ 與 deep learning 結合：CycleAVE、scCycle、Cyclum 學 latent circular embedding</h3>
+<ul>
+<li><strong>Cyclum (Liang et al. 2020, Nat Commun)：</strong>用 autoencoder + sinusoidal bottleneck（latent 為 sin(ψ), cos(ψ)）強迫嵌入是圓。比 PCA-based 對非線性 cycle gene 更穩。</li>
+<li><strong>CCPE (Liu et al. 2022, NAR)：</strong>helix 嵌入——允許「螺旋」進展，捕捉週期 + 漸進變化（如 senescence 的累積）。</li>
+<li><strong>CycleAVE：</strong>variational autoencoder + von Mises prior on latent ψ，提供 phase 的 posterior uncertainty。</li>
+</ul>
+
+<h3>⑧ 振盪基因 amplitude estimation（sparse 觀察）</h3>
+<p>單細胞資料有 dropout、count noise，sparse 觀察下估 A 困難。經典工具：</p>
+<ul>
+<li><strong>JTK_CYCLE (Hughes 2010)：</strong>nonparametric rank-based test。</li>
+<li><strong>ARSER (Yang &amp; Su 2010)：</strong>autoregressive spectral residual。</li>
+<li><strong>RAIN (Thaben &amp; Westermark 2014)：</strong>支援不對稱波形。</li>
+<li><strong>MetaCycle (Wu 2016)：</strong>整合上述三者投票，FDR 控制較嚴。</li>
+</ul>
+<p>適用於 bulk 多時點，scRNA-seq 需先 phase-sort 細胞（tricycle 給 ψ），再「pseudo-bulk」每 phase bin 求 mean expression，再丟給 MetaCycle。</p>
+
+<h3>⑨ Cell cycle vs cell state 解耦</h3>
+<p>很多 DE 與 trajectory 分析受 cell cycle 干擾——同 cell type 不同 phase 細胞被誤分群。標準做法：</p>
+<ul>
+<li><strong>Seurat：</strong>RegressOut "S.Score" + "G2M.Score"（離散）。</li>
+<li><strong>tricycle 改良：</strong>RegressOut sin(ψ) + cos(ψ)（連續）——能移除任何相位上的線性貢獻。</li>
+<li><strong>進階：</strong>RegressOut + higher-order harmonics（sin(2ψ), cos(2ψ)）以處理非正弦振盪。</li>
+</ul>
+<p>校正後找到的「pure biological signal」更可靠。比較研究（Lengyel et al. 2022）顯示連續 tricycle 校正比離散 Seurat 校正在 DE F1 score 提升 8–12%。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Why a circle is the right topology — starting from H₁</h3>
+<p>The cell cycle is a closed loop G1 → S → G2 → M → G1; any monotone pseudotime t ∈ [0,1] introduces a discontinuity at G1. <strong>Topology says:</strong> loop-shaped trajectories have H₀ = ℤ and <strong>H₁ = ℤ</strong> (one non-trivial 1-cycle). When persistent homology detects H₁ ≠ 0, the correct coordinate is a point on S¹ = [0, 2π), not a line. This is the topological justification for circular coordinates (Perea &amp; Harer 2015, Found Comput Math).</p>
+
+<h3>② H₁ to circular coordinates — TDA-based methods</h3>
+<p>Perea–Harer's <strong>SCOOP</strong> pipeline:</p>
+<ul>
+<li><strong>(1) Persistent cohomology</strong> to find the dominant H¹ representative cocycle α.</li>
+<li><strong>(2) Lift to ℝ-valued cocycle</strong> from the mod-p representation.</li>
+<li><strong>(3) Solve the harmonic representative</strong> minimizing ‖dθ − α‖² to obtain θ : data → S¹.</li>
+</ul>
+<p>θ is the per-data-point circular phase — topologically justified, no need to pre-specify "circular genes". Drawback: heavy compute (n &gt; 5000 slow), and needs dense sampling.</p>
+
+<h3>③ Tricycle (Zheng et al. 2022, Nat Commun)</h3>
+<ul>
+<li><strong>(1) Reference embedding:</strong> PCA on ~500 GO cell-cycle genes in a mouse neural progenitor dataset with known phases — PC1/PC2 naturally form a circle.</li>
+<li><strong>(2) Project new samples:</strong> apply the same rotation to new data.</li>
+<li><strong>(3) Angular coordinate:</strong> ψᵢ = atan2(PC2ᵢ, PC1ᵢ).</li>
+</ul>
+<p>Strengths: continuous (vs discrete G1/S/G2M), transferable across species (mouse reference, used on human), amplitude-insensitive. Standard Bioconductor tool.</p>
+
+<h3>④ Discrete vs continuous resolution</h3>
+<ul>
+<li><strong>Seurat::CellCycleScoring:</strong> 3 classes (G1/S/G2M) from Tirosh 2016 markers. Adequate for DE control; can't resolve mid- vs late-S.</li>
+<li><strong>Schwabe et al. (2020) stages:</strong> 5 stages (G1, G1/S, S, G2, G2/M) — medium resolution.</li>
+<li><strong>Tricycle continuous ψ:</strong> enables cosinor regression of expression vs ψ to find genes oscillating in narrow windows. Schwabe-to-tricycle conversion table provided in Zheng 2022 S3.</li>
+</ul>
+
+<h3>⑤ Handling multi-period overlay (cycle + circadian + ultradian)</h3>
+<ul>
+<li><strong>(1) Tricycle ψ_cc</strong> corrects cell cycle; residuals still carry other rhythms.</li>
+<li><strong>(2) Second-pass circular coordinate</strong> on residuals with circadian gene set (BMAL1, PER1, CRY1, NR1D1).</li>
+<li><strong>(3) Multi-period cosinor:</strong> expr = M + A₁ cos(ψ_cc − φ₁) + A₂ cos(ψ_cir − φ₂) + ε. R packages <code>circacompare</code>, <code>discoRhythm</code> support this.</li>
+</ul>
+
+<h3>⑥ Cosinor and harmonic regression mathematics</h3>
+<p>For continuous phase ψ, expr(ψ) = M + A cos(ψ − φ) = M + β₁ cos ψ + β₂ sin ψ. After linear fit:</p>
+<ul>
+<li><strong>Amplitude A = √(β₁² + β₂²)</strong></li>
+<li><strong>Phase φ = atan2(β₂, β₁)</strong></li>
+<li><strong>F-test on (β₁, β₂) = 0</strong> → null of no oscillation.</li>
+</ul>
+<p><strong>Harmonic regression</strong> adds higher harmonics expr = M + Σₖ Aₖ cos(kψ − φₖ), capturing bimodal cycles (e.g. peaks at both M and S).</p>
+
+<h3>⑦ Deep-learning circular embeddings</h3>
+<ul>
+<li><strong>Cyclum (Liang 2020, Nat Commun):</strong> autoencoder with sinusoidal bottleneck (latent (sin ψ, cos ψ)) — robust to non-linear cycle genes.</li>
+<li><strong>CCPE (Liu 2022, NAR):</strong> helical embedding allowing cycle + progressive drift (senescence accumulation).</li>
+<li><strong>CycleAVE:</strong> VAE + von Mises prior on latent ψ — provides posterior uncertainty.</li>
+</ul>
+
+<h3>⑧ Oscillation amplitude estimation from sparse observations</h3>
+<p>Single-cell data has dropout, counting noise — amplitude estimation is hard. Classic tools:</p>
+<ul>
+<li><strong>JTK_CYCLE (Hughes 2010)</strong> — nonparametric rank test.</li>
+<li><strong>ARSER (Yang &amp; Su 2010)</strong> — autoregressive spectral residual.</li>
+<li><strong>RAIN (Thaben &amp; Westermark 2014)</strong> — asymmetric waveforms.</li>
+<li><strong>MetaCycle (Wu 2016)</strong> — voting integration with tighter FDR.</li>
+</ul>
+<p>For scRNA-seq: phase-sort cells with tricycle, pseudo-bulk by phase bin, then feed to MetaCycle.</p>
+
+<h3>⑨ Cell cycle vs cell state decoupling</h3>
+<ul>
+<li><strong>Seurat:</strong> RegressOut "S.Score" + "G2M.Score" — discrete.</li>
+<li><strong>tricycle improvement:</strong> RegressOut sin(ψ) + cos(ψ) — continuous, removes any linear-in-phase contribution.</li>
+<li><strong>Advanced:</strong> + higher harmonics sin(2ψ), cos(2ψ) — handles non-sinusoidal oscillators.</li>
+</ul>
+<p>Continuous tricycle correction improves DE F1 by 8–12% vs discrete Seurat correction (Lengyel et al. 2022).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="Cycle-following 在生物資訊的具體案例" data-en="Concrete Cases of Cycle-following">Cycle-following 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Zheng et al. (2022, Nat Commun) — tricycle 在 PBMC、brain、cancer</h3>
+<p>tricycle 原始論文展示三類應用：(i) PBMC 數萬細胞——tricycle 連續座標把「lymphocyte 主要 G1，monocyte 多 S/G2」量化呈現；(ii) mouse brain development——皮質祖細胞與成熟神經元的 phase distribution 鮮明對比；(iii) glioma 與 normal brain——腫瘤細胞 phase 分布偏 S/G2，且有特定 "stuck" cluster 卡在 G2/M。這個 paper 把連續 cycle phase 變成 routine 工具。</p>
+
+<h3>🧪 案例 2：Cyclum (Liang et al. 2020, Nat Commun) 在 leukemia</h3>
+<p>使用 AML 患者單細胞資料；Cyclum 將 cycle phase 與「leukemic stem cell signature」解耦——校正前 LSC marker 與 G2/M score 高度相關（可能誤判），校正後揭示真正獨立於 cycle 的 LSC program，包括 NPM1, MEIS1 等。對應後續 LSC-targeted 治療標的篩選。</p>
+
+<h3>🌙 案例 3：CYCLOPS (Anafi et al. 2017, PNAS) 揭示死後腦組織 circadian 失調</h3>
+<p>使用 GTEx 死後人腦樣本（無時間標記）；CYCLOPS 從基因表現逆推「採樣時刻」(post-mortem 採集時間)，揭示憂鬱症患者前額葉皮質的 circadian phase 分布變寬、振盪 amplitude 下降。這是首個從未知時間樣本還原 circadian 訊號的工作，成為 chronobiology 的里程碑。</p>
+
+<h3>🔬 案例 4：reCAT (Liu et al. 2017, Nat Commun) — 早期 method</h3>
+<p>reCAT 用 TSP (travelling salesman) 在 cell-cell distance graph 上找最短迴圈，重建 cycle phase 順序。雖然在 mouse ES cell 資料上能還原 G1 → S → G2/M 順序，但對 dropout 敏感，且需指定 K-means 起始群。後續被 tricycle 取代，但作為「不依賴 reference 的 de novo cycle inference」仍有教育意義。</p>
+
+<h3>🌀 案例 5：CCPE (Liu et al. 2022, NAR) — helical embedding</h3>
+<p>用 helix latent 在 mouse intestinal crypt 與 thymocyte 發育資料同時捕捉 cycle phase + maturation progress——傳統 tricycle 只看 phase，CCPE 同時得到「沿軸進展」的 maturation pseudotime。在 thymocyte DN → DP → SP 階段，CCPE 揭示每階段 cycle speed 不同（DP 階段 cycle 最慢）。</p>
+
+<h3>🏷️ 案例 6：Seurat::CellCycleScoring 標準做法</h3>
+<p>Tirosh et al. (2016, Science) 在 melanoma 單細胞研究中首次提出 S/G2M score——用兩組 ~40 基因 marker 算 score，作為 RegressOut 變數。雖然簡單，但因被 Seurat tutorial 預設使用，成為單細胞分析 SOP。後續所有 cycle-aware 方法都用這個當基準對比。</p>
+
+<h3>🧠 案例 7：IDH-mutant glioma 找抑制 G2/M 相位</h3>
+<p>Tirosh, Venteicher et al. (2016, Nature) 對 oligodendroglioma 應用 cycle 評分，發現 IDH-mutant 腫瘤的 stem-like 細胞 phase 分布偏 G1，反映其慢分裂特性。後續臨床觀察：以 PARP inhibitor 抑制 G2/M 對 IDH-mutant 較 IDH-wt 更有效——cycle phase 分布作為療效 biomarker。</p>
+
+<h3>🌙 案例 8：晝夜節律基因發現（BMAL1/PER1/CRY1 在 brain regions）</h3>
+<p>Anafi et al. CYCLOPS + Mure et al. (2018, Science) baboon body atlas + Ruben et al. (2018, Sci Transl Med) 人腦樣本，共同建立人腦各區域 BMAL1, PER1, CRY1, NR1D1 等核心 clock gene 的相位 atlas。發現前額葉、海馬迴、紋狀體相位差約 4–6 小時，揭示「組織特異 phase coupling」。對 chronotherapy（晝夜節律藥物時刻）有直接意義。</p>
+
+<h3>🦠 案例 9：COVID 患者免疫細胞 cycle 失調</h3>
+<p>Schulte-Schrepping et al. (2020, Cell) 與 Stephenson et al. (2021, Nat Med) 用 cycle phase 分析發現嚴重 COVID 患者：(i) 增殖 T cell 比例下降，(ii) 留下的增殖細胞卡在 G2/M（無法完成分裂）。tricycle 相位分布支持 immune exhaustion 的「proliferative arrest」假說，且 phase 分布偏移與疾病嚴重度相關，可作為預後指標。</p>
+
+<h3>💓 案例 10：心肌細胞再生的循環性</h3>
+<p>D'Uva et al. (2015, Nat Cell Biol) 與 Cui et al. (2020, Cell Stem Cell) 探討哺乳類成體心肌細胞分裂——成熟 CM 大多卡在 G1/G0，無法回到 S phase。用 cycle following 量化「dedifferentiation 後重新進入 cycle」的細胞比例，作為再生療法效果指標。Cui 2020 找出 ERBB2 過表達可推動 CM 重回 cycle，分布從 G0 主導變為 G1/S 顯著比例。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Zheng et al. (2022, Nat Commun) — tricycle in PBMC, brain, cancer</h3>
+<p>Three applications: (i) PBMC — quantifies "lymphocyte mostly G1, monocyte more S/G2"; (ii) mouse brain development — sharp phase contrast between cortical progenitors and mature neurons; (iii) glioma vs normal brain — tumor cells biased to S/G2 with a "stuck" cluster in G2/M. Established continuous cycle phase as routine.</p>
+
+<h3>🧪 Case 2: Cyclum (Liang 2020, Nat Commun) in leukemia</h3>
+<p>Applied to AML scRNA-seq, Cyclum decoupled cycle phase from "leukemic stem cell signature". Pre-correction LSC markers strongly correlated with G2/M score (potential confound); post-correction revealed cycle-independent LSC programs (NPM1, MEIS1) — feeds into LSC-directed therapeutic targeting.</p>
+
+<h3>🌙 Case 3: CYCLOPS (Anafi 2017, PNAS) — post-mortem brain circadian disruption</h3>
+<p>Using GTEx post-mortem brain (no time labels), CYCLOPS reconstructs sampling times from gene expression. Revealed broadened phase distribution and reduced amplitude in depressed-patient prefrontal cortex — first method to recover circadian signal without time labels. A chronobiology milestone.</p>
+
+<h3>🔬 Case 4: reCAT (Liu 2017, Nat Commun) — early method</h3>
+<p>reCAT uses TSP on cell–cell distance graph to find shortest loop and reconstruct phase order. Recovers G1 → S → G2/M on mouse ES data but sensitive to dropout, requires K-means initialization. Superseded by tricycle, but a notable de novo cycle inference example.</p>
+
+<h3>🌀 Case 5: CCPE (Liu 2022, NAR) — helical embedding</h3>
+<p>Helix latent on mouse intestinal crypt and thymocyte development captures cycle phase + maturation progress simultaneously — tricycle only gives phase. In thymocyte DN → DP → SP, CCPE reveals each stage's cycle speed differs (DP slowest).</p>
+
+<h3>🏷️ Case 6: Seurat::CellCycleScoring standard practice</h3>
+<p>Tirosh et al. (2016, Science) in melanoma scRNA introduced S/G2M scores from two ~40-gene marker sets; default RegressOut variables in Seurat. Simple but became single-cell SOP; baseline against which every cycle-aware method is benchmarked.</p>
+
+<h3>🧠 Case 7: IDH-mutant glioma cycle phase</h3>
+<p>Tirosh, Venteicher et al. (2016, Nature) on oligodendroglioma: IDH-mutant stem-like cells biased to G1, reflecting slow division. Clinical: PARP inhibitors targeting G2/M more effective in IDH-mutant; cycle phase distribution as efficacy biomarker.</p>
+
+<h3>🌙 Case 8: Circadian gene phase atlas (BMAL1/PER1/CRY1 in brain regions)</h3>
+<p>CYCLOPS + Mure et al. (2018, Science) baboon body atlas + Ruben et al. (2018, Sci Transl Med) human brain — built a phase atlas of core clock genes across human brain regions. 4–6 hr phase offsets between PFC, hippocampus, striatum — "tissue-specific phase coupling", directly relevant for chronotherapy.</p>
+
+<h3>🦠 Case 9: COVID immune cell cycle dysregulation</h3>
+<p>Schulte-Schrepping et al. (2020, Cell) + Stephenson et al. (2021, Nat Med): in severe COVID, (i) proliferating T cell fraction drops; (ii) remaining proliferating cells stall in G2/M. tricycle phase distribution supports "proliferative arrest" exhaustion hypothesis; phase shift correlates with severity — a prognostic indicator.</p>
+
+<h3>💓 Case 10: Cardiomyocyte regeneration cycling</h3>
+<p>D'Uva et al. (2015, Nat Cell Biol) and Cui et al. (2020, Cell Stem Cell) studied adult mammalian CM division — mature CMs mostly arrested in G1/G0. Cycle following quantifies "dedifferentiation re-entry" fraction as a regeneration-therapy readout. Cui 2020 showed ERBB2 overexpression pushed CM phase distribution from G0-dominant towards substantial G1/S.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Cycle-following 還能改良 / 新解決哪些任務？" data-en="What Else Could Cycle-following Improve?">Cycle-following 還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 藥物誘導 quiescence 的相位偵測</h3>
+<p>許多抗癌策略（CDK4/6 inhibitor、senolytic）誘導腫瘤進入 quiescence/G0 來抑制增殖。傳統 Ki67 染色只給「分裂 vs 不分裂」二分。<strong>提案：</strong>用 tricycle 連續相位看「藥物前後 phase 分布的 KS 距離」，並區分「真 G0」與「G1 停滯」——後者可重新進入週期，前者不會。對比 Ki67 完全無法分辨此差異，連續相位是 routinable readout。</p>
+
+<h3>🎯 2. Senescence cycle 偵測</h3>
+<p>細胞 senescence 通常被定義為「永久退出 cycle + SASP 表現」。但 senescence 訊號早期可能在 cycle 末期已浮現。<strong>提案：</strong>用 cycle phase × senescence gene set (p16, p21, GLB1, SASP genes) 二維分析，找出「cycle 已停但 SASP 未顯現」的「pre-senescent」群體。對比現有 SenMayo / CellAge gene set 只看靜態 score，cycle-aware 分析早期偵測。</p>
+
+<h3>🎯 3. 病毒感染週期動態</h3>
+<p>病毒（如 HSV-1、HCMV）有自己的複製週期（IE → E → L），且與宿主 cycle phase 交互（許多病毒偏好 S phase 宿主）。<strong>提案：</strong>對感染 scRNA-seq 同時估計宿主 cycle phase 與病毒 transcript phase（用病毒基因表現 PCA），雙圓座標分析「哪個 host phase 最易支持 viral replication」。對比現有研究都做 bulk 平均，單細胞兩圓 atlas 是新切角。</p>
+
+<h3>🎯 4. Drug-induced reverse cycle 篩選</h3>
+<p>有些藥物可推 cardiomyocyte / neuron 重新進入週期（再生醫學目標）。<strong>提案：</strong>對化合物庫做高通量篩選，每個化合物計算「處理後細胞群的 tricycle phase 重新分布」——尋找把 G0-rich 群體推向 G1/S 的化合物。與 Cui 2020 ERBB2 的觀察一致。對比現有篩選用 Ki67 IF/IHC 通量低且僅 binary，cycle-aware scRNA-seq 篩選提供 continuous + multivariate readout。</p>
+
+<h3>🎯 5. 結合 cycle phase 與 Perturb-seq</h3>
+<p>Perturb-seq 通常對「整體擾動效應」做 DE。但很多基因效應依 cycle phase 不同（如 cyclin 在 S phase 擾動 vs G1 擾動效應反向）。<strong>提案：</strong>tricycle 給每細胞 ψ → 對每 perturbation 做 phase-stratified DE（在 G1 / S / G2/M 各做一次），找出「phase-conditional effects」。對比現有 Perturb-seq pipeline (Mixscape, Vespucci) 假設效應均勻，phase-aware Perturb-seq 是 missing 維度。</p>
+
+<h3>🎯 6. 跨 cell type 的 cycle phase 比較（speed, regulation differences）</h3>
+<p>不同 cell type cycle 速度差異大（hematopoietic stem cell ~36 hr，crypt enterocyte ~12 hr）。<strong>提案：</strong>用 tricycle ψ + lineage tracing 時間戳，量化「每 cell type 完成一圈的時間」。找出「為何同一物種不同組織 cycle speed 差距 3×」——對應的 TF / metabolic regulator。對比現有研究只能看「mitotic index」（極粗略），phase-resolved speed 更細緻。</p>
+
+<h3>🎯 7. 腫瘤異質性的 cycle stalling 分析</h3>
+<p>腫瘤內常有「分裂活躍」與「卡住」兩群細胞共存——後者是抗藥前體。<strong>提案：</strong>tricycle 連續相位 + density estimation 找「相位密度異常高峰」——即 stalled cells。與 chromatin accessibility / pre-resistant marker 共同分析，識別 dormant tumor cells。對比現有 cancer stem cell marker 都是 expression-based，stalling pattern 是動力學定義。</p>
+
+<h3>🎯 8. 心律失常 cardiomyocyte 多週期分析</h3>
+<p>心肌細胞同時有 (i) 細胞分裂週期（成熟後極慢但仍微存在）、(ii) 鈣震盪週期（秒級）、(iii) 晝夜表現週期。<strong>提案：</strong>多週期 cosinor model 同時解出三個 ψ，找出心律失常患者哪個週期失調（短週期失同步？或晝夜 disrupted？）。對比現有研究都分開分析，integrative multi-cycle 是 missing piece。</p>
+
+<h3>🎯 9. 結合 cycle following 與 RNA velocity</h3>
+<p>RNA velocity 給「dG/dt」但無法直接揭示週期性——velocity 在 cycle 上會「繞圈」。<strong>提案：</strong>把 velocity 投影到 tricycle 圓上（v_ψ = projection of velocity onto tangent of S¹），量化 cycle speed of each cell；同時可區分「在 cycle 內」vs「跳出 cycle 進入 differentiation」的細胞。對比現有 RNA velocity 假設線性軌跡，循環 velocity 分析是專屬工具。</p>
+
+<h3>🎯 10. 用 cycle phase 校正 dropout 機率</h3>
+<p>scRNA-seq dropout 在 cycle 不同 phase 不同——M phase 細胞 RNA 含量短暫減半，dropout 升高。<strong>提案：</strong>用 tricycle ψ 校正 dropout model（如 SAVER, MAGIC 加 phase covariate），讓 imputation 在不同 phase 有不同先驗。對比現有 imputation 完全 ignore cycle effect，phase-aware imputation 改善低表現基因（cyclin family）的偵測。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Detect drug-induced quiescence phases</h3>
+<p>Many anti-cancer strategies (CDK4/6 inhibitors, senolytics) push tumors into quiescence/G0. Ki67 staining only gives binary divide-or-not. <strong>Proposal:</strong> use the KS distance between pre/post tricycle phase distributions and distinguish "true G0" from "G1 arrest" — the former is permanent, the latter reversible. Ki67 cannot resolve this; continuous phase is a routine readout.</p>
+
+<h3>🎯 2. Senescence cycle detection</h3>
+<p>Senescence is "permanent cycle exit + SASP". Early-senescence cells may exit cycle before SASP appears. <strong>Proposal:</strong> 2D cycle-phase × senescence-gene-set (p16, p21, GLB1, SASP) analysis to find "pre-senescent" cells. Versus static SenMayo/CellAge scores, cycle-aware analysis catches earlier.</p>
+
+<h3>🎯 3. Viral infection cycle dynamics</h3>
+<p>Viruses (HSV-1, HCMV) have their own replication cycle (IE → E → L) and interact with host cycle (many prefer S-phase hosts). <strong>Proposal:</strong> dual circular coordinates — host tricycle ψ_h + viral PCA-derived ψ_v — and analyze "which host phase best supports viral replication". Versus existing bulk-averaged studies, dual-circle atlas is novel.</p>
+
+<h3>🎯 4. Drug-induced reverse-cycle screening</h3>
+<p>Some compounds can push cardiomyocytes/neurons back into cycle (regenerative-medicine goal). <strong>Proposal:</strong> high-throughput scRNA screen — measure "post-treatment tricycle redistribution"; find compounds shifting G0-rich populations toward G1/S, consistent with Cui 2020 ERBB2. Versus Ki67 IF/IHC screening (low throughput, binary), tricycle gives continuous multivariate readout.</p>
+
+<h3>🎯 5. Cycle phase + Perturb-seq</h3>
+<p>Perturb-seq does global DE on perturbation. But many effects are phase-dependent (cyclin perturbation in S vs G1 can reverse direction). <strong>Proposal:</strong> stratify DE by tricycle ψ — find "phase-conditional effects". Versus Mixscape/Vespucci's uniform-effect assumption, phase-aware Perturb-seq is a missing dimension.</p>
+
+<h3>🎯 6. Cross-cell-type cycle speed</h3>
+<p>Cycle speeds differ widely (HSC ~36 hr, crypt enterocyte ~12 hr). <strong>Proposal:</strong> tricycle ψ + lineage-tracing timestamps quantifies "time to complete one loop" per cell type, revealing TF/metabolic regulators behind 3× speed differences. Versus mitotic index (very coarse), phase-resolved speed is granular.</p>
+
+<h3>🎯 7. Tumor heterogeneity cycle stalling</h3>
+<p>Tumors contain both rapidly dividing and stalled cells; the latter are resistance precursors. <strong>Proposal:</strong> continuous tricycle ψ + density estimation locates "phase density peaks" = stalled cells. Combined with chromatin accessibility / pre-resistant markers, identifies dormant tumor cells. Versus expression-based cancer-stem-cell markers, stalling is a kinetic definition.</p>
+
+<h3>🎯 8. Cardiac arrhythmia multi-cycle analysis</h3>
+<p>Cardiomyocytes carry (i) division cycle (very slow in adults), (ii) calcium oscillation (seconds), (iii) circadian expression. <strong>Proposal:</strong> multi-period cosinor jointly solves all three ψ — pinpoints which cycle is dysregulated in arrhythmia (short-period desync? circadian disruption?). Versus separately-analyzed studies, integrative multi-cycle is missing.</p>
+
+<h3>🎯 9. Cycle following + RNA velocity</h3>
+<p>RNA velocity gives dG/dt but doesn't inherently reveal periodicity — velocity "circulates" on the cycle. <strong>Proposal:</strong> project velocity onto tricycle's tangent (v_ψ = ⟨v, ∂_ψ⟩) to quantify per-cell cycle speed, and distinguish "in cycle" from "exiting to differentiation". Versus standard velocity assuming linear trajectories, circular velocity is the dedicated tool.</p>
+
+<h3>🎯 10. Phase-aware dropout correction</h3>
+<p>scRNA-seq dropout varies by phase — M-phase cells halve RNA, dropout climbs. <strong>Proposal:</strong> add ψ as covariate in SAVER/MAGIC imputation — phase-specific prior. Versus dropout models ignoring cycle, phase-aware imputation improves detection of lowly-expressed genes (cyclin family).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'tri')">tricycle (R/Bioc)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sct')">Seurat (簡易)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cos')">cosinor regression</button>
+</div>
+<div class="code-tab-content active" id="tri"><pre><span class="comment"># BiocManager::install("tricycle")</span>
+<span class="keyword">library</span>(tricycle)
+sce &lt;- project_cycle_space(sce)
+sce &lt;- estimate_cycle_position(sce)        <span class="comment"># 連續相位 0–2π</span>
+sce &lt;- estimate_Schwabe_stage(sce)         <span class="comment"># 離散 G1/S/G2M</span>
+plot_emb_circle_scale(sce, dimred = <span class="num">1</span>)</pre></div>
+<div class="code-tab-content" id="sct"><pre><span class="comment"># Seurat 標準做法（離散）</span>
+<span class="keyword">library</span>(Seurat)
+s.genes &lt;- cc.genes$s.genes; g2m.genes &lt;- cc.genes$g2m.genes
+obj &lt;- <span class="func">CellCycleScoring</span>(obj, s.features=s.genes, g2m.features=g2m.genes)
+<span class="comment"># 連續近似：</span>
+obj$phase &lt;- atan2(obj$G2M.Score, obj$S.Score)</pre></div>
+<div class="code-tab-content" id="cos"><pre><span class="keyword">library</span>(MetaCycle)
+res &lt;- meta2d(inDF=expr_mat, timepoints=phase_rad * <span class="num">24</span> / (<span class="num">2</span>*pi),
+              cycMethod=<span class="str">"JTK"</span>, outputFile=<span class="keyword">FALSE</span>)
+<span class="comment"># 取 amplitude 顯著的基因</span>
+oscillators &lt;- res$meta[res$meta$JTK_BH.Q &lt; <span class="num">0.05</span>, ]</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼線性 pseudotime 無法描述細胞週期？</p><p data-lang="en">Why can't linear pseudotime describe the cell cycle?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 算太慢</span><span data-lang="en">A. Too slow</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 細胞週期是圓——終點即起點，無單一根節點</span><span data-lang="en">B. Cell cycle is a loop — endpoint is start; no single root</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 細胞週期太短</span><span data-lang="en">C. Cell cycle is too short</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 線性方法只支援 1 個基因</span><span data-lang="en">D. Linear methods support only 1 gene</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Tricycle 主要優勢是？</p><p data-lang="en">Tricycle's main advantage?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 不需基因表現</span><span data-lang="en">A. Needs no expression</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 速度比 Seurat 慢</span><span data-lang="en">B. Slower than Seurat</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 預訓練 circular embedding，新樣本直接投影，跨資料集穩定</span><span data-lang="en">C. Pretrained circular embedding; new samples project onto it; stable across datasets</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只能用於斑馬魚</span><span data-lang="en">D. Only works on zebrafish</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="rna-velocity.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 7：Velocity</span></a>
+<a href="graph-signal-gnn.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 9：GSP/GNN" data-en="Ch 9: GSP/GNN">Ch 9：GSP/GNN</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+function genCy(n,noise){const pts=[];for(let i=0;i<n;i++){const phi=Math.random()*2*Math.PI;const S=Math.cos(phi)+(Math.random()-0.5)*noise*2;const G2M=Math.sin(phi)+(Math.random()-0.5)*noise*2;pts.push({phi,S,G2M});}return pts;}
+function render(){const noise=+document.getElementById('sCy').value;const m=+document.getElementById('sCm').value;document.getElementById('cyN').textContent=noise.toFixed(2);document.getElementById('cyM').textContent=m;const pts=genCy(m,noise);
+const W=600,H=280;let svg='';
+svg+=`<text x="10" y="20" font-size="13" fill="#666">G2/M score →</text><text x="220" y="270" font-size="13" fill="#666">S score →</text>`;
+// axes
+svg+=`<line x1="300" y1="20" x2="300" y2="260" stroke="#ccc" stroke-dasharray="3,3"/><line x1="30" y1="140" x2="570" y2="140" stroke="#ccc" stroke-dasharray="3,3"/>`;
+// circle reference
+svg+=`<circle cx="300" cy="140" r="90" fill="none" stroke="rgba(26,107,90,0.25)" stroke-dasharray="4,4"/>`;
+for(const p of pts){const px=300+p.S*90;const py=140-p.G2M*90;const ph=Math.atan2(p.G2M,p.S);const hue=((ph+Math.PI)/(2*Math.PI))*360;svg+=`<circle cx="${px}" cy="${py}" r="3" fill="hsl(${hue},70%,55%)" opacity="0.7"/>`;}
+document.getElementById('cySvg').innerHTML=svg;
+// compute correlation between true phase and recovered phase
+let err=0;for(const p of pts){const recovered=Math.atan2(p.G2M,p.S);let d=Math.abs(recovered-p.phi);if(d>Math.PI)d=2*Math.PI-d;err+=d;}
+const meanErr=err/pts.length;
+const L=I18n.get();document.getElementById('cyMsg').innerHTML=L==='zh'?`恢復誤差：每個細胞平均相位差約 <strong>${(meanErr*180/Math.PI).toFixed(1)}°</strong>。噪音越大誤差越大。顏色 hue 即恢復相位。`:`Recovery error: avg phase deviation ≈ <strong>${(meanErr*180/Math.PI).toFixed(1)}°</strong> per cell. Higher noise → larger error. Color hue = recovered phase.`;}
+document.getElementById('sCy').addEventListener('input',render);document.getElementById('sCm').addEventListener('input',render);document.addEventListener('langchange',render);render();
+
+window._QF={zh:{q1_y:'答對！圓沒有根節點，線性方法無能為力。',q1_n:'答案是 B。閉合迴圈不能線性化。',q2_y:'答對！tricycle 跨資料集穩定的關鍵在於 transfer learning。',q2_n:'答案是 C。預訓練 circular embedding 是 tricycle 的核心。'},en:{q1_y:'Correct! No root on a loop; linear fails.',q1_n:'Answer is B. Closed loops resist linearization.',q2_y:'Correct! Transfer learning is tricycle’s key.',q2_n:'Answer is C. Pretrained circular embedding is the core.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Flow Matching — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html" class="active">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 17 / 26</div><h1 data-zh="Flow Matching 流匹配" data-en="Flow Matching">Flow Matching 流匹配</h1>
+<p class="subtitle" data-lang="zh">Lipman 2022 (ICLR 2023) 簡化版的 diffusion：直接學「速度場 (velocity field)」而非 score。訓練穩、收斂快、採樣步數少——AlphaFlow、CellFlow、MOFlow 等 2024 新模型都採用。</p>
+<p class="subtitle" data-lang="en">Lipman 2022 (ICLR 2023) — a simplified diffusion: learn the velocity field directly instead of the score. More stable training, faster convergence, fewer sampling steps. Adopted by AlphaFlow, CellFlow, MOFlow and other 2024 models.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 Diffusion 到 Flow Matching" data-en="From Diffusion to Flow Matching">從 Diffusion 到 Flow Matching</h2>
+<div data-lang="zh">
+<p><strong>Diffusion 的痛點：</strong>需要學 score function ∇log p_t(x)，訓練需要對 noisy data 計算 score 並做 score matching loss——間接、複雜，且採樣需要解 SDE 或 ODE 上百步。</p>
+<p><strong>Flow Matching 的洞見（Lipman 2022, ICLR 2023）：</strong>放棄 score，<strong>直接學 velocity field</strong> v_t(x)，定義一個 deterministic 的 ODE：</p>
+<p style="text-align:center;font-family:Georgia,serif;">dx/dt = v_t(x)，&nbsp;&nbsp; x(0) ~ p_0 (e.g. N(0, I))，&nbsp;&nbsp; x(1) ~ p_1 (data)</p>
+<p>從噪音分布 p₀ 出發、沿 v_t 流動到資料分布 p₁。訓練目標就是讓 ODE 終點分布等於資料分布。</p>
+<p><strong>關鍵簡化：Conditional Flow Matching (CFM)。</strong>直接建構「給定 x₀ 與 x₁ 的 conditional path」——最常用是 <strong>直線插值</strong>：</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_t = (1 − t) x₀ + t x₁，&nbsp;&nbsp; v_t(x_t | x₀, x₁) = x₁ − x₀</p>
+<p>訓練目標就是 regression：神經網路 v_θ(x_t, t) 預測 (x₁ − x₀)。<strong>沒有 score、沒有 SDE、沒有複雜的 noise schedule！</strong></p>
+</div>
+<div data-lang="en">
+<p><strong>Diffusion's pain point:</strong> learn the score ∇log p_t(x), which requires score matching on noisy data — indirect, complex, and sampling needs hundreds of SDE/ODE steps.</p>
+<p><strong>Flow Matching insight (Lipman 2022, ICLR 2023):</strong> drop the score; <strong>learn the velocity field directly</strong> v_t(x), defining a deterministic ODE:</p>
+<p style="text-align:center;font-family:Georgia,serif;">dx/dt = v_t(x),&nbsp;&nbsp; x(0) ~ p_0 (e.g. N(0, I)),&nbsp;&nbsp; x(1) ~ p_1 (data)</p>
+<p>Start at noise p₀, flow along v_t to data p₁. Training matches ODE endpoint to data distribution.</p>
+<p><strong>Key simplification: Conditional Flow Matching (CFM).</strong> Construct an explicit conditional path given (x₀, x₁) — usually a <strong>straight line</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_t = (1 − t) x₀ + t x₁,&nbsp;&nbsp; v_t(x_t | x₀, x₁) = x₁ − x₀</p>
+<p>Training is regression: a network v_θ(x_t, t) predicts (x₁ − x₀). <strong>No score, no SDE, no noise schedule!</strong></p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="訓練超穩" data-en="Stable training">訓練超穩</h4><p data-lang="zh">純 regression loss，無需 score 或 ELBO；通常 5–10x diffusion 訓練速度。</p><p data-lang="en">Pure regression loss — no score, no ELBO; typically 5–10× faster training than diffusion.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="少步採樣" data-en="Few-step sampling">少步採樣</h4><p data-lang="zh">直線路徑近似時 1–4 步即可生成；diffusion 通常需 50+ 步。</p><p data-lang="en">Straight-line paths sample in 1–4 steps; diffusion needs 50+.</p></div>
+  <div class="card"><div class="card-icon">🔄</div><h4 data-zh="OT 自然整合" data-en="OT integration">OT 自然整合</h4><p data-lang="zh">配對 (x₀, x₁) 時用 OT 找最佳對應 → OT-CFM，路徑更直、採樣更快。</p><p data-lang="en">OT-pair (x₀, x₁) for optimal coupling → OT-CFM, straighter paths and faster sampling.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Conditional Flow Matching 與 Rectified Flow" data-en="Conditional Flow Matching and Rectified Flow">Conditional Flow Matching 與 Rectified Flow</h2>
+<div data-lang="zh">
+<p><strong>① CFM 訓練步驟（Lipman 2022）：</strong></p>
+<ol>
+<li>取資料樣本 x₁ ~ p_data，獨立噪音 x₀ ~ N(0, I)。</li>
+<li>取 t ~ U(0, 1)，計算插值 x_t = (1 − t) x₀ + t x₁。</li>
+<li>條件速度為 v* = x₁ − x₀。</li>
+<li>Loss: ‖v_θ(x_t, t) − v*‖²。標準 MSE！</li>
+</ol>
+<p><strong>② 採樣：</strong>x₀ ~ N(0, I)，用 ODE solver（Euler 或 Heun）解 dx/dt = v_θ(x, t) 從 t = 0 到 t = 1。</p>
+<p><strong>③ Rectified Flow (Liu 2022)：</strong>CFM 訓練後路徑可能彎曲；rectified flow 用「重訓練」拉直：</p>
+<ul>
+<li>用訓練好的 v_θ 採樣得到 (x₀ⁱ, x₁ⁱ) 配對。</li>
+<li>對這些配對 <strong>重新</strong> 訓練 v_θ'——目標是直線。</li>
+<li>反覆 reflow 2–3 次即可幾乎完全直線化 → 1-step generation。</li>
+</ul>
+<p><strong>④ OT Flow Matching (Tong 2023)：</strong>不要 random 配對 (x₀, x₁)，而用 batch 內的 OT 配對 → 路徑天然較直，無需 reflow。</p>
+<p><strong>⑤ Stochastic Interpolants (Albergo 2023)：</strong>更一般的框架——允許 deterministic + stochastic interpolation，可加入 brownian motion。把 diffusion 與 flow matching 統一在一個框架下。</p>
+</div>
+<div data-lang="en">
+<p><strong>① CFM training (Lipman 2022):</strong></p>
+<ol>
+<li>Sample x₁ ~ p_data; independent noise x₀ ~ N(0, I).</li>
+<li>Sample t ~ U(0, 1); interpolate x_t = (1 − t) x₀ + t x₁.</li>
+<li>Conditional velocity v* = x₁ − x₀.</li>
+<li>Loss: ‖v_θ(x_t, t) − v*‖². Standard MSE!</li>
+</ol>
+<p><strong>② Sampling:</strong> x₀ ~ N(0, I); solve dx/dt = v_θ(x, t) from t = 0 to 1 (Euler or Heun).</p>
+<p><strong>③ Rectified Flow (Liu 2022):</strong> after CFM, paths may bend. Rectified flow straightens by retraining:</p>
+<ul>
+<li>Sample (x₀ⁱ, x₁ⁱ) pairs via trained v_θ.</li>
+<li><strong>Retrain</strong> v_θ' on these pairs — target is a straight line.</li>
+<li>Reflow 2–3 times to near-straight trajectory → 1-step generation.</li>
+</ul>
+<p><strong>④ OT Flow Matching (Tong 2023):</strong> instead of random (x₀, x₁) pairing, use batch-OT pairing → paths are naturally straighter, no reflow needed.</p>
+<p><strong>⑤ Stochastic Interpolants (Albergo 2023):</strong> more general framework — allows deterministic + stochastic interpolation; unifies diffusion and flow matching.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼直線路徑這麼重要？</strong> ODE 軌跡越直、Euler 步進誤差越小、需要的步數越少。Diffusion 對應的 path 通常極為扭曲（高曲率），所以 sampling 慢；rectified flow 的核心貢獻就是把這些路徑「拉直」。</div>
+<div data-lang="en"><strong>Why are straight paths so important?</strong> The straighter the ODE trajectory, the smaller the Euler step error, and the fewer steps needed. Diffusion paths are usually highly curved (slow sampling); rectified flow's key contribution is to straighten them.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="N(0,I) → 雙月分布的流動動畫" data-en="N(0,I) → Two-moons Flow Animation">N(0,I) → 雙月分布的流動動畫</h2>
+<div data-lang="zh"><p>50 個樣本從標準常態分布出發，沿著「直線 conditional flow」流到目標分布（雙月）。<strong>按 ▶ 播放</strong>，或拖動 t scrubber 觀察任意時間點。比較 OT 配對與隨機配對——OT 配對的路徑明顯較直、較不交叉。</p></div>
+<div data-lang="en"><p>50 samples start from standard normal and flow along straight-line conditional paths to the target (two moons). <strong>Press ▶</strong> to play, or drag the t scrubber. Compare OT pairing vs random pairing — OT paths are visibly straighter and less crossing.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="配對策略" data-en="Pairing">配對策略</label>
+  <select id="pairMode" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="ot" selected>OT pairing (straighter)</option>
+    <option value="rand">Random pairing</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="時間 t" data-en="Time t">時間 t <span id="vT">0.00</span></label><input type="range" id="sT" min="0" max="1" value="0" step="0.01"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnPlay" class="toggle-btn">▶ <span data-zh="播放" data-en="Play">播放</span></button>
+  <button id="btnReset" class="toggle-btn"><span data-zh="重置" data-en="Reset">重置</span></button>
+  <button id="btnReshuffle" class="toggle-btn"><span data-zh="重抽樣" data-en="Resample">重抽樣</span></button>
+</div>
+<svg id="fmSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="fmInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Flow Matching 在生物資訊" data-en="Flow Matching in Bioinformatics">Flow Matching 在生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="AlphaFlow (Jing 2024)" data-en="AlphaFlow (Jing 2024)">AlphaFlow</h4>
+<p data-lang="zh">Jing et al. (2024, ICML) 把 AlphaFold 改成 flow-matching framework——不再給「最可能結構」，而是給「結構 ensemble」（蛋白質構象動態）。可生成 NMR/MD 風格的多重構象 sample。對 IDR (intrinsically disordered region) 蛋白尤其有用。</p>
+<p data-lang="en">Jing et al. (2024, ICML) reframe AlphaFold as flow matching — instead of "the most likely structure", produces a <strong>structure ensemble</strong> (conformational dynamics). Generates NMR/MD-style multi-conformation samples. Especially useful for IDR proteins.</p></div>
+
+<div class="card"><h4 data-zh="FrameFlow (Yim 2023)" data-en="FrameFlow (Yim 2023)">FrameFlow</h4>
+<p data-lang="zh">Yim et al. (2023) 用 SE(3) flow matching 設計蛋白質 backbone（α-carbon trace）——比 RFdiffusion 快 5x 且品質相當。已被 Baker lab 整合進 de novo protein design 流程。</p>
+<p data-lang="en">Yim et al. (2023) use SE(3) flow matching for protein backbone (α-carbon trace) design — 5× faster than RFdiffusion with comparable quality. Integrated into the Baker lab's de novo design pipeline.</p></div>
+
+<div class="card"><h4 data-zh="CellFlow / scCFM (2024)" data-en="CellFlow / scCFM (2024)">CellFlow / scCFM</h4>
+<p data-lang="zh">2024 年數個工作把 flow matching 用於單細胞動態——例如從 unperturbed 到 perturbed 細胞分布的 transport。OT-CFM 自然處理「沒有配對細胞」的問題（cells can't be re-measured）。</p>
+<p data-lang="en">Several 2024 works apply flow matching to single-cell dynamics — transport from unperturbed to perturbed distributions. OT-CFM naturally handles the "no paired cells" problem (cells can't be re-measured).</p></div>
+
+<div class="card"><h4 data-zh="MOFlow (Vignac 2024)" data-en="MOFlow (Vignac 2024)">MOFlow</h4>
+<p data-lang="zh">分子生成的 flow matching 模型——學 SMILES / molecular graph 的 flow，可條件式生成具有特定性質（如 logP, QED）的小分子。比 diffusion-based DiGress 更快、樣本多樣性更高。</p>
+<p data-lang="en">Flow matching for molecular generation — learns SMILES / molecular graph flows; conditional generation of molecules with target properties (logP, QED). Faster than diffusion-based DiGress with higher diversity.</p></div>
+
+<div class="card"><h4 data-zh="Protein-MPNN-flow" data-en="Protein-MPNN-flow">Protein-MPNN-flow</h4>
+<p data-lang="zh">把 ProteinMPNN 的 amino-acid sequence design 改造成 flow matching——用 simplex flow（單純形上的流）生成 sequence。可結合 FrameFlow 做 sequence + structure co-design。</p>
+<p data-lang="en">ProteinMPNN-style sequence design as flow matching — simplex flows generate sequences. Combined with FrameFlow for joint sequence-structure design.</p></div>
+
+<div class="card"><h4 data-zh="ESM-Flow (2024)" data-en="ESM-Flow (2024)">ESM-Flow</h4>
+<p data-lang="zh">把 ESM2 protein language model embedding 當 latent space，在這個 latent 中跑 flow matching——可生成「具有特定功能標籤」的蛋白質序列（如「能結合 ATP」）。</p>
+<p data-lang="en">Use ESM2 protein language model embeddings as latent space; flow matching in this latent generates proteins with specific functional labels (e.g. "ATP-binding").</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Flow Matching 進階主題" data-en="Advanced Flow Matching Topics">Flow Matching 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① 數學基礎：marginal vs conditional velocity</h3>
+<p>邊際 velocity v_t(x) 是難算的——它是「在 t 時刻、所有可能 (x₀, x₁) 路徑加權平均」。但 conditional velocity v_t(x | x₀, x₁) 可以 closed form 寫出（直線就是 x₁ − x₀）。<strong>Lipman 2022 的核心定理：</strong>用 conditional v 做 regression，極小化 loss 也會逼近 marginal v——這就是 CFM 為何 work 的關鍵。</p>
+
+<h3>② 與 Diffusion 的精確關係</h3>
+<p>Diffusion 的 probability flow ODE 是 dx/dt = f(x, t) − ½ g(t)² ∇log p_t(x)——一個特殊的 velocity field。Flow matching 把這推廣：v_t 可以是「任意」滿足 continuity equation 的場，不受 score-derived 結構限制。Diffusion 是 FM 的特殊情形（特定 conditional path）。</p>
+
+<h3>③ OT 配對與直線化的關係</h3>
+<p>Random pairing 的 expected path 等於 OT plan 平均；但 individual trajectory 仍可能彎曲（因為交叉）。OT pairing 把這些路徑「事先解纏」，每個 trajectory 接近直線。Tong et al. (2023) 在 ICML 證明這降低 Wasserstein 距離梯度的方差，訓練更穩。</p>
+
+<h3>④ Manifold-aware flow matching</h3>
+<p>對結構受限資料（如 SO(3) 旋轉、單純形 simplex、雙曲空間），需要 Riemannian flow matching (Chen 2023, NeurIPS)——把 conditional path 定義為 geodesic 而非歐式直線。已用於 FrameFlow (SE(3))、MOFlow (categorical simplex)。</p>
+
+<h3>⑤ Guided flow matching</h3>
+<p>類似 classifier-free guidance：在訓練時隨機 drop condition；採樣時 v_θ(x, t, c) − ω(v_θ(x, t, c) − v_θ(x, t, ∅)) 引導生成。<strong>實證：</strong>FM 的 guidance 比 diffusion 穩定，不容易 oversaturate。</p>
+
+<h3>⑥ 訓練實務</h3>
+<ul>
+<li><strong>t 採樣分布：</strong>U(0,1) 是標準；logit-normal 對某些任務（如 stable diffusion 3）更好。</li>
+<li><strong>網路 conditioning on t：</strong>用 sinusoidal embedding + AdaLN（同 diffusion）；不要只把 t concat 進去。</li>
+<li><strong>EMA 是必要：</strong>FM 也吃 EMA model weights 漲分。</li>
+<li><strong>採樣 solver：</strong>1–4 步用 Euler；要 SOTA 品質用 Heun (RK2) 或 adaptive Dopri5。</li>
+</ul>
+
+<h3>⑦ 與 GAN / VAE 的比較</h3>
+<p>GAN：訓練不穩、mode collapse、樣本品質好。VAE：穩、但 latent 與資料 distribution 不完全匹配。Diffusion：穩、品質好、但慢。<strong>Flow matching：</strong>穩、品質好、<strong>且快</strong>——所以是現代 generative model 的事實主流。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Math: marginal vs conditional velocity</h3>
+<p>The marginal velocity v_t(x) is intractable — it averages over all (x₀, x₁) paths weighted by mass at x. But conditional velocity v_t(x | x₀, x₁) has a closed form (straight line: x₁ − x₀). <strong>Lipman 2022's theorem:</strong> regressing toward conditional v also minimizes loss on marginal v — that's why CFM works.</p>
+
+<h3>② Exact relation to diffusion</h3>
+<p>Diffusion's probability flow ODE is dx/dt = f(x, t) − ½ g(t)² ∇log p_t(x) — a particular velocity field. Flow matching generalizes: v_t can be <strong>any</strong> field satisfying the continuity equation, unconstrained by score-derived structure. Diffusion is a special case of FM (specific conditional path).</p>
+
+<h3>③ OT pairing and straightening</h3>
+<p>Random pairing's expected path equals OT plan on average, but individual trajectories may bend (crossings). OT pairing pre-untangles them, making each trajectory near-straight. Tong et al. (2023, ICML) prove this reduces W-distance gradient variance, making training more stable.</p>
+
+<h3>④ Manifold-aware flow matching</h3>
+<p>For constrained data (SO(3) rotations, simplex, hyperbolic), Riemannian flow matching (Chen 2023, NeurIPS) uses geodesic conditional paths instead of Euclidean lines. Used in FrameFlow (SE(3)), MOFlow (categorical simplex).</p>
+
+<h3>⑤ Guided flow matching</h3>
+<p>Analogous to classifier-free guidance: drop the condition during training; at sampling, use v_θ(x, t, c) − ω(v_θ(x, t, c) − v_θ(x, t, ∅)). <strong>Empirically:</strong> FM guidance is more stable than diffusion guidance, less prone to oversaturation.</p>
+
+<h3>⑥ Training tips</h3>
+<ul>
+<li><strong>t sampling:</strong> U(0,1) standard; logit-normal better for some tasks (e.g. Stable Diffusion 3).</li>
+<li><strong>Conditioning on t:</strong> sinusoidal embedding + AdaLN (same as diffusion); don't just concat t.</li>
+<li><strong>EMA matters:</strong> FM also benefits from EMA weights.</li>
+<li><strong>Sampling solver:</strong> Euler for 1–4 steps; Heun (RK2) or adaptive Dopri5 for SOTA quality.</li>
+</ul>
+
+<h3>⑦ Compared to GAN / VAE</h3>
+<p>GAN: unstable, mode collapse, good samples. VAE: stable, latent-data mismatch. Diffusion: stable, good, but slow. <strong>Flow matching:</strong> stable, good, <strong>and fast</strong> — hence today's de-facto generative modeling backbone.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Flow Matching 還能改良哪些任務？" data-en="What Else Could Flow Matching Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. scRNA-seq 軌跡內插</h3>
+<p>單細胞 time-course 採樣稀疏；想預測「t = 0.5」（在 t = 0 與 t = 1 之間）的細胞分布。<strong>提案：</strong>用 OT-CFM 從 t = 0 流到 t = 1，沿途任意取點。比 Waddington-OT 更靈活，能生成 novel 中間 cell state。</p>
+
+<h3>🎯 2. 藥物擾動 path 學習</h3>
+<p>不只「最終擾動效應」，而是「擾動隨時間如何作用」。Flow matching 從未受擾動分布流到受擾動分布，整條 path 都可解讀為動態效應。<strong>提案：</strong>CellFlow-perturbation 整合 Perturb-seq + time-course。</p>
+
+<h3>🎯 3. 分子生成與優化</h3>
+<p>Conditional flow matching 從先驗到目標分子分布；conditioning on desired properties → 直接生成具備特定 docking score / ADMET 屬性的小分子。<strong>提案：</strong>整合 AutoDock / ADMET predictor 作 guidance。</p>
+
+<h3>🎯 4. 跨切片 spatial alignment</h3>
+<p>Spatial transcriptomics 多切片需要對齊（PASTE 用 GW）。<strong>提案：</strong>用 flow matching 學「切片 1 → 切片 2」的 vector field，可生成中間切片，做 3D 連續重建。</p>
+
+<h3>🎯 5. Cell-cycle / circadian phase generation</h3>
+<p>已知細胞週期是 circular manifold。<strong>提案：</strong>Riemannian flow matching on S¹ 學細胞週期相位的條件生成——給定 phase 預測 gene expression。</p>
+
+<h3>🎯 6. 跨物種 single-cell translation</h3>
+<p>Flow matching from human cells to mouse cells（或反向）；用 cell-type label 做 conditioning。<strong>提案：</strong>跨物種 in silico experiment（「如果這個藥在人身上對 T cell 的反應在鼠身上會像什麼？」）。</p>
+
+<h3>🎯 7. RNA secondary structure 生成</h3>
+<p>RNA 結構是離散字串（base-pair pattern）的 simplex。<strong>提案：</strong>discrete flow matching 生成 RNA 結構，可條件式於序列（reverse-folding）或功能標籤。</p>
+
+<h3>🎯 8. Sequence-to-structure co-design</h3>
+<p>FrameFlow（結構）+ ProteinMPNN-flow（序列）聯合訓練——同時優化序列與結構，比兩階段更一致。<strong>提案：</strong>joint flow matching 蛋白質設計，目標是 binder design / enzyme design。</p>
+
+<h3>🎯 9. 多體學跨模態 generation</h3>
+<p>從 scRNA 流到 scATAC（或反向）——用 paired data 學 flow，可在 unpaired data 上生成「對應 modality」。<strong>提案：</strong>cross-modal CFM 整合 multi-omics。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. scRNA-seq trajectory interpolation</h3>
+<p>Single-cell time-courses are sparse; predict cells at "t = 0.5" between observed t = 0 and 1. <strong>Proposal:</strong> OT-CFM flowing t = 0 to t = 1 — sample anywhere along the path. More flexible than Waddington-OT, generates novel intermediate cell states.</p>
+
+<h3>🎯 2. Drug perturbation path learning</h3>
+<p>Not just "final effect" but "how the perturbation acts over time". Flow matching from unperturbed to perturbed distribution — the entire path interprets as dynamic effect. <strong>Proposal:</strong> CellFlow-perturbation joining Perturb-seq + time-course.</p>
+
+<h3>🎯 3. Molecule generation and optimization</h3>
+<p>Conditional FM from prior to target molecular distribution; conditioning on desired properties → directly generate molecules with target docking score / ADMET. <strong>Proposal:</strong> integrate AutoDock / ADMET predictors as guidance.</p>
+
+<h3>🎯 4. Cross-slice spatial alignment</h3>
+<p>Spatial transcriptomics multi-slice alignment (PASTE uses GW). <strong>Proposal:</strong> learn a vector field "slice 1 → slice 2" via flow matching — generate intermediate slices for continuous 3D reconstruction.</p>
+
+<h3>🎯 5. Cell-cycle / circadian phase generation</h3>
+<p>Cell cycle is a circular manifold. <strong>Proposal:</strong> Riemannian FM on S¹ learns conditional phase generation — given phase, predict gene expression.</p>
+
+<h3>🎯 6. Cross-species single-cell translation</h3>
+<p>Flow human → mouse cells (or reverse); condition on cell-type label. <strong>Proposal:</strong> cross-species in silico experiments ("how would this drug's T-cell response in human translate to mouse?").</p>
+
+<h3>🎯 7. RNA secondary structure generation</h3>
+<p>RNA structure is a discrete string (base-pair pattern) on a simplex. <strong>Proposal:</strong> discrete flow matching generates RNA structures, conditioned on sequence (reverse-folding) or function label.</p>
+
+<h3>🎯 8. Sequence-to-structure co-design</h3>
+<p>FrameFlow (structure) + ProteinMPNN-flow (sequence) joint training — optimize sequence and structure simultaneously, more consistent than two-stage. <strong>Proposal:</strong> joint FM protein design for binders / enzymes.</p>
+
+<h3>🎯 9. Multi-omics cross-modal generation</h3>
+<p>Flow scRNA → scATAC (or reverse) on paired data; deploy on unpaired data to generate "corresponding modality". <strong>Proposal:</strong> cross-modal CFM for multi-omics integration.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'tcfm')">PyTorch / torchcfm</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scr')">From scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'jax')">JAX</button>
+</div>
+
+<div class="code-tab-content active" id="tcfm"><pre><span class="comment"># pip install torchcfm</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> torchcfm.conditional_flow_matching <span class="keyword">import</span> (
+    ConditionalFlowMatcher,
+    ExactOptimalTransportConditionalFlowMatcher)
+<span class="keyword">from</span> torchcfm.models <span class="keyword">import</span> MLP
+
+FM = ExactOptimalTransportConditionalFlowMatcher(sigma=<span class="num">0.0</span>)
+model = MLP(dim=<span class="num">2</span>, time_varying=<span class="keyword">True</span>).cuda()
+opt = torch.optim.Adam(model.parameters(), lr=<span class="num">1e-3</span>)
+
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">20_000</span>):
+    x1 = sample_data(<span class="num">256</span>).cuda()                <span class="comment"># real data</span>
+    x0 = torch.randn_like(x1)                  <span class="comment"># gaussian</span>
+    t, xt, ut = FM.sample_location_and_conditional_flow(x0, x1)
+    v_pred = model(torch.cat([xt, t[:, <span class="keyword">None</span>]], -<span class="num">1</span>))
+    loss = ((v_pred - ut)**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()
+
+<span class="comment"># Sampling: Euler integration</span>
+x = torch.randn(<span class="num">1000</span>, <span class="num">2</span>).cuda()
+<span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">50</span>):
+    t = torch.full((<span class="num">1000</span>, <span class="num">1</span>), i/<span class="num">50</span>).cuda()
+    x = x + model(torch.cat([x, t], -<span class="num">1</span>)) / <span class="num">50</span></pre></div>
+
+<div class="code-tab-content" id="scr"><pre><span class="comment"># Pure-PyTorch CFM — for understanding</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> VelocityNet(nn.Module):
+    <span class="keyword">def</span> __init__(self, d=<span class="num">2</span>):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d+<span class="num">1</span>, <span class="num">128</span>), nn.SiLU(),
+            nn.Linear(<span class="num">128</span>, <span class="num">128</span>), nn.SiLU(),
+            nn.Linear(<span class="num">128</span>, d))
+    <span class="keyword">def</span> forward(self, x, t):
+        <span class="keyword">return</span> self.net(torch.cat([x, t], -<span class="num">1</span>))
+
+model = VelocityNet()
+opt = torch.optim.Adam(model.parameters(), lr=<span class="num">1e-3</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">20_000</span>):
+    x1 = sample_data(<span class="num">256</span>)
+    x0 = torch.randn_like(x1)
+    t  = torch.rand(<span class="num">256</span>, <span class="num">1</span>)
+    xt = (<span class="num">1</span>-t)*x0 + t*x1
+    v_star = x1 - x0
+    loss = ((model(xt, t) - v_star)**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+
+<div class="code-tab-content" id="jax"><pre><span class="keyword">import</span> jax, jax.numpy <span class="keyword">as</span> jnp
+<span class="keyword">import</span> equinox <span class="keyword">as</span> eqx
+<span class="keyword">import</span> optax
+
+<span class="keyword">def</span> cfm_loss(model, x0, x1, t):
+    xt = (<span class="num">1</span>-t)*x0 + t*x1
+    v_pred = jax.vmap(model)(xt, t)
+    <span class="keyword">return</span> jnp.mean((v_pred - (x1 - x0))**<span class="num">2</span>)
+
+@jax.jit
+<span class="keyword">def</span> step(model, opt_state, x0, x1, t):
+    loss, grads = jax.value_and_grad(cfm_loss)(model, x0, x1, t)
+    updates, opt_state = opt.update(grads, opt_state)
+    model = eqx.apply_updates(model, updates)
+    <span class="keyword">return</span> model, opt_state, loss</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Flow Matching 與 Diffusion 模型最關鍵的差異是什麼？</p><p data-lang="en">What is the key difference between Flow Matching and Diffusion?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. FM 不需要神經網路</span><span data-lang="en">A. FM doesn't need a neural network</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. FM 直接學 velocity field、用 MSE regression；diffusion 學 score、用 score matching</span><span data-lang="en">B. FM directly learns the velocity field with MSE regression; diffusion learns the score via score matching</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. FM 只能用於分子生成</span><span data-lang="en">C. FM only works for molecular generation</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. FM 不能採樣</span><span data-lang="en">D. FM can't sample</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 Conditional Flow Matching (CFM) 訓練比 marginal velocity 訓練可行？</p><p data-lang="en">Why is CFM training tractable when marginal velocity is not?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Conditional velocity 有 closed form（如直線就是 x₁ − x₀），且 Lipman 證明對它做 regression 也會最小化 marginal loss</span><span data-lang="en">A. Conditional velocity has a closed form (e.g. straight line gives x₁ − x₀); Lipman proved regressing on it also minimizes marginal loss</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Marginal velocity 完全不需要算</span><span data-lang="en">B. Marginal velocity is never needed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. CFM 不需要訓練</span><span data-lang="en">C. CFM doesn't need training</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 因為 conditional velocity 是隨機的</span><span data-lang="en">D. Conditional velocity is stochastic</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">OT Flow Matching 相對於 random pairing 的優勢是什麼？</p><p data-lang="en">What advantage does OT Flow Matching provide over random pairing?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 不需要 ODE solver</span><span data-lang="en">A. No ODE solver needed</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 取代 backpropagation</span><span data-lang="en">B. Replaces backpropagation</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. OT 配對讓路徑更直、減少交叉，採樣步數可大幅減少</span><span data-lang="en">C. OT pairing gives straighter, non-crossing trajectories — sampling needs fewer steps</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 解決所有梯度問題</span><span data-lang="en">D. Solves all gradient problems</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="neural-ode.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 16：Neural ODE" data-en="Ch 16: Neural ODE">Ch 16：Neural ODE</span></a>
+<a href="state-space-mamba.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 18：State Space / Mamba" data-en="Ch 18: SSM / Mamba">Ch 18：State Space / Mamba</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: N(0,I) -> two-moons flow =====
+const FM=document.getElementById('fmSvg');
+const Wf=600,Hf=360;
+const N_SAMP=50;
+function sampleTwoMoons(n){
+  const pts=[];
+  for(let i=0;i<n;i++){
+    const half=i<n/2?0:1;
+    const ang=Math.random()*Math.PI;
+    let x,y;
+    if(half===0){x=Math.cos(ang); y=Math.sin(ang);}
+    else{x=1-Math.cos(ang); y=-Math.sin(ang)-0.3;}
+    x+=(Math.random()-0.5)*0.1; y+=(Math.random()-0.5)*0.1;
+    pts.push([x,y]);
+  }
+  return pts;
+}
+function sampleGauss(n){const pts=[];for(let i=0;i<n;i++){const u=Math.random(),v=Math.random();const r=Math.sqrt(-2*Math.log(u+1e-9));pts.push([r*Math.cos(2*Math.PI*v)*0.6, r*Math.sin(2*Math.PI*v)*0.6 + 0.5]);}return pts;}
+function toScrX(x){return (x+1.5)/4*Wf;}
+function toScrY(y){return (1-(y+1.5)/3)*Hf;}
+
+let X0=[],X1=[],pairs=[];
+function reshuffle(){
+  X0=sampleGauss(N_SAMP);
+  X1=sampleTwoMoons(N_SAMP);
+  computePairing();
+}
+function computePairing(){
+  const mode=document.getElementById('pairMode').value;
+  if(mode==='rand'){
+    const perm=[...Array(N_SAMP).keys()].sort(()=>Math.random()-0.5);
+    pairs=X0.map((p,i)=>[i,perm[i]]);
+  }else{
+    // Greedy OT-ish: nearest-neighbor matching with mutual best to avoid trivial worst-case
+    // Use Hungarian-like greedy iteration
+    const avail=new Set([...Array(N_SAMP).keys()]);
+    pairs=[];
+    const order=[...Array(N_SAMP).keys()];
+    order.forEach(i=>{
+      let best=-1,bd=Infinity;
+      avail.forEach(j=>{const d=(X0[i][0]-X1[j][0])**2+(X0[i][1]-X1[j][1])**2;if(d<bd){bd=d;best=j;}});
+      pairs.push([i,best]); avail.delete(best);
+    });
+  }
+}
+function render(){
+  const t=+document.getElementById('sT').value;
+  document.getElementById('vT').textContent=t.toFixed(2);
+  let svg='';
+  // Trajectory lines (faded)
+  pairs.forEach(([i,j])=>{
+    const a=X0[i],b=X1[j];
+    svg+=`<line x1="${toScrX(a[0])}" y1="${toScrY(a[1])}" x2="${toScrX(b[0])}" y2="${toScrY(b[1])}" stroke="rgba(150,150,150,0.18)" stroke-width="1"/>`;
+  });
+  // Source (X0) ghost
+  X0.forEach(p=>{svg+=`<circle cx="${toScrX(p[0])}" cy="${toScrY(p[1])}" r="3" fill="rgba(192,57,43,0.18)"/>`;});
+  // Target (X1) ghost
+  X1.forEach(p=>{svg+=`<circle cx="${toScrX(p[0])}" cy="${toScrY(p[1])}" r="3" fill="rgba(37,99,168,0.18)"/>`;});
+  // Current particles
+  pairs.forEach(([i,j])=>{
+    const a=X0[i],b=X1[j];
+    const x=(1-t)*a[0]+t*b[0];
+    const y=(1-t)*a[1]+t*b[1];
+    const col=`rgb(${Math.round(192-(192-37)*t)},${Math.round(57+(99-57)*t)},${Math.round(43+(168-43)*t)})`;
+    svg+=`<circle cx="${toScrX(x)}" cy="${toScrY(y)}" r="5" fill="${col}" stroke="#fff" stroke-width="1.2"/>`;
+  });
+  // Labels
+  svg+=`<text x="20" y="22" font-size="12" fill="#c0392b" font-weight="600">p₀ ~ N(0, I)</text>`;
+  svg+=`<text x="${Wf-120}" y="22" font-size="12" fill="#2563a8" font-weight="600">p₁ (two moons)</text>`;
+  svg+=`<text x="${Wf/2}" y="${Hf-12}" text-anchor="middle" font-size="12" fill="#666">t = ${t.toFixed(2)}</text>`;
+  FM.innerHTML=svg;
+
+  // Compute average path length & straightness metric
+  const mode=document.getElementById('pairMode').value;
+  let avgLen=0;
+  pairs.forEach(([i,j])=>{avgLen+=Math.hypot(X0[i][0]-X1[j][0],X0[i][1]-X1[j][1]);});
+  avgLen/=pairs.length;
+  const L=I18n.get();
+  document.getElementById('fmInfo').innerHTML=L==='zh'?
+    `配對策略：<strong>${mode==='ot'?'OT (最佳傳輸)':'隨機'}</strong>。平均路徑長度 ≈ <strong>${avgLen.toFixed(3)}</strong>（OT 配對通常較短）。<br>每個 (x₀, x₁) 對應一條直線軌跡——神經網路 v_θ 要學的就是「在任意 (x_t, t) 處的速度方向」。配對越好，學的場越平滑、採樣越快。`
+    :
+    `Pairing: <strong>${mode==='ot'?'OT (Optimal Transport)':'random'}</strong>. Avg path length ≈ <strong>${avgLen.toFixed(3)}</strong> (OT typically shorter).<br>Each (x₀, x₁) defines a straight-line trajectory — the network v_θ learns "the velocity at any (x_t, t)". Better pairing → smoother field → faster sampling.`;
+}
+
+let playing=false;
+document.getElementById('btnPlay').addEventListener('click',function(){
+  playing=!playing;
+  this.innerHTML=playing?'⏸ <span data-zh="暫停" data-en="Pause">暫停</span>':'▶ <span data-zh="播放" data-en="Play">播放</span>';
+  if(playing)tick();
+});
+function tick(){
+  if(!playing)return;
+  const s=document.getElementById('sT');
+  let v=+s.value+0.01;
+  if(v>1)v=0;
+  s.value=v; render();
+  setTimeout(tick,40);
+}
+document.getElementById('btnReset').addEventListener('click',()=>{playing=false;document.getElementById('btnPlay').innerHTML='▶ <span data-zh="播放" data-en="Play">播放</span>';document.getElementById('sT').value=0;render();});
+document.getElementById('btnReshuffle').addEventListener('click',()=>{reshuffle();render();});
+document.getElementById('sT').addEventListener('input',render);
+document.getElementById('pairMode').addEventListener('change',()=>{computePairing();render();});
+document.addEventListener('langchange',render);
+reshuffle();render();
+
+window._QF={zh:{
+  q1_y:'答對！Flow matching 用 regression 學 velocity；不需要 score。',
+  q1_n:'答案是 B。FM 直接學 velocity field v_t(x) 用 MSE regression；diffusion 學 score function 用 score matching。',
+  q2_y:'答對！Lipman 2022 定理是 CFM 可行的關鍵。',
+  q2_n:'答案是 A。Conditional velocity 有 closed-form（如直線 = x₁ − x₀），且訓練它也會逼近 marginal velocity。',
+  q3_y:'答對！OT 配對讓路徑更直，sampling 步數更少。',
+  q3_n:'答案是 C。OT 配對減少軌跡交叉，使每條路徑接近直線，Euler 步進誤差更小。'
+},en:{
+  q1_y:'Correct! Flow matching uses regression on velocity; no score needed.',
+  q1_n:'Answer is B. FM directly learns v_t(x) via MSE regression; diffusion learns the score via score matching.',
+  q2_y:'Correct! Lipman 2022 made CFM tractable.',
+  q2_n:'Answer is A. Conditional velocity has a closed form (straight line gives x₁ − x₀); regressing on it also approximates the marginal velocity.',
+  q3_y:'Correct! OT pairing yields straighter paths and fewer sampling steps.',
+  q3_n:'Answer is C. OT pairing reduces trajectory crossings, making each path near-straight and Euler steps more accurate.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

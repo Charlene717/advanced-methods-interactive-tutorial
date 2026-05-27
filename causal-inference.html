@@ -1,0 +1,567 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Causal Inference — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html" class="active">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 14 / 14</div><h1 data-zh="單細胞因果推論" data-en="Causal Inference in Single-cell">單細胞因果推論</h1>
+<p class="subtitle" data-lang="zh">相關不等於因果。Pearl 的 do-calculus、DAG 學習、Perturb-seq、CausalCell——從觀察走向干預。</p>
+<p class="subtitle" data-lang="en">Correlation ≠ causation. Pearl's do-calculus, DAG learning, Perturb-seq, CausalCell — moving from observation to intervention.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼觀察性 GRN 推論不夠？" data-en="Why Observational GRN Isn't Enough">為什麼觀察性 GRN 推論不夠？</h2>
+<div data-lang="zh">
+<p>傳統 GRN 推論（Pearson、MI、Chatterjee）找的是「<strong>相關</strong>」——兩基因表現有關聯。但相關有三種來源：</p>
+<ul>
+<li><strong>真因果：</strong>A → B</li>
+<li><strong>反向因果：</strong>B → A</li>
+<li><strong>共同原因（confounder）：</strong>C → A, C → B（A 與 B 共變但無直接調控）</li>
+</ul>
+<p>純觀察資料無法區分這三種。我們需要 <strong>干預</strong>——主動敲除/活化某基因，觀察其他基因如何改變。這就是 Pearl 的 do(·) 符號表達的「干預機率」p(B | do(A))，與「條件機率」p(B | A) 不同。</p>
+</div>
+<div data-lang="en">
+<p>Traditional GRN inference (Pearson, MI, Chatterjee) finds <strong>correlation</strong>. But correlation has three sources:</p>
+<ul>
+<li><strong>True cause:</strong> A → B</li>
+<li><strong>Reverse cause:</strong> B → A</li>
+<li><strong>Common cause (confounder):</strong> C → A, C → B (A, B covary but neither regulates the other)</li>
+</ul>
+<p>Pure observational data can't distinguish them. We need <strong>intervention</strong> — actively perturb a gene and watch others change. Pearl's do(·) notation captures intervention probability p(B | do(A)), distinct from conditional probability p(B | A).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="兩條路徑" data-en="TWO PATHS">兩條路徑</div>
+<h2 data-zh="觀察派 vs 干預派" data-en="Observational vs Interventional">觀察派 vs 干預派</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="① 觀察派：DAG 結構學習" data-en="① Observational: DAG learning">① 觀察派：DAG 結構學習</h4><p data-lang="zh">從觀察資料推估 causal DAG：</p><ul><li><strong>PC algorithm：</strong>條件獨立測試 + 方向定向</li><li><strong>NOTEARS (Zheng 2018)：</strong>連續最佳化結構學習</li><li><strong>GES (Greedy Equivalence Search)</strong></li><li><strong>LiNGAM：</strong>線性非高斯模型可定向</li></ul><p data-lang="en"></p><ul><li><strong>PC algorithm:</strong> conditional independence + orientation</li><li><strong>NOTEARS (Zheng 2018):</strong> continuous optimization for DAGs</li><li><strong>GES:</strong> greedy equivalence search</li><li><strong>LiNGAM:</strong> linear non-Gaussian — directable</li></ul></div>
+
+<div class="card"><h4 data-zh="② 干預派：Perturb-seq" data-en="② Interventional: Perturb-seq">② 干預派：Perturb-seq</h4><p data-lang="zh">CRISPR/CRISPRi/CRISPRa 結合 scRNA-seq——每個細胞被「指定」敲除/活化某基因，再讀取全 transcriptome。</p>
+<ul><li><strong>Dixit 2016, Adamson 2016：</strong>Perturb-seq 開山之作</li><li><strong>Replogle 2022 (Genome-wide)：</strong>2.5M 細胞、9867 基因 KD，最大的單細胞干預地圖</li><li><strong>GEARS (Roohani 2023)：</strong>用 GNN 預測未測過的擾動效應</li><li><strong>scCausalVI / CausalCell：</strong>整合觀察 + 干預資料</li></ul></div>
+
+<div class="card"><h4 data-zh="混合方法" data-en="Hybrid methods">混合方法</h4><p data-lang="zh">CausalCell (Wen 2023)、CINEMA-OT 等：把少量干預資料當「錨點」校準觀察資料的方向，比純觀察更可靠、比純干預更便宜。</p><p data-lang="en">CausalCell (Wen 2023), CINEMA-OT, etc.: use limited interventions as anchors to direct observational data — more reliable than pure obs, cheaper than pure intervention.</p></div>
+
+<div class="card"><h4 data-zh="反事實 (counterfactual)" data-en="Counterfactuals">反事實 (counterfactual)</h4><p data-lang="zh">「<strong>這個細胞在沒被擾動時會表現什麼？</strong>」用 CINEMA-OT、Mixscape 等估計每個細胞的反事實 expression。</p><p data-lang="en">"What would this cell express if NOT perturbed?" — estimate per-cell counterfactuals with CINEMA-OT, Mixscape.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="confounder 製造的偽相關" data-en="Confounder Creating Fake Correlation">confounder 製造的偽相關</h2>
+<div data-lang="zh"><p>真實結構：C → A, C → B（A 與 B 無直接調控）。觀察資料中 A 與 B 看起來高度相關——這就是「相關不等於因果」的經典範例。</p></div>
+<div data-lang="en"><p>True structure: C → A, C → B (no direct A ↔ B). Observational data shows A and B highly correlated — classic correlation-not-causation.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="共同原因 C 的強度" data-en="Confounder strength">共同原因 C 的強度 <span id="vC">0.8</span></label><input type="range" id="sC" min="0" max="1" value="0.8" step="0.05"></div>
+<div class="slider-group"><label data-zh="A→B 真實效應" data-en="True A→B effect">A→B 真實效應 <span id="vAB">0.0</span></label><input type="range" id="sAB" min="-0.5" max="0.5" value="0" step="0.05"></div>
+<div class="chart-container" style="height:240px;"><canvas id="cChart"></canvas></div>
+<div class="card-grid cols-2" style="margin-top:14px;">
+  <div class="card"><h4 data-zh="Pearson(A, B) [觀察]" data-en="Pearson(A, B) [obs]">Pearson(A, B) [觀察]</h4><p style="font-size:1.3rem;font-weight:700;margin:0;" id="rAB">—</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4 data-zh="Partial r(A, B | C) [控制 C]" data-en="Partial r(A, B | C) [control C]">Partial r(A, B | C)</h4><p style="font-size:1.3rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="rABC">—</p></div>
+</div>
+<div id="cMsg" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="實務場景" data-en="Real-world Use Cases">實務場景</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="基因敲除效應預測" data-en="KO effect prediction">基因敲除效應預測</h4><p data-lang="zh">用 Perturb-seq 資料訓練模型，預測「沒測過的敲除組合」會發生什麼——對藥物標的篩選極有價值。</p><p data-lang="en">Train models on Perturb-seq to predict effects of unmeasured perturbations — highly valuable for drug target screening.</p></div>
+<div class="card"><h4 data-zh="疾病機轉" data-en="Disease mechanism">疾病機轉</h4><p data-lang="zh">把疾病基因當作「目標 outcome」，反推哪些上游基因才是真因（而非旁觀者）。對精準醫療的基因標的至關重要。</p><p data-lang="en">Treat disease genes as outcomes; identify upstream true causes (not bystanders) — central to precision medicine target selection.</p></div>
+<div class="card"><h4 data-zh="細胞型別決定" data-en="Cell fate determination">細胞型別決定</h4><p data-lang="zh">分化過程中的「關鍵 switch」基因——觀察資料只能說它與終態相關，因果推論能說它「決定」了終態。</p><p data-lang="en">"Key switch" genes in differentiation — observation only correlates with terminal state; causality says they decide the fate.</p></div>
+<div class="card"><h4 data-zh="批次與技術 confounder" data-en="Batch/technical confounders">批次與技術 confounder</h4><p data-lang="zh">DAG 思維幫助釐清「basebatch、深度、cell cycle」等 confounder 對下游推論的污染，並設計適當控制變數。</p><p data-lang="en">DAG thinking clarifies confounders (batch, depth, cell cycle) polluting downstream inference and helps design controls.</p></div>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>實務小提示：</strong>純觀察資料的 causal discovery 經常給出多個「等價」DAG（CPDAG，未定向邊保留）——能告訴你「結構」但不一定「方向」。要真正定方向，要嘛假設模型（LiNGAM 假設非高斯）、要嘛做干預。</div>
+<div data-lang="en"><strong>Practical tip:</strong> Causal discovery from pure observation often yields multiple equivalent DAGs (CPDAGs with undirected edges) — gives structure but not always direction. To truly direct, either assume a model (LiNGAM assumes non-Gaussian) or intervene.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析因果推論：理論基礎、演算法、單細胞特有問題" data-en="Deep Dive: Theory, Algorithms, Single-cell Specifics">深入解析因果推論：理論基礎、演算法、單細胞特有問題</h2>
+
+<div data-lang="zh">
+<h3>① Pearl 的 Structural Causal Model (SCM) 與 do-calculus 三條規則</h3>
+<p>Judea Pearl 的因果框架建立在 SCM 上：每個變數 X<sub>i</sub> 由 structural equation X<sub>i</sub> = f<sub>i</sub>(PA<sub>i</sub>, U<sub>i</sub>) 決定，其中 PA<sub>i</sub> 是 X<sub>i</sub> 的因父節點，U<sub>i</sub> 是外生噪音。<strong>do(·)</strong> 算子定義「干預」：do(X = x) 等於把該 equation 改為 X = x（切斷 PA<sub>i</sub> → X<sub>i</sub> 的所有箭頭）。</p>
+<p>Pearl 證明了三條 <strong>do-calculus 規則</strong>，能把 p(Y | do(X), Z) 改寫為純觀察 p(Y | X, Z, ...) 的條件（若可識別）：</p>
+<ul>
+<li><strong>Rule 1（插入/刪除觀察）：</strong>在 graph G 中切斷 X 的入邊後，若 Y ⊥⊥ Z | X，則 p(Y | do(X), Z, W) = p(Y | do(X), W)。</li>
+<li><strong>Rule 2（觀察 ↔ 干預）：</strong>若在 graph G 中切斷 Z 的出邊後 Y ⊥⊥ Z | X，則 p(Y | do(X), do(Z), W) = p(Y | do(X), Z, W)。</li>
+<li><strong>Rule 3（插入/刪除干預）：</strong>若在 graph G 中切斷 X 與 Z 的入邊後 Y ⊥⊥ Z | X，則 p(Y | do(X), do(Z), W) = p(Y | do(X), W)。</li>
+</ul>
+<p>這三條規則完備 (complete) — Shpitser & Pearl (2006) 證明任何可識別的 do-query 都能透過有限次套用這三條規則化簡。</p>
+
+<h3>② d-separation：DAG 上 conditional independence 的 graphical criterion</h3>
+<p>給定 DAG G，路徑 p 從 X 到 Y 被 Z 阻擋 (blocked) 若：(a) p 含 chain X → M → Y 或 fork X ← M → Y 且 M ∈ Z，或 (b) p 含 collider X → C ← Y 且 C 及其後代 ∉ Z。X ⊥⊥<sub>d</sub> Y | Z 表示「Z 阻擋所有 X-Y 路徑」。</p>
+<p><strong>關鍵定理：</strong>若 SCM 對應 DAG 為 G，則 X ⊥⊥<sub>d</sub> Y | Z 在 G 上 ⇒ X ⊥⊥ Y | Z 在所有 distribution 上。逆向不一定成立 (有 faithfulness assumption)。</p>
+<p>實務上：collider 是因果推論最常見的陷阱。「在 collider 上條件」反而會引入虛假相關（Berkson's paradox），這在單細胞中對應「對 cell cycle 做 condition 反而引入新偽訊號」。</p>
+
+<h3>③ Backdoor criterion 與 frontdoor criterion</h3>
+<p>從觀察資料估計 do(·) 的兩個基本工具：</p>
+<ul>
+<li><strong>Backdoor criterion：</strong>若 Z 阻擋所有從 X 出發、最後指向 Y 的「後門路徑」（含 X 的入邊路徑），則 p(Y | do(X)) = Σ<sub>z</sub> p(Y | X, Z=z) p(Z=z)。實務上 Z 即為「所有 confounder」的足夠集合。</li>
+<li><strong>Frontdoor criterion：</strong>當 confounder 無法觀察時，若存在 mediator M 滿足 (a) M 截斷 X 到 Y 的所有有向路徑、(b) X 到 M 沒有 backdoor、(c) Y 到 M 的所有 backdoor 都被 X 阻擋，則 p(Y | do(X)) = Σ<sub>m</sub> p(M=m | X) Σ<sub>x'</sub> p(Y | M=m, X=x') p(X=x')。</li>
+</ul>
+<p>單細胞應用：基因 A → 蛋白 P → 基因 B 是典型 frontdoor 結構。即使有未觀察 confounder (如轉錄因子)，仍可透過 P 識別 A 對 B 的因果效應。</p>
+
+<h3>④ Instrumental Variable (IV) 方法：當 confounder 無法觀察</h3>
+<p>當所有可能 confounder 都無法觀察，backdoor 不可行。IV 是替代方案：找一個變數 Z 滿足 (a) Z 影響 X、(b) Z 只透過 X 影響 Y（exclusion restriction）、(c) Z 與 (Y 的) confounder 獨立。</p>
+<p>因果效應估計：β = Cov(Z, Y) / Cov(Z, X)（two-stage least squares）。</p>
+<p><strong>基因組學的 IV：Mendelian randomization (MR)</strong>——以 SNP 作為 IV，因為 SNP 在 meiosis 中隨機分配（滿足 exclusion 與 independence，需檢驗 pleiotropy）。MR 在 large GWAS + scRNA-seq 整合中極受重視。</p>
+
+<h3>⑤ PC algorithm 細節</h3>
+<p>PC (Spirtes-Glymour-Scheines 1991) 是最經典的 constraint-based causal discovery：</p>
+<ol>
+<li><strong>Skeleton phase：</strong>從完全圖出發，對每對 (X, Y) 找 separating set S ⊂ Adj(X) \ {Y}，使 X ⊥⊥ Y | S。若找到則刪邊。Conditional independence 用 Fisher's z-test 配 partial correlation 檢驗（連續資料）或 χ² test（離散）。</li>
+<li><strong>Orientation phase：</strong>對每個 unshielded triple X – Y – Z (X 與 Z 不相鄰)，若 Y ∉ S<sub>XZ</sub>，則 orient 為 collider X → Y ← Z。其他邊用 Meek's rules (avoid new colliders, avoid cycles) 反覆 propagate。</li>
+</ol>
+<p>輸出為 CPDAG (completed partially directed acyclic graph)——含未定向邊代表「等價類」，可能對應多個 DAG。</p>
+<p><strong>單細胞特有問題：</strong>細胞數雖大但「相依」（共享 batch、technical factor），會違反 PC 的 i.i.d. 假設，導致 false positives。CausalCell (Wen 2023) 用 resampling-based calibration 緩解。</p>
+
+<h3>⑥ NOTEARS (Zheng et al. 2018, NeurIPS)：把 DAG 約束變連續最佳化</h3>
+<p>傳統 DAG 學習是組合最佳化（NP-hard）。NOTEARS 的核心 trick：把「acyclicity」寫成連續可微的 trace constraint：</p>
+<p style="text-align:center;font-family:ui-monospace,monospace;background:#f0ede6;padding:8px;border-radius:6px;">h(W) = tr(e<sup>W ⊙ W</sup>) − d = 0</p>
+<p>其中 W 是 d×d 加權鄰接矩陣，⊙ 是 element-wise 平方，e<sup>·</sup> 是矩陣指數。h(W) = 0 當且僅當 W 對應 DAG（無環）。整體 loss：</p>
+<p style="text-align:center;font-family:ui-monospace,monospace;background:#f0ede6;padding:8px;border-radius:6px;">min<sub>W</sub> ½ ||X − XW||² + λ ||W||<sub>1</sub> s.t. h(W) = 0</p>
+<p>用 augmented Lagrangian 解。優點：對中等規模 (d ≤ 100) graphs 比 PC 快且穩定。缺點：對 large d (基因數 &gt; 1000) 仍 expensive；scNotears (2023) 提出 mini-batch 變體。</p>
+
+<h3>⑦ LiNGAM：利用非高斯性定向</h3>
+<p>Linear Non-Gaussian Acyclic Model (Shimizu 2006) 利用一個關鍵事實：若 X = AY + e，且 e 非高斯，則「方向」是可識別的（vs 高斯時方向 ambiguous）。</p>
+<p>演算法：(1) 對資料做 ICA (Independent Component Analysis) 找出 mixing matrix；(2) permute matrix rows 使對角線元素非零；(3) 從 lower triangular 結構讀出 causal order。</p>
+<p>scRNA-seq 中 gene expression 因 dropout、bursty transcription 多呈非高斯，是 LiNGAM 合適的應用場景。</p>
+
+<h3>⑧ Additive Noise Model (ANM) 與其他 SEM-based 方法</h3>
+<p>更廣的 SEM 模型：X<sub>i</sub> = f<sub>i</sub>(PA<sub>i</sub>) + N<sub>i</sub>，其中 N<sub>i</sub> 獨立。Hoyer et al. (2009) 證明若 f 非線性，方向可識別：對「正確方向」做 regression 後 residual 與 cause 獨立；錯誤方向則不獨立。實作上用 HSIC test 檢驗 residual independence。</p>
+
+<h3>⑨ 反事實 (counterfactual)：Pearl's three-step procedure</h3>
+<p>反事實問「假如當初做了不同的選擇，會怎樣？」（給定觀察到的 evidence E，問 do(X = x') 的結果）。Pearl 的三步驟：</p>
+<ol>
+<li><strong>Abduction：</strong>從觀察 E 更新 exogenous variable U 的後驗 p(U | E)。</li>
+<li><strong>Action：</strong>在 SCM 中執行 do(X = x')——把 X 的 equation 換成 X = x'。</li>
+<li><strong>Prediction：</strong>從更新後 model 計算 Y 的分布。</li>
+</ol>
+<p>單細胞中，反事實 = 「這個被擾動的細胞如果沒被擾動會怎樣？」CINEMA-OT (Dong 2023) 用 optimal transport 對每個 perturbed cell 找對應的 counterfactual 控制細胞。</p>
+
+<h3>⑩ Causal discovery on time-series：Granger vs full causal</h3>
+<p><strong>Granger causality：</strong>X Granger-causes Y 若 p(Y<sub>t</sub> | X<sub>past</sub>, Y<sub>past</sub>) ≠ p(Y<sub>t</sub> | Y<sub>past</sub>)。優點：簡單。缺點：(a) 只能處理 stationary time series，(b) 不能處理 unobserved confounder，(c) 不是真因果（Pearl 與 Granger 不等價）。</p>
+<p><strong>Full causal discovery on time-series：</strong>PCMCI (Runge 2019, Nat Comm) 把 PC 擴展到時序，能處理 lagged + contemporaneous 兩種因果關係。</p>
+<p>單細胞中：pseudotime 不是真時間，直接套 Granger 有風險。RNA velocity 提供細胞個體的「短時間」變化，是更直接的因果訊號來源。</p>
+
+<h3>⑪ Mendelian randomization in single-cell QTL</h3>
+<p>單細胞 eQTL (e.g. OneK1K, sceQTL-Gen) 提供「SNP → cell-type-specific expression」的關聯。用 SNP 作為 IV，可估計：</p>
+<ul>
+<li>基因表現 → 細胞表型 (e.g. ageing, apoptosis) 的因果效應</li>
+<li>SNP → 中介基因 → 疾病的 mediation analysis</li>
+</ul>
+<p>挑戰：scRNA-seq 雜訊大、cell-type 內樣本數小，需要 large cohort (&gt; 1000 個體)。</p>
+
+<h3>⑫ DR (doubly-robust) estimation</h3>
+<p>結合 propensity score model 與 outcome model：若兩者至少一個正確，DR estimator 仍 consistent。對於 Perturb-seq：</p>
+<p>τ = E[(W − π(X))/(π(X)(1 − π(X))) · (Y − μ̂(X, W))] + μ̂(X, 1) − μ̂(X, 0)</p>
+<p>其中 W 是擾動 indicator，π(X) 是 propensity，μ̂ 是 outcome model。DR-Learner (Kennedy 2020) 是進階版本。</p>
+
+<h3>⑬ Perturb-seq 中的模型：potential outcomes vs DAG</h3>
+<p>兩個並行的因果框架：</p>
+<ul>
+<li><strong>Potential outcomes (Rubin)：</strong>每個 cell 有兩種潛在 outcome Y(0)、Y(1)，因果效應 = Y(1) − Y(0)。但「同一細胞」只能觀察一種。Perturb-seq 把不同細胞分到不同擾動，估計 ATE = E[Y(1) − Y(0)]。</li>
+<li><strong>DAG (Pearl)：</strong>明確畫出 perturbation → gene → downstream gene 的 graph，估計 path-specific effects。</li>
+</ul>
+<p>兩者數學上等價但思維方式不同。Perturb-seq 通常用 Rubin 框架做 ATE 估計，做 mediation/path analysis 時切到 Pearl 框架。</p>
+
+<h3>⑭ Direct effect vs total effect (path-specific)</h3>
+<p>對 A → M → B 的結構，A 對 B 有：</p>
+<ul>
+<li><strong>Total effect (TE)：</strong>所有路徑加總 = p(B | do(A=1)) − p(B | do(A=0))</li>
+<li><strong>Natural Direct Effect (NDE)：</strong>固定 M 在「沒擾動 A 時」的分布，看 A 對 B 的影響</li>
+<li><strong>Natural Indirect Effect (NIE)：</strong>固定 A=0 但讓 M 跟隨 A=1 時的分布，看 B 變化</li>
+</ul>
+<p>VanderWeele (2015) 的 mediation analysis 提供嚴格的識別條件。單細胞中：TF → chromatin → gene 的 mediation 是典型 NDE/NIE 應用。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Pearl's Structural Causal Model (SCM) and the three do-calculus rules</h3>
+<p>SCM: each variable X<sub>i</sub> obeys a structural equation X<sub>i</sub> = f<sub>i</sub>(PA<sub>i</sub>, U<sub>i</sub>), where PA<sub>i</sub> are causal parents and U<sub>i</sub> is exogenous noise. The <strong>do(·)</strong> operator defines intervention: do(X = x) replaces that equation with X = x (severing all incoming arrows to X).</p>
+<p>Pearl's <strong>do-calculus</strong> consists of three rules that rewrite p(Y | do(X), Z) into purely observational p(Y | X, Z, ...) when identifiable:</p>
+<ul>
+<li><strong>Rule 1 (insert/delete observations):</strong> after removing incoming edges of X in G, if Y ⊥⊥ Z | X, then p(Y | do(X), Z, W) = p(Y | do(X), W).</li>
+<li><strong>Rule 2 (observation ↔ intervention):</strong> after removing outgoing edges of Z in G, if Y ⊥⊥ Z | X, then p(Y | do(X), do(Z), W) = p(Y | do(X), Z, W).</li>
+<li><strong>Rule 3 (insert/delete interventions):</strong> after removing incoming edges of X and Z, if Y ⊥⊥ Z | X, then p(Y | do(X), do(Z), W) = p(Y | do(X), W).</li>
+</ul>
+<p>Shpitser & Pearl (2006) proved these three rules are <strong>complete</strong> — any identifiable do-query reduces via finite applications.</p>
+
+<h3>② d-separation: graphical criterion for conditional independence</h3>
+<p>In DAG G, a path p from X to Y is blocked by Z if (a) p contains chain X → M → Y or fork X ← M → Y with M ∈ Z, or (b) p contains a collider X → C ← Y and neither C nor its descendants are in Z. We write X ⊥⊥<sub>d</sub> Y | Z if Z blocks all X-Y paths.</p>
+<p><strong>Key theorem:</strong> X ⊥⊥<sub>d</sub> Y | Z in G ⇒ X ⊥⊥ Y | Z in all distributions consistent with G. The converse requires faithfulness.</p>
+<p>Practical caveat: colliders are the most common pitfall. Conditioning on a collider creates spurious correlation (Berkson's paradox) — in single-cell, "conditioning on cell cycle" can fabricate fake signal.</p>
+
+<h3>③ Backdoor and frontdoor criteria</h3>
+<ul>
+<li><strong>Backdoor:</strong> if Z blocks all "backdoor" paths (paths starting with an arrow into X) from X to Y, then p(Y | do(X)) = Σ<sub>z</sub> p(Y | X, Z=z) p(Z=z). In practice Z is "all confounders."</li>
+<li><strong>Frontdoor:</strong> when confounders are unobserved, find mediator M such that (a) M intercepts all directed X→Y paths, (b) no backdoor from X to M, (c) all M-to-Y backdoors are blocked by X. Then p(Y | do(X)) = Σ<sub>m</sub> p(M=m | X) Σ<sub>x'</sub> p(Y | M=m, X=x') p(X=x').</li>
+</ul>
+<p>Single-cell example: gene A → protein P → gene B is a frontdoor. Even with unobserved confounders (e.g. TFs), the causal effect A → B is identifiable through P.</p>
+
+<h3>④ Instrumental Variable (IV): when confounders are unobserved</h3>
+<p>Find Z satisfying (a) Z affects X, (b) Z affects Y only through X (exclusion restriction), (c) Z independent of Y's confounders. Estimate β = Cov(Z, Y) / Cov(Z, X) via 2SLS.</p>
+<p><strong>Genomic IV: Mendelian randomization (MR)</strong> — SNPs as instruments (random at meiosis). Pleiotropy must be tested. Increasingly used to integrate GWAS + scRNA-seq.</p>
+
+<h3>⑤ PC algorithm in detail</h3>
+<p>PC (Spirtes-Glymour-Scheines 1991): the classic constraint-based discovery algorithm.</p>
+<ol>
+<li><strong>Skeleton:</strong> start from complete graph; for each pair (X, Y), find separating set S ⊂ Adj(X) \ {Y} with X ⊥⊥ Y | S. Test via Fisher's z on partial correlation (continuous) or χ² (discrete).</li>
+<li><strong>Orientation:</strong> for unshielded triple X – Y – Z, if Y ∉ S<sub>XZ</sub>, orient as collider X → Y ← Z. Propagate via Meek's rules (avoid new colliders, no cycles).</li>
+</ol>
+<p>Output is a CPDAG (completed partially directed acyclic graph) — undirected edges represent equivalence classes.</p>
+<p><strong>Single-cell pitfall:</strong> cells are not i.i.d. (shared batch, tech factors), violating PC's assumption → false positives. CausalCell (Wen 2023) uses resampling-based calibration.</p>
+
+<h3>⑥ NOTEARS (Zheng et al. 2018, NeurIPS): DAG constraint as continuous optimization</h3>
+<p>DAG learning is NP-hard combinatorial. NOTEARS' core trick: express acyclicity as a smooth trace constraint:</p>
+<p style="text-align:center;font-family:ui-monospace,monospace;background:#f0ede6;padding:8px;border-radius:6px;">h(W) = tr(e<sup>W ⊙ W</sup>) − d = 0</p>
+<p>Combined loss: min<sub>W</sub> ½ ||X − XW||² + λ ||W||<sub>1</sub> s.t. h(W) = 0, solved via augmented Lagrangian. Faster and more stable than PC for moderate d ≤ 100; scNotears (2023) extends with mini-batches for genes &gt; 1000.</p>
+
+<h3>⑦ LiNGAM: orientability via non-Gaussianity</h3>
+<p>Linear Non-Gaussian Acyclic Model (Shimizu 2006) exploits: if X = AY + e and e is non-Gaussian, direction is identifiable (vs ambiguous in Gaussian). Algorithm: (1) ICA finds mixing matrix; (2) permute rows so diagonal is nonzero; (3) read causal order from the lower triangular pattern.</p>
+<p>scRNA-seq expression is non-Gaussian (dropouts, bursts) — good for LiNGAM.</p>
+
+<h3>⑧ Additive Noise Model (ANM) and other SEM methods</h3>
+<p>Broader SEM: X<sub>i</sub> = f<sub>i</sub>(PA<sub>i</sub>) + N<sub>i</sub>. Hoyer et al. (2009) show: if f is non-linear, direction is identifiable — regressing in the "correct" direction yields residuals independent of cause; wrong direction does not. Test via HSIC.</p>
+
+<h3>⑨ Counterfactuals: Pearl's three-step procedure</h3>
+<p>Counterfactuals ask "what if a different choice had been made?" (compute outcome of do(X = x') given observed evidence E):</p>
+<ol>
+<li><strong>Abduction:</strong> update exogenous variable posterior p(U | E).</li>
+<li><strong>Action:</strong> apply do(X = x') in the SCM.</li>
+<li><strong>Prediction:</strong> compute Y from the modified model.</li>
+</ol>
+<p>Single-cell counterfactual: "what would this perturbed cell express if NOT perturbed?" CINEMA-OT (Dong 2023) uses optimal transport to match each perturbed cell to a counterfactual control.</p>
+
+<h3>⑩ Time-series causal discovery: Granger vs full causal</h3>
+<p><strong>Granger:</strong> X Granger-causes Y if p(Y<sub>t</sub> | X<sub>past</sub>, Y<sub>past</sub>) ≠ p(Y<sub>t</sub> | Y<sub>past</sub>). Simple but (a) stationarity required, (b) can't handle unobserved confounders, (c) not Pearl-equivalent.</p>
+<p><strong>Full:</strong> PCMCI (Runge 2019, Nat Comm) extends PC to time-series, handling both lagged and contemporaneous causality.</p>
+<p>Single-cell: pseudotime isn't real time — naive Granger is risky. RNA velocity offers per-cell "short-time" change, a more direct causal signal.</p>
+
+<h3>⑪ Mendelian randomization in single-cell QTL</h3>
+<p>Single-cell eQTL (OneK1K, sceQTL-Gen) provides SNP → cell-type-specific expression associations. Using SNPs as IVs:</p>
+<ul>
+<li>Estimate gene → phenotype (aging, apoptosis) causal effects.</li>
+<li>Mediation: SNP → mediator gene → disease.</li>
+</ul>
+<p>Challenge: noisy scRNA-seq, small per-cell-type sample size — needs large cohorts (&gt; 1000 donors).</p>
+
+<h3>⑫ Doubly-robust (DR) estimation</h3>
+<p>Combine propensity-score and outcome models; if at least one is correct, DR is consistent. For Perturb-seq:</p>
+<p>τ = E[(W − π(X)) / (π(X)(1 − π(X))) · (Y − μ̂(X, W))] + μ̂(X, 1) − μ̂(X, 0)</p>
+<p>W is perturbation indicator, π is propensity, μ̂ is outcome model. DR-Learner (Kennedy 2020) is the advanced variant.</p>
+
+<h3>⑬ Perturb-seq frameworks: potential outcomes vs DAG</h3>
+<ul>
+<li><strong>Potential outcomes (Rubin):</strong> each cell has Y(0) and Y(1); causal effect = Y(1) − Y(0). One cell observes only one. Perturb-seq assigns cells to perturbations → estimate ATE.</li>
+<li><strong>DAG (Pearl):</strong> draw perturbation → gene → downstream graph; estimate path-specific effects.</li>
+</ul>
+<p>Mathematically equivalent. Perturb-seq typically uses Rubin for ATE; switches to Pearl for mediation/path analysis.</p>
+
+<h3>⑭ Direct effect vs total effect (path-specific)</h3>
+<p>For A → M → B:</p>
+<ul>
+<li><strong>Total effect (TE):</strong> p(B | do(A=1)) − p(B | do(A=0)) — summed across all paths.</li>
+<li><strong>Natural Direct Effect (NDE):</strong> fix M at its A=0 distribution; measure A's effect on B.</li>
+<li><strong>Natural Indirect Effect (NIE):</strong> hold A=0 but let M follow A=1 distribution.</li>
+</ul>
+<p>VanderWeele (2015) gives identification conditions. Single-cell: TF → chromatin → gene mediation is a canonical NDE/NIE application.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="因果推論在單細胞與多體學的具體案例" data-en="Concrete Cases of Causal Inference in Single-cell">因果推論在單細胞與多體學的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Dixit et al. (2016, Cell) — Perturb-seq 開創</h3>
+<p>把 CRISPR sgRNA 條碼整合進 scRNA-seq droplet——每個細胞被指定一個 sgRNA 知識，再讀全 transcriptome。第一個論文證明可用 ~200,000 細胞同時擾動 24 個轉錄因子，得到 cell-type-specific 反應圖譜。<strong>意義：</strong>把「scRNA-seq + CRISPR screen」變成標準工具，因果推論在單細胞的可行性被建立。</p>
+
+<h3>🧬 案例 2：Adamson et al. (2016, Cell) — UPR perturbation</h3>
+<p>用 Perturb-seq 解析 unfolded protein response (UPR) 的因果結構，擾動 ATF6、IRE1、PERK 等 master regulator。發現 UPR 三條 arm 比過去認知更獨立——這個 finding 推翻了「三 arm 高度交織」的舊模型。</p>
+
+<h3>🧬 案例 3：Replogle et al. (2022, Cell) — genome-wide Perturb-seq</h3>
+<p>2.5M 細胞、9867 個 essential genes 的 CRISPRi 干預——目前最大規模的單細胞干預資料。<strong>關鍵 contribution：</strong>(a) 證明 essentiality 的 transcriptional readout 可揭示「為何 essential」（哪些下游 pathway 被破壞），(b) 建立 day-1 reference for in-silico perturbation 模型的訓練/評估。</p>
+
+<h3>🧬 案例 4：GEARS (Roohani et al. 2023, Nature Biotechnology)</h3>
+<p>用 GNN 預測未測過的 perturbation 效應——把基因表示為 GNN node、訓練時學「擾動 X 後 transcriptome 的變化方向」，inference 對新 X 預測。在 Norman 2019 dual-perturbation 上 r = 0.55。<strong>關鍵 insight：</strong>用 perturbation-perturbation 相似度而非 cell-cell 相似度作為 GNN edge，效果更好。</p>
+
+<h3>🧬 案例 5：CINEMA-OT (Dong et al. 2023, Nature Methods)</h3>
+<p>用 optimal transport (OT) 對 perturbed vs control cells 做配對，估計每個 perturbed cell 的「反事實 expression」（如果這個細胞沒被擾動會怎樣）。<strong>創新：</strong>(a) 用 entropy-regularized OT 處理 scale 問題、(b) 配對後計算 individual treatment effect (ITE) 而非僅 ATE。對藥物治療異質性研究有重大用途。</p>
+
+<h3>🧬 案例 6：CausalCell (Wen et al. 2023, NAR)</h3>
+<p>整合觀察 + 干預資料學 causal DAG：(a) 觀察資料用 modified PC algorithm，(b) 干預資料用 do-calculus 校準方向。在 mouse embryonic stem cell 資料上找回已知 OCT4 → NANOG → SOX2 環，並預測新 edges 經 Perturb-seq 驗證。</p>
+
+<h3>🧬 案例 7：Mixscape (Papalexi et al. 2021, Nature Methods)</h3>
+<p>Perturb-seq 一大問題：CRISPR 效率不完美，有些細胞「逃脫」（gRNA 存在但基因未被有效敲除）。Mixscape 用 perturbation signature 將 cells 分為「真擾動」與「逃脫」，前者用於 downstream causal analysis，後者作為內部 control。<strong>影響：</strong>Perturb-seq pipeline 標準化。</p>
+
+<h3>🧬 案例 8：scGEN (Lotfollahi et al. 2019, Nature Methods)</h3>
+<p>用 VAE 學「擾動方向 vector」——在 latent space 把 control cell 沿這個 vector 移動就能模擬擾動效應。雖然不是嚴格因果，但提供「跨 cell type 的擾動 transfer」框架。後續發展為 scGen 系列。</p>
+
+<h3>🧬 案例 9：Fröhlich et al. (2018, NAR) — Boolean causal models</h3>
+<p>把 GRN 建為 Boolean network (gene = ON/OFF)，用 perturb data 推估每個基因的 logical function (AND/OR/NOT)。對 small networks (10–30 基因) 可窮舉搜索，是經典的 mechanistic causal inference。</p>
+
+<h3>🧬 案例 10：Mendelian randomization in single-cell eQTL</h3>
+<p>OneK1K (Yazar 2022, Science) 在 982 individuals × scRNA-seq 上做 sceQTL mapping，識別 cell-type-specific eQTL。後續多個論文用這些 SNP 作 IV 估計「gene → trait」因果效應，例如 IL6R 表現對 COVID-19 嚴重度的因果影響。</p>
+
+<h3>🧬 案例 11：Lopez et al. (2022) — causal scRNA-seq testing</h3>
+<p>正式化「scRNA-seq 上做 hypothesis test 因果效應」的統計框架，提出 conditional randomization test (CRT) 結合 Mixscape，得到 valid p-values，控制 FDR。</p>
+
+<h3>🧬 案例 12：DECIPHER (2024)</h3>
+<p>偵測 Perturb-seq 中「functional」擾動效應 (區分真實 biological effect vs 細胞 stress response)。用 contrastive learning 學「擾動相關」與「擾動無關」的 latent space，再用後者作為 nuisance variable 控制。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Dixit et al. (2016, Cell) — Perturb-seq inaugural paper</h3>
+<p>Integrated CRISPR sgRNA barcodes into scRNA-seq droplets — each cell tagged with a known sgRNA, then full transcriptome read. First paper to perturb 24 TFs simultaneously in ~200,000 cells, generating cell-type-specific response maps. <strong>Significance:</strong> made "scRNA-seq + CRISPR screen" a standard tool, established feasibility of single-cell causal inference.</p>
+
+<h3>🧬 Case 2: Adamson et al. (2016, Cell) — UPR perturbation</h3>
+<p>Perturb-seq dissection of the unfolded protein response — perturbing ATF6, IRE1, PERK master regulators. Showed UPR's three arms are more independent than previously thought, overturning the old "highly intertwined" model.</p>
+
+<h3>🧬 Case 3: Replogle et al. (2022, Cell) — genome-wide Perturb-seq</h3>
+<p>2.5M cells, 9867 essential genes, CRISPRi — largest single-cell intervention map to date. <strong>Key contributions:</strong> (a) transcriptional readout of essentiality reveals "why" (which downstream pathways disrupt), (b) day-1 reference for in-silico perturbation model training/eval.</p>
+
+<h3>🧬 Case 4: GEARS (Roohani et al. 2023, Nature Biotechnology)</h3>
+<p>GNN predicts unseen perturbation effects — genes as GNN nodes; learns direction of transcriptome change post-perturbation. On Norman 2019 dual perturbations, r = 0.55. <strong>Key insight:</strong> using perturbation-perturbation similarity (not cell-cell) as GNN edges works better.</p>
+
+<h3>🧬 Case 5: CINEMA-OT (Dong et al. 2023, Nature Methods)</h3>
+<p>Optimal transport between perturbed and control cells → counterfactual expression per cell ("what would this cell express if not perturbed?"). <strong>Innovation:</strong> (a) entropy-regularized OT for scale, (b) individual treatment effects (ITE) beyond ATE. Crucial for treatment-heterogeneity studies.</p>
+
+<h3>🧬 Case 6: CausalCell (Wen et al. 2023, NAR)</h3>
+<p>Joint observational + interventional causal DAG learning: (a) modified PC on observation, (b) do-calculus orientation from interventions. On mouse ESC data, recovers OCT4 → NANOG → SOX2 cycle; predicts new edges validated by Perturb-seq.</p>
+
+<h3>🧬 Case 7: Mixscape (Papalexi et al. 2021, Nature Methods)</h3>
+<p>A core Perturb-seq problem: CRISPR is imperfect; some cells "escape" (sgRNA present but gene not effectively knocked down). Mixscape separates true perturbed vs escaped via perturbation signatures; former for downstream causal analysis, latter as internal control. <strong>Impact:</strong> standardized Perturb-seq pipeline.</p>
+
+<h3>🧬 Case 8: scGEN (Lotfollahi et al. 2019, Nature Methods)</h3>
+<p>VAE learns a "perturbation direction" vector — moving control cells along it in latent space simulates perturbation effect. Not strictly causal, but enables cross-cell-type perturbation transfer. Spawned the scGen family.</p>
+
+<h3>🧬 Case 9: Fröhlich et al. (2018, NAR) — Boolean causal models</h3>
+<p>GRN as a Boolean network (gene = ON/OFF); infer per-gene logical function (AND/OR/NOT) from perturb data. Exhaustive search feasible for small networks (10–30 genes) — classical mechanistic causal inference.</p>
+
+<h3>🧬 Case 10: Mendelian randomization with single-cell eQTL</h3>
+<p>OneK1K (Yazar 2022, Science): 982 individuals × scRNA-seq → cell-type-specific eQTLs. Follow-ups use these SNPs as IVs to estimate gene → trait causal effects, e.g. IL6R expression's effect on COVID-19 severity.</p>
+
+<h3>🧬 Case 11: Lopez et al. (2022) — causal scRNA-seq testing</h3>
+<p>Formalized "hypothesis testing of causal effects on scRNA-seq" — conditional randomization test (CRT) combined with Mixscape yields valid p-values with FDR control.</p>
+
+<h3>🧬 Case 12: DECIPHER (2024)</h3>
+<p>Detects "functional" Perturb-seq effects vs cell-stress responses. Contrastive learning separates "perturbation-related" from "perturbation-agnostic" latent spaces; latter used as nuisance covariate.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="因果推論還能改良/新解決哪些任務？" data-en="What Else Could Causal Inference Improve?">因果推論還能改良/新解決哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 多步因果發現：藥物 → 基因 → 蛋白 → 表型</h3>
+<p><strong>現有限制：</strong>多數因果分析只看「擾動 → 直接 mRNA 改變」，無法解釋藥物效應的完整 mechanism。</p>
+<p><strong>新提案：</strong>整合 Perturb-seq + CITE-seq (protein) + 表型 (例如 high-content imaging) 在同一 cell，建立多層 SCM。用 path-specific effect (NDE/NIE) 分解每一步貢獻。</p>
+<p><strong>改良：</strong>對藥物 mode of action 提供 mechanism-level 解釋，加速 lead optimization。</p>
+
+<h3>🎯 2. 因果整合多體學</h3>
+<p><strong>現有限制：</strong>多體學整合 (scGLUE、Seurat WNN) 求 cross-modal alignment，但未表達「ATAC peak → RNA → protein」的因果方向。</p>
+<p><strong>新提案：</strong>把多體學整合改寫為 layered SCM：ATAC accessibility 為上游、RNA 為中游、protein 為下游。用 Perturb-ATAC、Perturb-seq 等干預資料定向，並用 Mendelian randomization 補充未觀察 confounder。</p>
+<p><strong>改良：</strong>能回答「染色質開放是因為 TF binding 或是 TF 結果」這類因果問題。</p>
+
+<h3>🎯 3. Causal Perturb-spatial：擾動空間影響</h3>
+<p><strong>現有限制：</strong>Perturb-seq 用 droplet 分離 cell，丟失空間 context；空間轉錄體 (Visium、MERFISH) 又無 perturbation 標記。</p>
+<p><strong>新提案：</strong>結合 in-situ perturbation (e.g. CRISPR-display) + 空間轉錄體，分析擾動細胞對「鄰近細胞」的 paracrine 因果效應。需要新的 spatial SCM 表示形式（細胞為 node、空間鄰接為 edge）。</p>
+<p><strong>改良：</strong>對 cell-cell communication 與 niche signaling 提供首次 do(·) 級的證據。</p>
+
+<h3>🎯 4. 反事實治療選擇（precision medicine）</h3>
+<p><strong>現有限制：</strong>當前精準醫療多靠 biomarker stratification，未直接估計「這個病人用 A vs B 藥的反事實 outcome」。</p>
+<p><strong>新提案：</strong>用 patient-level scRNA-seq + clinical outcome 訓練 causal forest (Wager-Athey) 或 BART (Bayesian Additive Regression Trees)，估計個別治療效應 (ITE)。對腫瘤異質性特別有用。</p>
+<p><strong>改良：</strong>從「平均最佳」轉為「個人最佳」治療決策。</p>
+
+<h3>🎯 5. 預測抗藥性演化的因果模型</h3>
+<p><strong>現有限制：</strong>癌症抗藥性研究多用基因組學 (mutation profiling)，無法解釋「為何特定 escape pathway 出現」。</p>
+<p><strong>新提案：</strong>結合 longitudinal scRNA-seq + Perturb-seq，建立「藥物壓力 → 細胞狀態轉換 → 抗藥性」的時序因果模型。用 PCMCI on time-series 找 lagged causality。</p>
+<p><strong>改良：</strong>預測哪些 escape pathway 會出現，預先設計組合療法。</p>
+
+<h3>🎯 6. 用 IV 方法整合 GWAS + scRNA-seq</h3>
+<p><strong>現有限制：</strong>GWAS 給出 SNP-trait 關聯但未解釋 mechanism；scRNA-seq eQTL 給出 SNP-gene 但難連到 disease。</p>
+<p><strong>新提案：</strong>大規模 Mendelian randomization——對每個 (SNP, cell-type, gene, disease) 四元組做 MR 分析，建立「SNP → cell-type-specific expression → disease」的因果鏈。需要 1000+ individual cohort 與 standardized cell-type 對應。</p>
+<p><strong>改良：</strong>從 GWAS hits 直接連到 cell-type-specific 機制，加速 drug target 發掘。</p>
+
+<h3>🎯 7. Causal scLLM：給模型加因果結構先驗</h3>
+<p><strong>現有限制：</strong>當前 scLLM (scGPT、Geneformer) 學「相關性」而非「因果」。其 attention 在 perturbation prediction benchmark 上未勝過 linear baseline。</p>
+<p><strong>新提案：</strong>把 known causal edges (來自 KEGG、Reactome、Perturb-seq) 編入 scLLM 的 attention prior——對已知 causal pair 給高 attention weight 初始化，並加入「causal consistency」loss（擾動 A 後 B 的預測變化應符合已知方向）。</p>
+<p><strong>改良：</strong>scLLM 從「pattern learner」升級為「causal learner」，在 perturbation 任務勝過 baseline。</p>
+
+<h3>🎯 8. 偵測「Simpson's paradox」型細胞型別誤導</h3>
+<p><strong>現有限制：</strong>整體 cell population 上的 gene-gene relationship 可能在每個 sub-population 內部反向（Simpson 悖論）。傳統 DE/GRN 推論常忽略這個。</p>
+<p><strong>新提案：</strong>系統性掃描每對 gene，在 cluster 內 vs 全部 sample 上計算相關，flag「方向反轉」的 pair。這些 pair 提示存在 confounding cell type effect。</p>
+<p><strong>改良：</strong>避免 spurious gene module；提示需要進一步 sub-cluster 與 stratified analysis。</p>
+
+<h3>🎯 9. 病人特異性因果發現</h3>
+<p><strong>現有限制：</strong>因果發現通常從 population 推估 average DAG，無法捕捉病人個別結構差異。</p>
+<p><strong>新提案：</strong>對單一病人的 longitudinal scRNA-seq + treatment response 做 personalized causal discovery，用 Bayesian causal forest 或 patient-specific GP-based SCM。</p>
+<p><strong>改良：</strong>對罕見疾病、N-of-1 試驗提供新工具。</p>
+
+<h3>🎯 10. 從 single-cell 資料建構 mechanistic 動力學模型</h3>
+<p><strong>現有限制：</strong>當前 RNA velocity (Bergen 2020) 假設 splicing-degradation simple kinetics，無法捕捉 TF binding 與多階段 regulation。</p>
+<p><strong>新提案：</strong>用 Perturb-seq + causal discovery 重建 mechanistic ODE 系統 (dGene/dt = f(TF, miRNA, ...))，再用 sparse identification of nonlinear dynamics (SINDy) 估計係數。</p>
+<p><strong>改良：</strong>可預測未測 perturbation 的時序軌跡，是真正的「mechanistic prediction」。</p>
+
+<h3>🎯 11. Causal inference 用於 senescence trajectories</h3>
+<p><strong>現有限制：</strong>細胞衰老 (senescence) 是 ageing 與癌症的核心，但「哪個 cell state 決定 fate (senescence vs apoptosis)」未解。</p>
+<p><strong>新提案：</strong>longitudinal scRNA-seq + Perturb-seq on senescence-related genes，用 counterfactual analysis 找出「fate-deciding moment」。</p>
+<p><strong>改良：</strong>對 senolytic drug development 提供因果靶標。</p>
+
+<h3>🎯 12. 預測 combination perturbation 效應</h3>
+<p><strong>現有限制：</strong>GEARS 等預測 dual perturbation 效應 r ≈ 0.55，對 3+ gene 組合幾乎完全無法預測。</p>
+<p><strong>新提案：</strong>用 path-specific causal effects 分解 combination effect (additive + synergistic + antagonistic)，每個 component 用不同模型估計，再加總。需要 large multi-gene Perturb-seq 資料 (e.g. Norman + Replogle combined)。</p>
+<p><strong>改良：</strong>為 combination therapy 設計提供更精準預測。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Multi-step causal discovery: drug → gene → protein → phenotype</h3>
+<p><strong>Current limit:</strong> most causal analyses cover only "perturbation → direct mRNA change," missing full drug mechanisms.</p>
+<p><strong>Proposal:</strong> integrate Perturb-seq + CITE-seq + phenotype (e.g. high-content imaging) in one cell; build multi-layer SCM. Decompose contributions via path-specific effects (NDE/NIE).</p>
+<p><strong>Improvement:</strong> mechanism-level explanation of drug mode-of-action; accelerates lead optimization.</p>
+
+<h3>🎯 2. Causal multi-omics integration</h3>
+<p><strong>Current limit:</strong> scGLUE, Seurat WNN find cross-modal alignment but ignore "ATAC → RNA → protein" causal direction.</p>
+<p><strong>Proposal:</strong> rewrite as layered SCM — ATAC upstream, RNA middle, protein downstream. Use Perturb-ATAC, Perturb-seq for orientation; Mendelian randomization for unobserved confounders.</p>
+<p><strong>Improvement:</strong> answers "is chromatin opening cause or consequence of TF binding?"</p>
+
+<h3>🎯 3. Causal Perturb-spatial: perturbation effects in space</h3>
+<p><strong>Current limit:</strong> Perturb-seq loses spatial context; spatial transcriptomics lacks perturbation labels.</p>
+<p><strong>Proposal:</strong> in-situ perturbation (CRISPR-display) + spatial transcriptomics — measure paracrine causal effects on neighboring cells. Requires a new spatial SCM (cells as nodes, spatial adjacency as edges).</p>
+<p><strong>Improvement:</strong> first do(·)-level evidence for cell-cell communication and niche signaling.</p>
+
+<h3>🎯 4. Counterfactual treatment selection (precision medicine)</h3>
+<p><strong>Current limit:</strong> precision medicine relies on biomarker stratification, not counterfactual "drug A vs B for this patient" estimation.</p>
+<p><strong>Proposal:</strong> train causal forests (Wager-Athey) or BART on patient-level scRNA-seq + clinical outcomes to estimate individual treatment effects (ITE).</p>
+<p><strong>Improvement:</strong> shifts from "best-on-average" to "best-for-this-patient" decisions.</p>
+
+<h3>🎯 5. Causal models for drug-resistance evolution</h3>
+<p><strong>Current limit:</strong> cancer resistance mostly studied via genomics (mutations), can't explain "why this escape pathway."</p>
+<p><strong>Proposal:</strong> longitudinal scRNA-seq + Perturb-seq → time-series causal model "drug pressure → cell-state transition → resistance." Use PCMCI for lagged causality.</p>
+<p><strong>Improvement:</strong> predict which escape pathways emerge; pre-design combination therapies.</p>
+
+<h3>🎯 6. IV methods integrating GWAS + scRNA-seq</h3>
+<p><strong>Current limit:</strong> GWAS gives SNP-trait but no mechanism; sc-eQTL gives SNP-gene but rarely links to disease.</p>
+<p><strong>Proposal:</strong> large-scale Mendelian randomization on (SNP, cell-type, gene, disease) — build SNP → cell-type-specific expression → disease causal chains. Requires 1000+ donor cohorts and standardized cell-type vocab.</p>
+<p><strong>Improvement:</strong> directly link GWAS hits to cell-type-specific mechanisms; accelerate target discovery.</p>
+
+<h3>🎯 7. Causal scLLM: causal priors in the model</h3>
+<p><strong>Current limit:</strong> current scLLMs learn correlation, not causation; attention does not beat linear baselines on perturbation benchmarks.</p>
+<p><strong>Proposal:</strong> embed known causal edges (KEGG, Reactome, Perturb-seq) as attention priors; add "causal consistency" loss — direction of B's predicted change after perturbing A must match known direction.</p>
+<p><strong>Improvement:</strong> upgrade scLLM from pattern learner to causal learner; surpass baselines on perturbation tasks.</p>
+
+<h3>🎯 8. Detect Simpson's-paradox-type cell-type confounding</h3>
+<p><strong>Current limit:</strong> gene-gene relationships in full population may reverse within sub-populations (Simpson). Traditional DE/GRN ignores this.</p>
+<p><strong>Proposal:</strong> systematically scan gene pairs; compute correlation per cluster vs full sample; flag direction reversals. These pairs hint at confounding cell-type effects.</p>
+<p><strong>Improvement:</strong> avoid spurious gene modules; flag pairs needing stratified analysis.</p>
+
+<h3>🎯 9. Patient-specific causal discovery</h3>
+<p><strong>Current limit:</strong> causal discovery typically infers a population-average DAG, missing patient-level variability.</p>
+<p><strong>Proposal:</strong> personalized causal discovery on longitudinal per-patient scRNA-seq + treatment response — Bayesian causal forests, patient-specific GP-based SCM.</p>
+<p><strong>Improvement:</strong> tool for rare diseases and N-of-1 trials.</p>
+
+<h3>🎯 10. Build mechanistic dynamics from single-cell data</h3>
+<p><strong>Current limit:</strong> RNA velocity (Bergen 2020) assumes simple splicing-degradation kinetics, missing TF binding and multi-stage regulation.</p>
+<p><strong>Proposal:</strong> Perturb-seq + causal discovery → mechanistic ODE (dGene/dt = f(TF, miRNA, ...)) with SINDy estimating coefficients.</p>
+<p><strong>Improvement:</strong> predict trajectories under unseen perturbations — true mechanistic prediction.</p>
+
+<h3>🎯 11. Causal inference for senescence trajectories</h3>
+<p><strong>Current limit:</strong> senescence is central to ageing and cancer, but "which cell state decides fate (senescence vs apoptosis)" is unresolved.</p>
+<p><strong>Proposal:</strong> longitudinal scRNA-seq + Perturb-seq on senescence genes; counterfactual analysis to find "fate-deciding moments."</p>
+<p><strong>Improvement:</strong> causal targets for senolytic drug development.</p>
+
+<h3>🎯 12. Predict combination perturbation effects</h3>
+<p><strong>Current limit:</strong> GEARS predicts dual perturbations at r ≈ 0.55; 3+ gene combos are nearly unpredictable.</p>
+<p><strong>Proposal:</strong> decompose combination effects into additive + synergistic + antagonistic via path-specific causal effects, estimate each separately and sum. Needs large multi-gene Perturb-seq (Norman + Replogle merged).</p>
+<p><strong>Improvement:</strong> more accurate predictions for combination therapy design.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pc')">PC / causal-learn</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gears')">GEARS</button>
+<button class="code-tab-btn" onclick="switchTab(this,'ms')">Mixscape (Seurat)</button>
+</div>
+<div class="code-tab-content active" id="pc"><pre><span class="keyword">from</span> causallearn.search.ConstraintBased.PC <span class="keyword">import</span> pc
+<span class="keyword">from</span> causallearn.utils.cit <span class="keyword">import</span> fisherz
+
+cg = pc(data, alpha=<span class="num">0.05</span>, indep_test=fisherz)
+cg.draw_pydot_graph(labels=gene_names)
+
+<span class="comment"># NOTEARS</span>
+<span class="keyword">from</span> causalnex.structure.notears <span class="keyword">import</span> from_pandas
+sm = from_pandas(df, w_threshold=<span class="num">0.1</span>)
+sm.edges()</pre></div>
+<div class="code-tab-content" id="gears"><pre><span class="keyword">import</span> gears
+
+pert_data = gears.PertData(<span class="str">"./data"</span>)
+pert_data.load(<span class="str">"norman"</span>)        <span class="comment"># Norman 2019 Perturb-seq dataset</span>
+pert_data.prepare_split(split=<span class="str">"simulation"</span>)
+
+model = gears.GEARS(pert_data, device=<span class="str">"cuda:0"</span>)
+model.model_initialize(hidden_size=<span class="num">64</span>)
+model.train(epochs=<span class="num">20</span>)
+
+<span class="comment"># 預測沒看過的擾動組合</span>
+pred = model.predict([[<span class="str">"FEV"</span>, <span class="str">"SAMD1"</span>]])</pre></div>
+<div class="code-tab-content" id="ms"><pre><span class="comment"># Seurat Mixscape：分離「真擾動」與「逃脫」細胞</span>
+<span class="keyword">library</span>(Seurat)
+obj &lt;- <span class="func">CalcPerturbSig</span>(obj, assay=<span class="str">"RNA"</span>, slot=<span class="str">"data"</span>,
+                       gd.class=<span class="str">"gRNA_class"</span>, nt.class.name=<span class="str">"NT"</span>)
+obj &lt;- <span class="func">RunMixscape</span>(obj, assay=<span class="str">"PRTB"</span>, slot=<span class="str">"scale.data"</span>,
+                    labels=<span class="str">"gRNA_class"</span>, nt.class.name=<span class="str">"NT"</span>,
+                    min.de.genes=<span class="num">5</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">p(B | A) 與 p(B | do(A)) 的關鍵差異是？</p><p data-lang="en">Key difference between p(B | A) and p(B | do(A))?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 兩者完全相同</span><span data-lang="en">A. They are identical</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. do(A) 比較慢</span><span data-lang="en">B. do(A) is slower</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. p(B|A) 是觀察條件機率；p(B|do(A)) 是干預機率，移除 A 的所有上游</span><span data-lang="en">C. p(B|A) is observational conditional; p(B|do(A)) is interventional, removing all parents of A</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. do(A) 是 Pearson r</span><span data-lang="en">D. do(A) is Pearson r</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Perturb-seq 在因果推論上的價值是？</p><p data-lang="en">Perturb-seq's value for causal inference?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 提升 PCR 效率</span><span data-lang="en">A. Improves PCR efficiency</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 主動干預每個細胞 → 提供真正的 do(·) 觀測，可直接估計因果效應</span><span data-lang="en">B. Actively perturbs cells → real do(·) observations → direct causal effect estimation</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 增加細胞數</span><span data-lang="en">C. Increases cell count</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 移除 dropout</span><span data-lang="en">D. Removes dropouts</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="scllms.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 13：scLLMs</span></a>
+<a href="index.html"><span class="nav-dir" data-zh="🏁 完成" data-en="🏁 Done">🏁 完成</span><span class="nav-title" data-zh="回首頁" data-en="Back to Home">回首頁</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+function pearson(x,y){const n=x.length;const mx=x.reduce((a,b)=>a+b,0)/n,my=y.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){const a=x[i]-mx,b=y[i]-my;num+=a*b;dx+=a*a;dy+=b*b;}return num/Math.sqrt(dx*dy);}
+function partialR(x,y,z){const n=x.length;const rxy=pearson(x,y),rxz=pearson(x,z),ryz=pearson(y,z);return (rxy-rxz*ryz)/Math.sqrt((1-rxz*rxz)*(1-ryz*ryz));}
+
+const ch=new Chart(document.getElementById('cChart'),{type:'scatter',data:{datasets:[{label:'A vs B',data:[],backgroundColor:'rgba(26,107,90,0.55)',pointRadius:3}]},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'A'}},y:{title:{display:true,text:'B'}}}}});
+
+function sim(){const c=+document.getElementById('sC').value;const ab=+document.getElementById('sAB').value;document.getElementById('vC').textContent=c.toFixed(2);document.getElementById('vAB').textContent=ab.toFixed(2);
+const n=300;const C=[],A=[],B=[];for(let i=0;i<n;i++){const ci=Math.random()*2-1;const a=c*ci+(Math.random()-0.5)*0.4;const b=c*ci+ab*a+(Math.random()-0.5)*0.4;C.push(ci);A.push(a);B.push(b);}
+ch.data.datasets[0].data=A.map((a,i)=>({x:a,y:B[i]}));ch.update('none');
+const rab=pearson(A,B);const pr=partialR(A,B,C);
+document.getElementById('rAB').textContent=rab.toFixed(3);document.getElementById('rABC').textContent=pr.toFixed(3);
+const L=I18n.get();let msg;if(Math.abs(rab)>0.3 && Math.abs(pr)<0.15)msg=L==='zh'?`A 與 B 看起來高度相關 (r=${rab.toFixed(2)})，但控制 confounder C 後 partial r ≈ 0 — 這個關聯是「假的」，由 C 製造。`:`A and B look strongly correlated (r=${rab.toFixed(2)}), but partial r ≈ 0 after controlling C — the correlation is spurious, created by C.`;
+else if(Math.abs(ab)>0.2)msg=L==='zh'?`真實 A→B 效應 ≠ 0，partial r 反映直接效應 ≈ ${pr.toFixed(2)}。`:`True A→B ≠ 0; partial r reflects direct effect ≈ ${pr.toFixed(2)}.`;
+else msg=L==='zh'?'拉動上面的滑桿觀察 confounder 與真實效應的差異。':'Drag sliders to compare confounder vs true effect.';
+document.getElementById('cMsg').innerHTML=msg;}
+document.getElementById('sC').addEventListener('input',sim);document.getElementById('sAB').addEventListener('input',sim);document.addEventListener('langchange',sim);sim();
+
+window._QF={zh:{q1_y:'答對！這就是 Pearl 因果框架的關鍵區別。',q1_n:'答案是 C。do(A) 切斷 A 的上游，純粹看 A 對 B 的直接效應。',q2_y:'答對！主動擾動是真因果的最佳證據。',q2_n:'答案是 B。Perturb-seq 提供大規模 do(·) 觀測。'},en:{q1_y:'Correct! Pearl’s key distinction.',q1_n:'Answer is C. do(A) severs upstream of A.',q2_y:'Correct! Active perturbation is the gold standard.',q2_n:'Answer is B. Perturb-seq provides scaled do(·) observations.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

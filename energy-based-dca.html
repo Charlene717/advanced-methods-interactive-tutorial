@@ -1,0 +1,560 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Energy-Based Models & DCA — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html" class="active">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 28 / 38</div><h1 data-zh="Energy-Based Models 與 Direct Coupling Analysis" data-en="Energy-Based Models & Direct Coupling Analysis">Energy-Based Models 與 Direct Coupling Analysis</h1>
+<p class="subtitle" data-lang="zh">EBM 把任意函數轉成機率：p(x) ∝ exp(−E(x))。應用到 protein 演化序列分析就是 Direct Coupling Analysis (DCA)——從 MSA 解出殘基間的直接耦合，重建蛋白接觸圖。Morcos 2011 (PNAS) 的 DCA 是 AlphaFold 之前最強的接觸預測法，也是 EVcouplings、GREMLIN、ESM-MSA 的基礎。</p>
+<p class="subtitle" data-lang="en">EBM turns any function into a probability: p(x) ∝ exp(−E(x)). Applied to protein evolutionary sequences, this is Direct Coupling Analysis (DCA) — extracting direct residue-residue couplings from an MSA to reconstruct contact maps. Morcos 2011 (PNAS)'s DCA was the strongest contact predictor before AlphaFold, and underlies EVcouplings, GREMLIN, and ESM-MSA.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="EBM 的統一視角與 DCA 的特例" data-en="EBM Unified View and DCA as a Special Case">EBM 的統一視角與 DCA 的特例</h2>
+<div data-lang="zh">
+<p><strong>Energy-Based Model (LeCun 2006)：</strong>選一個能量函數 E_θ(x) : ℝ^d → ℝ，定義機率</p>
+<p style="text-align:center;font-family:Georgia,serif;">p_θ(x) = exp(−E_θ(x)) / Z(θ)，&nbsp;&nbsp; Z(θ) = ∫ exp(−E_θ(x)) dx</p>
+<p>低能量 = 高機率。<strong>強大之處</strong>：E_θ 可以是任意 NN，無需 normalization 約束（VAE / flow 都需要）。<strong>麻煩之處</strong>：Z 通常算不出來；訓練與採樣都需要近似（contrastive divergence、Langevin、score matching）。</p>
+<p><strong>Boltzmann machine：</strong>EBM 的歷史前身。對 binary x ∈ {0,1}^d，E(x) = −Σ h_i x_i − Σ J_ij x_i x_j——即「外場 + 兩體耦合」的 Ising / Potts 模型。<strong>所以 EBM 本質就是廣義的 Potts/Ising</strong>。</p>
+<p><strong>Direct Coupling Analysis (Morcos 2011, PNAS)：</strong>對蛋白 MSA（每列一物種、每行一殘基位置），fit 一個 Potts 模型</p>
+<p style="text-align:center;font-family:Georgia,serif;">p(σ₁, ..., σ_L) ∝ exp(Σ_i h_i(σ_i) + Σ_(i&lt;j) J_ij(σ_i, σ_j))</p>
+<p>其中 σ_i ∈ {20 amino acids + gap}。<strong>J_ij 大就代表「殘基 i 與 j 直接耦合」</strong>，通常表示空間接觸（或功能性 epistasis）。一階共變 (MI 或 mutual info) 會被 indirect chains 污染；DCA 用全模型 fit 把 direct vs indirect 分開——這就是「Direct」的由來。</p>
+</div>
+<div data-lang="en">
+<p><strong>Energy-Based Model (LeCun 2006):</strong> pick an energy function E_θ(x) : ℝ^d → ℝ; define</p>
+<p style="text-align:center;font-family:Georgia,serif;">p_θ(x) = exp(−E_θ(x)) / Z(θ),&nbsp;&nbsp; Z(θ) = ∫ exp(−E_θ(x)) dx</p>
+<p>Low energy = high probability. <strong>Strength:</strong> E_θ can be any NN — no normalization constraint (unlike VAE / flow). <strong>Pain:</strong> Z is generally intractable; training and sampling rely on approximations (contrastive divergence, Langevin, score matching).</p>
+<p><strong>Boltzmann machine:</strong> historical ancestor. For binary x ∈ {0,1}^d, E(x) = −Σ h_i x_i − Σ J_ij x_i x_j — external field + pairwise coupling, an Ising / Potts model. <strong>Hence EBM is essentially a generalized Potts/Ising</strong>.</p>
+<p><strong>Direct Coupling Analysis (Morcos 2011, PNAS):</strong> on a protein MSA (rows = species, columns = residue positions), fit a Potts model</p>
+<p style="text-align:center;font-family:Georgia,serif;">p(σ₁, ..., σ_L) ∝ exp(Σ_i h_i(σ_i) + Σ_(i&lt;j) J_ij(σ_i, σ_j))</p>
+<p>with σ_i ∈ {20 AAs + gap}. <strong>Large J_ij ⇒ direct coupling between residues i and j</strong>, usually spatial contact (or functional epistasis). Pairwise co-evolution metrics (e.g., MI) get contaminated by indirect chains. DCA's full-model fit cleanly separates direct from indirect — hence "Direct".</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="任意能量" data-en="Any energy">任意能量</h4><p data-lang="zh">E_θ 可以是 CNN、Transformer、graph net；不像 flow 需要可逆性。</p><p data-lang="en">E_θ can be CNN / Transformer / graph net — no invertibility required (unlike flows).</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="DCA = Potts EBM" data-en="DCA = Potts EBM">DCA = Potts EBM</h4><p data-lang="zh">DCA 就是 amino-acid alphabet 的 EBM；J_ij 大 → 殘基接觸。</p><p data-lang="en">DCA is an EBM over the amino-acid alphabet; large J_ij → residue contact.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="AlphaFold 前身" data-en="Pre-AlphaFold">AlphaFold 前身</h4><p data-lang="zh">2011–2018 年 DCA-based contact 預測是結構建模的核心；AF1/AF2 仍用 MSA 的 coevolution 訊號。</p><p data-lang="en">From 2011–2018, DCA-based contacts drove structure modeling; AF1/AF2 still rely on MSA coevolution signals.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="EBM 訓練、Langevin 採樣、mfDCA / plmDCA" data-en="EBM Training, Langevin Sampling, mfDCA / plmDCA">EBM 訓練、Langevin 採樣、mfDCA / plmDCA</h2>
+<div data-lang="zh">
+<p><strong>① EBM 訓練：Maximum Likelihood</strong></p>
+<p>∇_θ log p_θ(x) = −∇_θ E_θ(x) + 𝔼_(x'∼p_θ) [∇_θ E_θ(x')]</p>
+<p>第一項好算（資料樣本上的梯度）；第二項要對 model distribution 做期望——這要 sampling，通常是麻煩來源。</p>
+
+<p><strong>② Contrastive Divergence (Hinton 2002, Neural Comp.)：</strong>跑 k 步 MCMC（k 通常很小 ~1）從資料點出發，得到 x'；用 x' 近似 model expectation。雖然 biased，但實務中 work。</p>
+
+<p><strong>③ Langevin 採樣：</strong>連續 EBM 用 Langevin dynamics：</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_{k+1} = x_k − (ε/2) ∇_x E_θ(x_k) + √ε · z_k，&nbsp;&nbsp; z_k ~ N(0, I)</p>
+<p>k → ∞ 時 x_k → p_θ。可作為「神經 EBM」的標準採樣器（如 IGEBM, Du 2019）。</p>
+
+<p><strong>④ Score Matching (Hyvärinen 2005)：</strong>避開 Z 直接學 ∇log p_θ = −∇E_θ。<strong>denoising score matching</strong>（Vincent 2011）是 diffusion 的根源。</p>
+
+<p><strong>⑤ DCA 的兩大實作：</strong></p>
+<ul>
+<li><strong>mfDCA (mean-field, Morcos 2011)：</strong>Boltzmann inversion 近似——估計經驗 covariance C，取 J ≈ −C⁻¹。快速但近似。</li>
+<li><strong>plmDCA (pseudo-likelihood, Ekeberg 2013, Phys. Rev. E)：</strong>對每個 column 做 conditional logistic regression（給定其他位置預測當前位置），組合得到 J。<strong>準確度比 mfDCA 高</strong>，現代 DCA 主流。</li>
+<li><strong>bmDCA (Boltzmann machine learning)：</strong>真正 MCMC fit，最精確但慢。</li>
+</ul>
+
+<p><strong>⑥ 接觸分數：</strong>對 J_ij ∈ ℝ^(q×q)（q=21），取 Frobenius norm</p>
+<p style="text-align:center;font-family:Georgia,serif;">F_ij = ‖J_ij‖_F</p>
+<p>並做 Average Product Correction (APC) 去除背景熵：F'_ij = F_ij − (F_i · F_j / F̄)。<strong>F'_ij 最大的 (i,j) pair 即預測接觸</strong>。</p>
+</div>
+<div data-lang="en">
+<p><strong>① EBM training: Maximum Likelihood</strong></p>
+<p>∇_θ log p_θ(x) = −∇_θ E_θ(x) + 𝔼_(x'∼p_θ) [∇_θ E_θ(x')]</p>
+<p>The first term is easy (data-sample gradient); the second requires expectation under the model — sampling is the bottleneck.</p>
+
+<p><strong>② Contrastive Divergence (Hinton 2002, Neural Comp.):</strong> run k-step MCMC (k often 1) from data points to get x'; approximate model expectation with x'. Biased but practical.</p>
+
+<p><strong>③ Langevin sampling:</strong> for continuous EBMs, use Langevin dynamics:</p>
+<p style="text-align:center;font-family:Georgia,serif;">x_{k+1} = x_k − (ε/2) ∇_x E_θ(x_k) + √ε · z_k,&nbsp;&nbsp; z_k ~ N(0, I)</p>
+<p>k → ∞ ⇒ x_k → p_θ. Used as the standard sampler for neural EBMs (e.g., IGEBM, Du 2019).</p>
+
+<p><strong>④ Score Matching (Hyvärinen 2005):</strong> sidestep Z by learning ∇log p_θ = −∇E_θ directly. <strong>Denoising score matching</strong> (Vincent 2011) became the foundation of diffusion models.</p>
+
+<p><strong>⑤ Two main DCA implementations:</strong></p>
+<ul>
+<li><strong>mfDCA (mean-field, Morcos 2011):</strong> Boltzmann inversion — estimate empirical covariance C, set J ≈ −C⁻¹. Fast but approximate.</li>
+<li><strong>plmDCA (pseudo-likelihood, Ekeberg 2013, Phys. Rev. E):</strong> conditional logistic regression per column (predict residue given others); combine into J. <strong>More accurate than mfDCA</strong>; modern default.</li>
+<li><strong>bmDCA (Boltzmann machine learning):</strong> true MCMC fit; most accurate but slow.</li>
+</ul>
+
+<p><strong>⑥ Contact score:</strong> for J_ij ∈ ℝ^(q×q) (q=21), take Frobenius norm</p>
+<p style="text-align:center;font-family:Georgia,serif;">F_ij = ‖J_ij‖_F</p>
+<p>then apply Average Product Correction (APC) to remove background entropy: F'_ij = F_ij − (F_i · F_j / F̄). <strong>Top (i,j) pairs by F' predict spatial contacts</strong>.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>歷史脈絡：</strong>共變分析的概念可追溯到 Göbel et al. 1994 (Proteins)，但早期方法只用 pairwise 統計（如 mutual information），會被 indirect coupling 嚴重污染。Weigt et al. 2009 (PNAS) 提出 mfDCA 雛形；Morcos 2011 系統化並用於 ~150 PDB 接觸預測。AlphaFold（2018, 2020）後 DCA 不再是 contact 預測 SOTA，但仍是 ESM-MSA、MSA Transformer 等模型的概念基礎。</div>
+<div data-lang="en"><strong>Historical context:</strong> Co-evolutionary analysis dates back to Göbel et al. 1994 (Proteins), but early pairwise statistics (e.g., MI) were contaminated by indirect couplings. Weigt 2009 (PNAS) introduced mfDCA; Morcos 2011 systematized it for ~150 PDB contact predictions. After AlphaFold (2018, 2020), DCA is no longer SOTA for contacts, but it remains the conceptual basis of ESM-MSA, MSA Transformer, etc.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="從 MSA 推接觸圖：direct vs indirect coupling" data-en="MSA → Contact Map: Direct vs Indirect Coupling">從 MSA 推接觸圖：direct vs indirect coupling</h2>
+<div data-lang="zh"><p>我們模擬一個含「真實接觸對」的 MSA：4 對位置（1↔5、2↔7、3↔6、4↔8）是真實接觸（co-vary）；其它對位置獨立演化。<strong>原始 mutual information (MI)</strong> 會錯誤地標出許多 indirect 對；<strong>DCA (mean-field with L₂ reg)</strong> 則能還原真實 contact map。<strong>調整正則化 λ</strong> 看 over/under-fit 的效果。</p></div>
+<div data-lang="en"><p>We simulate an MSA with 4 true contact pairs (1↔5, 2↔7, 3↔6, 4↔8) co-varying; others evolve independently. Raw <strong>mutual information (MI)</strong> mistakenly flags many indirect pairs; <strong>DCA (mean-field with L₂ reg)</strong> recovers the true contact map. Adjust λ to see over/under-fit behavior.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="正則化 λ" data-en="Regularization λ">λ <span id="vLam">0.30</span></label><input type="range" id="sLam" min="0.02" max="2" value="0.3" step="0.02"></div>
+<div class="slider-group"><label data-zh="序列數 N" data-en="Number of sequences N">N <span id="vN">300</span></label><input type="range" id="sN" min="50" max="800" value="300" step="50"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnRegen" class="toggle-btn">🔄 <span data-zh="重新採樣 MSA" data-en="Regenerate MSA">重新採樣 MSA</span></button>
+</div>
+<svg id="dcaSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="dcaInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="EBM & DCA 在蛋白與基因組" data-en="EBM & DCA in Proteins and Genomics">EBM & DCA 在蛋白與基因組</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="EVcouplings (Hopf 2017)" data-en="EVcouplings (Hopf 2017)">EVcouplings — 變異效應預測</h4>
+<p data-lang="zh">Hopf et al. (2017, Nat. Biotech.) 用 plmDCA fit MSA 後，能量差 ΔE(mutant, WT) 直接預測 missense variant 的功能影響（fitness）。在 deep mutational scanning benchmark 與 clinical variant 上至今仍是強 baseline。</p>
+<p data-lang="en">Hopf et al. (2017, Nat. Biotech.) fit plmDCA to an MSA; energy gap ΔE(mutant, WT) directly predicts missense variant fitness. Still a strong baseline on deep mutational scanning and clinical variant benchmarks.</p></div>
+
+<div class="card"><h4 data-zh="GREMLIN" data-en="GREMLIN">GREMLIN — 接觸與蛋白家族</h4>
+<p data-lang="zh">Kamisetty et al. (2013, PNAS) 提出 GREMLIN，採 group-L1 正則化 plmDCA，在 Pfam family contacts 預測上比 mfDCA 大幅改進。也是 RoseTTAFold 早期 trRosetta 的訓練輸入之一。</p>
+<p data-lang="en">Kamisetty et al. (2013, PNAS) introduced GREMLIN with group-L1 regularized plmDCA — major improvement over mfDCA on Pfam contacts. Also fed into early trRosetta / RoseTTAFold.</p></div>
+
+<div class="card"><h4 data-zh="AlphaFold 與 ESM-MSA" data-en="AlphaFold & ESM-MSA">AlphaFold 與 ESM-MSA</h4>
+<p data-lang="zh">AlphaFold2 (Jumper 2021, Nature) 透過 MSA Transformer attention 學 coevolution，但其概念可追溯到 DCA。ESM-MSA (Rao 2021, ICML) 用 row + column attention 替代 plmDCA，效果更好且不需 explicit pairwise feature。</p>
+<p data-lang="en">AlphaFold2 (Jumper 2021, Nature) learns coevolution via MSA Transformer attention, conceptually rooted in DCA. ESM-MSA (Rao 2021, ICML) replaces plmDCA with row/column attention, outperforming explicit pairwise features.</p></div>
+
+<div class="card"><h4 data-zh="ProteinMPNN 與 EBM 設計" data-en="ProteinMPNN & EBM design">ProteinMPNN — 蛋白序列設計</h4>
+<p data-lang="zh">Dauparas et al. (2022, Science) 的 ProteinMPNN 用 autoregressive 設計 sequence 給定 structure。同期 Anand 2022、Frey 2024 把 EBM 應用於 sequence-structure joint energy，可條件式生成 functional protein。</p>
+<p data-lang="en">Dauparas et al. (2022, Science) — ProteinMPNN autoregressively designs sequences given structure. Anand 2022 / Frey 2024 push further with explicit EBM over joint sequence-structure energy for conditional functional protein generation.</p></div>
+
+<div class="card"><h4 data-zh="RNA 結構與 DCA" data-en="RNA structure & DCA">RNA 結構 — DCA 變種</h4>
+<p data-lang="zh">De Leonardis et al. (2015, NAR) 把 DCA 拓展到 RNA MSA，用 4-letter alphabet (A,U,G,C) 預測 base-pair 接觸。在 16S/23S rRNA 與 ncRNA 上 work，是 RNAcontact 等模型的前身。</p>
+<p data-lang="en">De Leonardis et al. (2015, NAR) extended DCA to RNA MSAs (A, U, G, C alphabet) for base-pair contacts. Worked on 16S/23S rRNA and ncRNA; precursor to RNAcontact-style models.</p></div>
+
+<div class="card"><h4 data-zh="DNA TF binding EBM" data-en="DNA TF-binding EBM">轉錄因子結合的 EBM</h4>
+<p data-lang="zh">DeepBind (Alipanahi 2015, Nat. Biotech.) 雖採 CNN，但其分數函數可解讀為 EBM。後續 BPNet、Enformer 將其推廣到全基因組——能量函數 → binding probability。</p>
+<p data-lang="en">DeepBind (Alipanahi 2015, Nat. Biotech.) — although CNN-based, its score is interpretable as an EBM. BPNet, Enformer extend this genome-wide: energy → binding probability.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="EBM 與 DCA 進階主題" data-en="Advanced EBM & DCA Topics">EBM 與 DCA 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Partition function Z 的詛咒</h3>
+<p>Z = ∫ exp(−E_θ(x)) dx 對任何 NN-based E_θ 都不可解析。所有實務 EBM 訓練都繞著「如何避開 Z」展開：CD-k 用 short-chain MCMC、score matching 對 ∇E 而非 E、noise-contrastive estimation (Gutmann 2010) 把 EBM 訓練變成二元分類。</p>
+
+<h3>② 與 Diffusion 的本質關係</h3>
+<p>Diffusion model 學的是 ∇log p_t(x)，這就是 −∇E_t(x)：每個 noise level 都對應一個 EBM。Diffusion 的 success 啟示：把 EBM 學成一族隨時間平滑的能量比直接學單一 sharp 能量好。Song & Ermon (2019, NeurIPS) 的 NCSN 把這點明確化。</p>
+
+<h3>③ DCA 的 epistasis 詮釋</h3>
+<p>J_ij 大不僅可能是 spatial contact，也可能是 functional epistasis（如 active site 內遠程協同）。<strong>真正的接觸 → 短程 J；epistasis → 可以遠程</strong>。EVcouplings 同時利用兩者預測變異效應。</p>
+
+<h3>④ MSA depth 與 effective sequences</h3>
+<p>DCA 需要 large MSA（通常 N_eff &gt; 100 為佳）。N_eff 計算需做 sequence reweighting（80% identity 內合併）。對 orphan family（少同源）DCA 失效——這也是 ESM-2 等 language model 出現的動機（從單序列推結構）。</p>
+
+<h3>⑤ Pseudo-likelihood 的數學</h3>
+<p>真正的 likelihood p(σ) = (1/Z) exp(−E)；pseudo-likelihood 取代為 Π_i p(σ_i | σ_{−i})——每個位置在「給定其它位置」的條件機率，無需 Z（因為每個 conditional 都有自己的 normalization Σ_{σ_i})）。Ekeberg 2013 證明 plmDCA consistent under mild conditions。</p>
+
+<h3>⑥ Group sparsity 正則化</h3>
+<p>J_ij ∈ ℝ^(q×q) 是 21×21 矩陣；用 group-L1 (Frobenius norm penalty) 讓「整個 J_ij 一起為零」——避免單個 entry 為 noise 而 matrix 仍記入。這是 GREMLIN 比 mfDCA 高一截的關鍵。</p>
+
+<h3>⑦ APC 與背景訊號</h3>
+<p>Phylogenetic bias 與保守度差異會在 J_ij 上引入「背景」訊號——某些行 entropy 一致偏高。Average Product Correction (APC, Dunn 2008)：F'_ij = F_ij − (F_i· · F_·j / F̄)，把每行每列的平均強度當背景扣除。常見的進一步修正還包括 PSI-APC 與 sequence weighting。</p>
+
+<h3>⑧ 從 DCA 到 MSA Transformer</h3>
+<p>plmDCA 等價於「對每個 column 做 softmax logistic regression with linear features」。MSA Transformer (Rao 2021, ICML) 用 attention 學「列方向 ✕ 行方向」的非線性互動——可視為 plmDCA 的非線性、共享參數版本。AF2 / RoseTTAFold 沿用此 attention 結構。</p>
+</div>
+
+<div data-lang="en">
+<h3>① The partition-function curse</h3>
+<p>Z = ∫ exp(−E_θ(x)) dx is intractable for any NN-based E_θ. All practical EBM training centers on circumventing Z: CD-k uses short MCMC, score matching learns ∇E instead of E, noise-contrastive estimation (Gutmann 2010) reduces to binary classification.</p>
+
+<h3>② Essential relation to diffusion</h3>
+<p>Diffusion models learn ∇log p_t(x) = −∇E_t(x): each noise level corresponds to an EBM. Insight: learning a smooth family of energies over time beats a single sharp energy. Song & Ermon (2019, NeurIPS)'s NCSN crystallized this.</p>
+
+<h3>③ DCA's epistasis reading</h3>
+<p>Large J_ij is not only spatial contact but possibly functional epistasis (e.g., long-range cooperativity in an active site). <strong>True contacts → short-range J; epistasis → can be long-range</strong>. EVcouplings leverages both.</p>
+
+<h3>④ MSA depth and effective sequences</h3>
+<p>DCA needs deep MSAs (N_eff > 100 is a good rule). N_eff requires sequence reweighting (merge ≥80% identity). DCA fails for orphan families — motivating ESM-2 etc. (single-sequence structure inference).</p>
+
+<h3>⑤ Pseudo-likelihood math</h3>
+<p>True likelihood p(σ) = exp(−E)/Z; pseudo-likelihood uses Π_i p(σ_i | σ_{−i}) — each position conditional on others, requiring no Z (each conditional has its own normalization Σ_{σ_i}). Ekeberg 2013 proved consistency of plmDCA under mild conditions.</p>
+
+<h3>⑥ Group-sparsity regularization</h3>
+<p>J_ij ∈ ℝ^(q×q) is a 21×21 matrix; group-L1 (Frobenius penalty) makes the entire J_ij zero when uninformative — avoids individual noisy entries leaking through. Key to GREMLIN beating mfDCA.</p>
+
+<h3>⑦ APC and background signal</h3>
+<p>Phylogenetic bias and conservation differences inject background structure into J_ij. Average Product Correction (APC, Dunn 2008): F'_ij = F_ij − (F_i· · F_·j / F̄). Further refinements: PSI-APC and sequence reweighting.</p>
+
+<h3>⑧ From DCA to MSA Transformer</h3>
+<p>plmDCA is equivalent to "softmax logistic regression with linear features per column". MSA Transformer (Rao 2021, ICML) uses attention over "row × column" with nonlinear shared params — a nonlinear, parameter-sharing plmDCA. AF2 / RoseTTAFold extend this attention.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="EBM 與 DCA 還能改良哪些任務？" data-en="What Else Could EBM & DCA Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 抗體 paratope-epitope coupling</h3>
+<p>把 antibody-antigen pair MSA 做 cross-DCA，挑出 paratope-epitope 接觸對。<strong>提案：</strong>整合 OAS (Observed Antibody Space) 抗體庫，可用於疫苗 epitope 設計。</p>
+
+<h3>🎯 2. RNA-蛋白互動的 cross-DCA</h3>
+<p>RBPs (RNA-binding proteins) 與 target mRNA 共演化。<strong>提案：</strong>對 paralog 對應的 protein–RNA MSA 做 cross-DCA 找 contact，補充 CLIP-seq 結構訊息。</p>
+
+<h3>🎯 3. cis-regulatory module 的能量模型</h3>
+<p>把 TF binding 與 chromatin accessibility 視為 EBM。<strong>提案：</strong>用 Enformer-style + 顯式 EBM 學「sequence + cellular context → expression」的能量，可生成 synthetic regulatory sequences。</p>
+
+<h3>🎯 4. scLLM 訓練的 EBM 補充</h3>
+<p>scGPT / Geneformer 採 MLM 目標；可加入 EBM-style contrastive loss（正樣本 vs corrupted）。<strong>提案：</strong>scEBM joint training，提升 perturbation 預測。</p>
+
+<h3>🎯 5. Variant effect prediction 的多任務 EBM</h3>
+<p>EVcouplings 只用 single protein MSA；可整合「sequence + structure + cellular context」EBM 預測 missense / synonymous variant 在不同 tissue 的效應。<strong>提案：</strong>MultiEBM-Variant。</p>
+
+<h3>🎯 6. 蛋白設計的「inverse DCA」</h3>
+<p>給定 target functional energy profile（如「能結合 ATP，不結合 GTP」），找出符合的 sequence。<strong>提案：</strong>結合 plmDCA + gradient-based sequence optimization。</p>
+
+<h3>🎯 7. 單細胞動態的 EBM</h3>
+<p>細胞 trajectory 看成 stochastic process on energy landscape (Waddington)。<strong>提案：</strong>用 neural EBM 學 cell-state energy，可解讀 attractor、bifurcation；與 RNA velocity 互補。</p>
+
+<h3>🎯 8. 抗藥性突變的 DCA-guided 預測</h3>
+<p>結合 plmDCA 與藥物結合能量。<strong>提案：</strong>給定 target protein + drug, 預測 J 上「最可能突變且仍保功能」的位點——可預測 resistance hotspots。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Antibody paratope-epitope coupling</h3>
+<p>Cross-DCA on antibody-antigen MSA pairs to identify paratope-epitope contacts. <strong>Proposal:</strong> integrate OAS (Observed Antibody Space) for epitope-driven vaccine design.</p>
+
+<h3>🎯 2. RNA-protein interaction via cross-DCA</h3>
+<p>RBPs and target mRNAs coevolve. <strong>Proposal:</strong> cross-DCA on paralog-matched protein-RNA MSAs to find contacts, complementing CLIP-seq.</p>
+
+<h3>🎯 3. cis-regulatory module energy model</h3>
+<p>Treat TF binding + chromatin accessibility as EBM. <strong>Proposal:</strong> Enformer-style + explicit EBM for "sequence + cell context → expression"; enables synthetic regulatory sequence design.</p>
+
+<h3>🎯 4. EBM augmentation for scLLM training</h3>
+<p>scGPT / Geneformer use MLM; add EBM-style contrastive loss (positive vs corrupted). <strong>Proposal:</strong> scEBM joint training for better perturbation prediction.</p>
+
+<h3>🎯 5. Multi-task EBM for variant effect</h3>
+<p>EVcouplings uses one MSA only. Integrate sequence + structure + cellular context EBM to predict missense/synonymous effects per tissue. <strong>Proposal:</strong> MultiEBM-Variant.</p>
+
+<h3>🎯 6. "Inverse DCA" for protein design</h3>
+<p>Given a target functional energy profile (e.g., "binds ATP but not GTP"), find compatible sequences. <strong>Proposal:</strong> plmDCA + gradient-based sequence optimization.</p>
+
+<h3>🎯 7. Single-cell dynamics as EBM</h3>
+<p>Cell trajectories as stochastic processes on a Waddington-style energy landscape. <strong>Proposal:</strong> neural EBM for cell-state energy — interpretable attractors and bifurcations; complements RNA velocity.</p>
+
+<h3>🎯 8. DCA-guided drug resistance prediction</h3>
+<p>Combine plmDCA with drug binding energy. <strong>Proposal:</strong> given target protein + drug, predict sites where mutations are likely and retain function — identifies resistance hotspots.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pydca')">pydca</button>
+<button class="code-tab-btn" onclick="switchTab(this,'evc')">EVcouplings</button>
+<button class="code-tab-btn" onclick="switchTab(this,'ebm')">PyTorch EBM (Langevin)</button>
+</div>
+
+<div class="code-tab-content active" id="pydca"><pre><span class="comment"># pip install pydca</span>
+<span class="keyword">from</span> pydca.plmdca <span class="keyword">import</span> plmdca
+<span class="keyword">from</span> pydca.meanfield_dca <span class="keyword">import</span> meanfield_dca
+
+<span class="comment"># Input: MSA in FASTA</span>
+plmdca_inst = plmdca.PlmDCA(
+    msa_file_name=<span class="str">'family.fasta'</span>,
+    biomolecule=<span class="str">'protein'</span>,
+    seqid=<span class="num">0.8</span>,                <span class="comment"># reweighting threshold</span>
+    lambda_h=<span class="num">1.0</span>, lambda_J=<span class="num">20.0</span>) <span class="comment"># L2 reg</span>
+
+<span class="comment"># Top-ranked predicted contacts (i, j, score)</span>
+contacts = plmdca_inst.compute_sorted_DI()
+<span class="keyword">for</span> i, j, s <span class="keyword">in</span> contacts[:<span class="num">20</span>]:
+    print(<span class="str">f"({i},{j}): {s:.3f}"</span>)
+
+<span class="comment"># Mean-field DCA (faster, less accurate)</span>
+mf = meanfield_dca.MeanFieldDCA(<span class="str">'family.fasta'</span>, <span class="str">'protein'</span>, seqid=<span class="num">0.8</span>)
+di_mf = mf.compute_sorted_DI()</pre></div>
+
+<div class="code-tab-content" id="evc"><pre><span class="comment"># pip install evcouplings</span>
+<span class="keyword">from</span> evcouplings.couplings <span class="keyword">import</span> CouplingsModel
+
+<span class="comment"># Loads plmDCA-trained model file (.model)</span>
+m = CouplingsModel(<span class="str">'PF00071.model'</span>)
+
+<span class="comment"># 1) Predicted contacts (sorted by CN/APC score)</span>
+df = m.ecs                        <span class="comment"># DataFrame: i, j, score</span>
+top_contacts = df.head(<span class="num">100</span>)
+
+<span class="comment"># 2) Mutation effect: ΔE between mutant and WT</span>
+<span class="comment"># Hamiltonian = -(Σ h + Σ J) → larger H = less probable</span>
+wt_seq = <span class="str">'MAVKL...'</span>
+mut_seq = <span class="str">'MAVKM...'</span>     <span class="comment"># single mutation at pos 4</span>
+H_wt  = m.hamiltonians([wt_seq])[<span class="num">0</span>, <span class="num">0</span>]
+H_mut = m.hamiltonians([mut_seq])[<span class="num">0</span>, <span class="num">0</span>]
+print(<span class="str">f"ΔE = {H_mut - H_wt:.3f}"</span>)         <span class="comment"># &gt; 0 ⇒ deleterious</span></pre></div>
+
+<div class="code-tab-content" id="ebm"><pre><span class="comment"># Neural EBM with Langevin sampling — Du & Mordatch 2019 style</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> EBM(nn.Module):                       <span class="comment"># E_theta(x)</span>
+    <span class="keyword">def</span> __init__(self, d=<span class="num">2</span>):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d, <span class="num">256</span>), nn.SiLU(),
+            nn.Linear(<span class="num">256</span>, <span class="num">256</span>), nn.SiLU(),
+            nn.Linear(<span class="num">256</span>, <span class="num">1</span>))
+    <span class="keyword">def</span> forward(self, x):
+        <span class="keyword">return</span> self.net(x).squeeze(-<span class="num">1</span>)
+
+<span class="keyword">def</span> langevin(model, x, steps=<span class="num">60</span>, eps=<span class="num">0.01</span>):
+    x = x.clone().requires_grad_(<span class="keyword">True</span>)
+    <span class="keyword">for</span> _ <span class="keyword">in</span> range(steps):
+        E = model(x).sum()
+        grad = torch.autograd.grad(E, x)[<span class="num">0</span>]
+        x = x.detach() - <span class="num">0.5</span>*eps*grad + (eps**<span class="num">0.5</span>)*torch.randn_like(x)
+        x = x.clamp(-<span class="num">3</span>, <span class="num">3</span>).requires_grad_(<span class="keyword">True</span>)
+    <span class="keyword">return</span> x.detach()
+
+ebm = EBM(); opt = torch.optim.Adam(ebm.parameters(), lr=<span class="num">1e-4</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">10_000</span>):
+    x_pos = sample_data(<span class="num">128</span>)                <span class="comment"># real samples</span>
+    x_neg = langevin(ebm, torch.randn_like(x_pos))
+    loss = (ebm(x_pos) - ebm(x_neg)).mean() \
+         + <span class="num">0.1</span>*(ebm(x_pos)**<span class="num">2</span> + ebm(x_neg)**<span class="num">2</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">EBM 訓練最大的挑戰是什麼？</p><p data-lang="en">What is the chief challenge in EBM training?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 沒有梯度可用" data-en="A. No gradients">A. 沒有梯度可用</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. Partition function Z 通常不可解析；訓練需要 MCMC、score matching 等近似" data-en="B. The partition function Z is generally intractable; training needs MCMC, score matching, etc.">B. Partition function Z 通常不可解析；訓練需要 MCMC、score matching 等近似</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. EBM 不能用 NN" data-en="C. EBMs can't use NN">C. EBM 不能用 NN</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 必須是高斯模型" data-en="D. Must be Gaussian">D. 必須是高斯模型</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">DCA 中「Direct」是什麼意思？</p><p data-lang="en">What does "Direct" in DCA mean?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 不需要 MSA" data-en="A. No MSA needed">A. 不需要 MSA</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 算 mutual information" data-en="B. Computes mutual information">B. 算 mutual information</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 用全模型 fit 分離出「直接」殘基耦合，去除 indirect chain 污染" data-en="C. Fitting a joint model separates direct couplings from indirect-chain contamination">C. 用全模型 fit 分離出「直接」殘基耦合，去除 indirect chain 污染</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 直接讀取 PDB" data-en="D. Reads PDB directly">D. 直接讀取 PDB</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">plmDCA 相對 mfDCA 的主要優點是？</p><p data-lang="en">What is plmDCA's main advantage over mfDCA?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 用 conditional logistic regression（pseudo-likelihood）逼近 true likelihood，準確度更高" data-en="A. Uses pseudo-likelihood (conditional logistic regression), approximating true likelihood much better">A. 用 conditional logistic regression（pseudo-likelihood）逼近 true likelihood，準確度更高</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 不需要 amino acid alphabet" data-en="B. No alphabet needed">B. 不需要 amino acid alphabet</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 全 closed form 解" data-en="C. Fully closed-form">C. 全 closed form 解</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 比 mfDCA 快上百倍" data-en="D. 100× faster than mfDCA">D. 比 mfDCA 快上百倍</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="modern-hopfield.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 27：Modern Hopfield" data-en="Ch 27: Modern Hopfield">Ch 27：Modern Hopfield</span></a>
+<a href="hawkes-point-processes.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 29：Hawkes 與點過程" data-en="Ch 29: Hawkes & Point Processes">Ch 29：Hawkes 與點過程</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: DCA on simulated MSA =====
+const DSVG=document.getElementById('dcaSvg');
+const L_POS=10;          // L positions
+const Q=2;               // simplify to binary (A/B) for visualization
+const trueContacts=[[1,5],[2,7],[3,6],[4,8]];  // 4 true contact pairs (0-indexed below)
+const trueContactsZB=trueContacts.map(([a,b])=>[a-1,b-1]);
+let MSA=[];
+
+function simulateMSA(N){
+  // Each row: L binary values. For each true contact pair, force x_i = x_j with high prob
+  // Other positions independent.
+  MSA=[];
+  for(let n=0;n<N;n++){
+    const row=new Array(L_POS).fill(0);
+    // initialize random
+    for(let i=0;i<L_POS;i++)row[i]=Math.random()<0.5?0:1;
+    // Enforce strong coupling for true contacts (90% match)
+    trueContactsZB.forEach(([a,b])=>{
+      if(Math.random()<0.9)row[b]=row[a];
+    });
+    MSA.push(row);
+  }
+}
+
+// compute empirical frequencies and covariance
+function empiricalStats(){
+  const N=MSA.length;
+  // p_i(a) for a∈{0,1}: just use p_i = P(x_i=1)
+  const p=new Array(L_POS).fill(0);
+  for(let i=0;i<L_POS;i++){let s=0;for(let n=0;n<N;n++)s+=MSA[n][i];p[i]=s/N;}
+  // p_ij(1,1)
+  const Pij=Array.from({length:L_POS},()=>new Array(L_POS).fill(0));
+  for(let n=0;n<N;n++)for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++){if(MSA[n][i]===1&&MSA[n][j]===1)Pij[i][j]+=1;}
+  for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++)Pij[i][j]/=N;
+  // Covariance C_ij = p_ij(1,1) - p_i p_j
+  const C=Array.from({length:L_POS},(_,i)=>new Array(L_POS).fill(0));
+  for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++)C[i][j]=Pij[i][j]-p[i]*p[j];
+  return {p,Pij,C};
+}
+
+// 2x2 mutual information for each (i,j)
+function MIscore(){
+  const N=MSA.length;
+  const M=Array.from({length:L_POS},()=>new Array(L_POS).fill(0));
+  for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++){
+    if(i===j){M[i][j]=0;continue;}
+    // 2x2 joint
+    const T=[[0,0],[0,0]];
+    for(let n=0;n<MSA.length;n++)T[MSA[n][i]][MSA[n][j]]+=1;
+    const pi=[(T[0][0]+T[0][1])/N,(T[1][0]+T[1][1])/N];
+    const pj=[(T[0][0]+T[1][0])/N,(T[0][1]+T[1][1])/N];
+    let mi=0;
+    for(let a=0;a<2;a++)for(let b=0;b<2;b++){
+      const pab=T[a][b]/N;
+      if(pab>0&&pi[a]>0&&pj[b]>0)mi+=pab*Math.log(pab/(pi[a]*pj[b]+1e-12)+1e-12);
+    }
+    M[i][j]=Math.max(0,mi);
+  }
+  return M;
+}
+
+// Mean-field DCA approx: J ≈ - (C + λI)^{-1}; score F_ij = |J_ij|
+// (since binary, use 1D values; for q>1 we'd take Frobenius)
+function invertMatrix(A){
+  // Gauss-Jordan for L×L matrix
+  const n=A.length;
+  const M=A.map((r,i)=>r.concat(r.map((_,j)=>i===j?1:0)));
+  for(let i=0;i<n;i++){
+    let piv=i;for(let k=i+1;k<n;k++)if(Math.abs(M[k][i])>Math.abs(M[piv][i]))piv=k;
+    [M[i],M[piv]]=[M[piv],M[i]];
+    const d=M[i][i]; if(Math.abs(d)<1e-12)return null;
+    for(let k=0;k<2*n;k++)M[i][k]/=d;
+    for(let r=0;r<n;r++)if(r!==i){const f=M[r][i];for(let k=0;k<2*n;k++)M[r][k]-=f*M[i][k];}
+  }
+  return M.map(r=>r.slice(n));
+}
+
+function DCAscore(lambda){
+  const {C}=empiricalStats();
+  const A=C.map((r,i)=>r.map((v,j)=>v+(i===j?lambda:0)));
+  const Inv=invertMatrix(A);
+  if(!Inv)return Array.from({length:L_POS},()=>new Array(L_POS).fill(0));
+  const F=Array.from({length:L_POS},(_,i)=>new Array(L_POS).fill(0));
+  for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++)F[i][j]=Math.abs(-Inv[i][j]);
+  // APC correction
+  const rowMean=new Array(L_POS).fill(0); let total=0; let cnt=0;
+  for(let i=0;i<L_POS;i++){let s=0,c=0;for(let j=0;j<L_POS;j++)if(j!==i){s+=F[i][j];c++;}rowMean[i]=s/c;total+=s;cnt+=c;}
+  const grandMean=total/cnt;
+  const F2=F.map((r,i)=>r.map((v,j)=>i===j?0:v-(rowMean[i]*rowMean[j]/grandMean)));
+  return F2;
+}
+
+function renderMatrix(M,svgX,svgY,title,maxVal,topK){
+  // Draws an LxL heatmap, highlights top-K
+  const cell=22;
+  let svg='';
+  // header
+  svg+=`<text x="${svgX+L_POS*cell/2}" y="${svgY-8}" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">${title}</text>`;
+  // matrix
+  const flat=[];
+  for(let i=0;i<L_POS;i++)for(let j=i+1;j<L_POS;j++)flat.push([i,j,M[i][j]]);
+  flat.sort((a,b)=>b[2]-a[2]);
+  const topSet=new Set(flat.slice(0,topK).map(([i,j])=>i+'_'+j));
+  for(let i=0;i<L_POS;i++)for(let j=0;j<L_POS;j++){
+    const v=Math.max(0,M[i][j])/(maxVal+1e-9);
+    const t=Math.min(1,v);
+    const r=Math.round(245-(245-26)*t);
+    const g=Math.round(243-(243-107)*t);
+    const b=Math.round(232-(232-90)*t);
+    svg+=`<rect x="${svgX+j*cell}" y="${svgY+i*cell}" width="${cell}" height="${cell}" fill="rgb(${r},${g},${b})" stroke="#fff" stroke-width="0.5"/>`;
+  }
+  // True contacts mark with red ring
+  trueContactsZB.forEach(([a,b])=>{
+    [[a,b],[b,a]].forEach(([i,j])=>{
+      svg+=`<rect x="${svgX+j*cell+1}" y="${svgY+i*cell+1}" width="${cell-2}" height="${cell-2}" fill="none" stroke="#c0392b" stroke-width="2"/>`;
+    });
+  });
+  // Top-K predicted as blue dot
+  topSet.forEach(k=>{
+    const [i,j]=k.split('_').map(Number);
+    [[i,j],[j,i]].forEach(([a,b])=>{
+      svg+=`<circle cx="${svgX+b*cell+cell/2}" cy="${svgY+a*cell+cell/2}" r="3" fill="#2563a8" stroke="#fff" stroke-width="0.8"/>`;
+    });
+  });
+  return svg;
+}
+
+function precisionAtK(M,k){
+  const flat=[];
+  for(let i=0;i<L_POS;i++)for(let j=i+1;j<L_POS;j++)flat.push([i,j,M[i][j]]);
+  flat.sort((a,b)=>b[2]-a[2]);
+  const top=flat.slice(0,k).map(([i,j])=>i+'_'+j);
+  const trueSet=new Set(trueContactsZB.map(([a,b])=>Math.min(a,b)+'_'+Math.max(a,b)));
+  let hits=0;
+  top.forEach(t=>{const [i,j]=t.split('_').map(Number);const key=Math.min(i,j)+'_'+Math.max(i,j);if(trueSet.has(key))hits++;});
+  return hits/k;
+}
+
+function renderAll(){
+  const N=+document.getElementById('sN').value;
+  const lam=+document.getElementById('sLam').value;
+  document.getElementById('vN').textContent=N;
+  document.getElementById('vLam').textContent=lam.toFixed(2);
+  if(MSA.length!==N)simulateMSA(N);
+  const M=MIscore();
+  const D=DCAscore(lam);
+  const maxM=Math.max(...M.flat());
+  const maxD=Math.max(...D.flat());
+  let svg='';
+  svg+=renderMatrix(M,40,40,(I18n.get()==='zh'?'MI（單純共變）':'MI (raw)'),maxM,4);
+  svg+=renderMatrix(D,330,40,(I18n.get()==='zh'?'DCA (mfDCA + APC)':'DCA (mfDCA + APC)'),maxD,4);
+  // legend
+  svg+=`<text x="40" y="335" font-size="11" fill="#1a1a1a"><tspan fill="#c0392b">■</tspan> <tspan>${I18n.get()==='zh'?'真實接觸對 (red ring)':'true contact (red ring)'}</tspan></text>`;
+  svg+=`<text x="220" y="335" font-size="11" fill="#1a1a1a"><tspan fill="#2563a8">●</tspan> <tspan>${I18n.get()==='zh'?'預測 top-4 (blue dot)':'predicted top-4 (blue)'}</tspan></text>`;
+  DSVG.innerHTML=svg;
+
+  const pMI=precisionAtK(M,4);
+  const pDCA=precisionAtK(D,4);
+  const L=I18n.get();
+  document.getElementById('dcaInfo').innerHTML=L==='zh'?
+    `Precision@4 — MI: <strong>${(pMI*100).toFixed(0)}%</strong>，DCA: <strong>${(pDCA*100).toFixed(0)}%</strong>。<br>觀察：raw MI 經常把 indirect chain 標成「強 coupling」（e.g. 若 1↔5、5↔6 共變，MI 也會錯誤地讓 1↔6 變高）。DCA 用全模型 fit (逆 covariance) 把直接耦合 vs indirect 分離；λ 控制 ill-conditioning（小 λ → over-fit、大 λ → under-fit）。試試 N 小（如 50）看 DCA 失效情形——MSA 太淺資訊不足。`
+    :
+    `Precision@4 — MI: <strong>${(pMI*100).toFixed(0)}%</strong>, DCA: <strong>${(pDCA*100).toFixed(0)}%</strong>.<br>Observation: raw MI often flags indirect chains as "strong coupling" (e.g., if 1↔5 and 5↔6 covary, MI also lights up 1↔6). DCA's joint-model fit (inverse covariance) separates direct from indirect; λ controls ill-conditioning (small λ → overfit; large λ → underfit). Try small N (e.g., 50) to see DCA fail when MSA is too shallow.`;
+}
+
+document.getElementById('btnRegen').addEventListener('click',()=>{simulateMSA(+document.getElementById('sN').value);renderAll();});
+document.getElementById('sLam').addEventListener('input',renderAll);
+document.getElementById('sN').addEventListener('input',()=>{simulateMSA(+document.getElementById('sN').value);renderAll();});
+document.addEventListener('langchange',renderAll);
+simulateMSA(300);renderAll();
+
+window._QF={zh:{
+  q1_y:'答對！partition function Z 是 EBM 的核心瓶頸；所有訓練 trick 都圍繞它。',
+  q1_n:'答案是 B。Z = ∫exp(−E)dx 通常無 closed form；CD、score matching、NCE 都是繞 Z 的方法。',
+  q2_y:'答對！「Direct」即用全模型扣除 indirect chain 的 spurious couplings。',
+  q2_n:'答案是 C。DCA 透過 fit Potts model 把 direct 與 indirect 分開，這是其優於 raw MI 的關鍵。',
+  q3_y:'答對！plmDCA 用 pseudo-likelihood 顯著比 mfDCA 的 Boltzmann inversion 更準確。',
+  q3_n:'答案是 A。Ekeberg 2013 提出 plmDCA，用 conditional logistic regression 逼近 true likelihood。'
+},en:{
+  q1_y:'Correct! The partition function Z is the core EBM bottleneck; all training tricks work around it.',
+  q1_n:'Answer is B. Z = ∫exp(−E)dx is generally intractable; CD, score matching, NCE all bypass Z.',
+  q2_y:'Correct! "Direct" means using the joint model to subtract indirect-chain spurious couplings.',
+  q2_n:'Answer is C. DCA fits a Potts model to disentangle direct vs. indirect, beating raw MI.',
+  q3_y:'Correct! plmDCA uses pseudo-likelihood, significantly more accurate than mfDCA Boltzmann inversion.',
+  q3_n:'Answer is A. Ekeberg 2013 introduced plmDCA via conditional logistic regression that approximates the true likelihood.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

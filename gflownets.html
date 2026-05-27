@@ -1,0 +1,520 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>GFlowNets — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html" class="active">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 40 / 50</div><h1 data-zh="GFlowNets 生成性流網路" data-en="GFlowNets (Generative Flow Networks)">GFlowNets 生成性流網路</h1>
+<p class="subtitle" data-lang="zh">Bengio 2021 提出的新範式：像 RL 但不只追求最高 reward，而是「按 reward 比例採樣」——產出多樣化的高品質候選。專為「分子設計、序列設計、組合優化」這種 mode-diverse 任務而生。</p>
+<p class="subtitle" data-lang="en">A new paradigm by Bengio 2021: like RL, but instead of maximising reward it samples <strong>proportionally to reward</strong> — producing diverse high-quality candidates. Built for mode-diverse tasks: molecular design, sequence design, combinatorial optimisation.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 RL 到 GFlowNet 的範式轉變" data-en="Paradigm Shift: from RL to GFlowNet">從 RL 到 GFlowNet 的範式轉變</h2>
+<div data-lang="zh">
+<p><strong>RL 的問題：</strong>標準 RL（PPO, DQN）的目標是 <strong>找出 argmax reward 的軌跡</strong>——對「找最佳解」的任務（如下棋）很完美，但對「<strong>找一籃多樣的好解</strong>」的任務（如藥物設計）會失敗——RL 會 collapse 到單一 mode，缺乏多樣性。</p>
+<p><strong>GFlowNet 的目標 (Bengio et al. 2021, NeurIPS)：</strong>學一個 sampling policy π，使得</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(終態 = x) ∝ R(x)</p>
+<p>也就是「reward 高的 x 被取樣機率高，但其他不錯的 x 也按比例被覆蓋」。直觀地說，<strong>GFlowNet 把 reward 視為密度函數，學會從這個密度採樣</strong>。</p>
+<p><strong>「Flow」的由來：</strong>把生成過程視為 DAG（有向無環圖）——從初始狀態 s₀ 走若干步動作到達終態 x。在每個邊上定義一個 <strong>flow</strong> F(s→s')，類似水流。要求：</p>
+<ul>
+<li><strong>守恆：</strong>每個內部節點的「入流總和 = 出流總和」（Kirchhoff law）。</li>
+<li><strong>邊界：</strong>到達終態 x 的總流入 = R(x)。</li>
+</ul>
+<p>當 flow 滿足這兩個條件，從 s₀ 按 normalized flow 行走的軌跡會自動使 P(x) ∝ R(x)。</p>
+<p><strong>與 MCMC 比較：</strong>MCMC 也採樣 ∝ R(x)，但需要 burn-in 與長 chain；GFlowNet 是 <strong>amortized</strong>——學一次 policy 後可一次採樣，無 chain mixing 問題。</p>
+</div>
+<div data-lang="en">
+<p><strong>The RL problem:</strong> standard RL (PPO, DQN) targets <strong>argmax-reward trajectories</strong> — perfect for "find the best solution" (chess), but failure mode for "<strong>find a basket of diverse good solutions</strong>" (drug design) — RL collapses to a single mode, missing diversity.</p>
+<p><strong>GFlowNet objective (Bengio et al. 2021, NeurIPS):</strong> learn a sampling policy π such that</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(terminal = x) ∝ R(x)</p>
+<p>"High-reward x is sampled often, but other good x are covered proportionally." Effectively, <strong>GFlowNet treats reward as a density and learns to sample from it</strong>.</p>
+<p><strong>The "flow" metaphor:</strong> view generation as a DAG — from initial state s₀, take actions to reach terminal x. Define <strong>flow</strong> F(s→s') on each edge, like water. Constraints:</p>
+<ul>
+<li><strong>Conservation:</strong> every internal node satisfies "in-flow = out-flow" (Kirchhoff).</li>
+<li><strong>Boundary:</strong> total flow into terminal x equals R(x).</li>
+</ul>
+<p>If flow satisfies both, walking from s₀ along normalised flow makes P(x) ∝ R(x) automatically.</p>
+<p><strong>vs MCMC:</strong> MCMC also samples ∝ R(x), but needs burn-in + long chains. GFlowNet is <strong>amortised</strong> — learn a policy once, sample in one pass, no mixing problem.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="多樣性內建" data-en="Diversity built-in">多樣性內建</h4><p data-lang="zh">P(x) ∝ R(x) 自動鼓勵覆蓋多個 mode；不會像 RL 那樣 collapse。</p><p data-lang="en">P(x) ∝ R(x) automatically covers multiple modes — no RL-style collapse.</p></div>
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="Amortized 採樣" data-en="Amortised sampling">Amortized 採樣</h4><p data-lang="zh">訓練完 policy 後可一次採樣，無 MCMC burn-in 或 mixing。</p><p data-lang="en">After training, sample in a single rollout — no MCMC burn-in, no mixing.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="組合空間天才" data-en="Combinatorial native">組合空間天才</h4><p data-lang="zh">天然處理「逐步建構物件」(分子、序列、圖) 的 DAG 結構。</p><p data-lang="en">Native handling of "stepwise object construction" (molecules, sequences, graphs) over DAGs.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Flow 守恆、Trajectory Balance 與 Subtrajectory" data-en="Flow Matching, Trajectory Balance, Subtrajectory">Flow 守恆、Trajectory Balance 與 Subtrajectory</h2>
+<div data-lang="zh">
+<p><strong>① Flow Matching loss (Bengio 2021, NeurIPS) — 原版：</strong>對每個內部狀態 s，要求</p>
+<p style="text-align:center;font-family:Georgia,serif;">Σ<sub>s'→s</sub> F(s'→s) = Σ<sub>s→s''</sub> F(s→s'')</p>
+<p>loss = Σ_s (log Σ in − log Σ out)²。直接、但對長軌跡梯度很差。</p>
+
+<p><strong>② Detailed Balance (Bengio 2023, ICLR)：</strong>學 forward policy P_F(s'|s) 與 backward policy P_B(s|s')，加上 state flow F(s)。要求每條邊：</p>
+<p style="text-align:center;font-family:Georgia,serif;">F(s) · P_F(s'|s) = F(s') · P_B(s|s')</p>
+<p>梯度比 FM loss 穩，仍逐邊 update。</p>
+
+<p><strong>③ Trajectory Balance (Malkin et al. 2022, NeurIPS) — 主流：</strong>整條 trajectory τ = (s₀ → s₁ → ... → x)：</p>
+<p style="text-align:center;font-family:Georgia,serif;">Z · Π_t P_F(s_{t+1}|s_t) = R(x) · Π_t P_B(s_t|s_{t+1})</p>
+<p>loss 取 log 後做 squared error。Z 是 partition function（一個可學標量）。<strong>梯度大幅改善</strong>，現為實務首選。</p>
+
+<p><strong>④ Subtrajectory Balance (Madan 2023)：</strong>不要求整條軌跡完整，子片段 s_i → s_j 也可作 loss term。<strong>樣本利用率提升</strong>，對長軌跡尤其有用（如分子有 30+ atoms）。</p>
+
+<p><strong>⑤ FL loss / Forward-Looking (Pan 2023)：</strong>把 R(s) 也訓練在中間狀態（用 forward-looking estimator）——加速收斂，特別適合 sparse reward。</p>
+
+<p><strong>⑥ Continuous GFlowNet (Lahlou 2023, ICML)：</strong>把離散 DAG 換成連續狀態空間，用 SDE 描述 flow，可應用於 protein 折疊、控制問題等。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Flow Matching loss (Bengio 2021, NeurIPS) — original:</strong> for every internal state s,</p>
+<p style="text-align:center;font-family:Georgia,serif;">Σ<sub>s'→s</sub> F(s'→s) = Σ<sub>s→s''</sub> F(s→s'')</p>
+<p>loss = Σ_s (log Σ in − log Σ out)². Direct, but poor gradients on long trajectories.</p>
+
+<p><strong>② Detailed Balance (Bengio 2023, ICLR):</strong> learn forward P_F(s'|s), backward P_B(s|s'), and state flow F(s). Edge-wise:</p>
+<p style="text-align:center;font-family:Georgia,serif;">F(s) · P_F(s'|s) = F(s') · P_B(s|s')</p>
+<p>Smoother gradients than FM, still edge-level updates.</p>
+
+<p><strong>③ Trajectory Balance (Malkin et al. 2022, NeurIPS) — workhorse:</strong> whole trajectory τ = (s₀ → s₁ → ... → x):</p>
+<p style="text-align:center;font-family:Georgia,serif;">Z · Π_t P_F(s_{t+1}|s_t) = R(x) · Π_t P_B(s_t|s_{t+1})</p>
+<p>Loss is squared log error. Z is a learnable partition function. <strong>Much better gradient signal</strong>; default in practice.</p>
+
+<p><strong>④ Subtrajectory Balance (Madan 2023):</strong> allow loss terms on sub-segments s_i → s_j. <strong>Better sample efficiency</strong>, especially for long trajectories (e.g. 30+ atom molecules).</p>
+
+<p><strong>⑤ FL loss / Forward-Looking (Pan 2023):</strong> learn R(s) at intermediate states via a forward-looking estimator — speeds convergence on sparse rewards.</p>
+
+<p><strong>⑥ Continuous GFlowNet (Lahlou 2023, ICML):</strong> replace discrete DAG with continuous state space, flow via SDE — applies to protein folding, control problems, etc.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>實務選擇：</strong>新手入門用 <strong>Trajectory Balance</strong>（穩定、好調）；長軌跡或 sparse reward 切到 <strong>Subtrajectory Balance + FL</strong>；連續狀態（如 protein 構象、控制）用 <strong>Continuous GFlowNet</strong>。</div>
+<div data-lang="en"><strong>Choice in practice:</strong> default to <strong>Trajectory Balance</strong> (stable, tunable). Long trajectories or sparse reward → <strong>Subtrajectory Balance + FL</strong>. Continuous states (protein conformations, control) → <strong>Continuous GFlowNet</strong>.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="RL vs GFlowNet：多模 reward 的採樣分布" data-en="RL vs GFlowNet: Sampling a Multi-modal Reward">RL vs GFlowNet：多模 reward 的採樣分布</h2>
+<div data-lang="zh"><p>1D 範例：reward 是三個高斯峰（low/mid/high mode）。<strong>RL</strong>（argmax）會把所有質量推到最高峰；<strong>GFlowNet</strong> 按 reward 比例採樣——三個峰都覆蓋，且大致符合相對 reward 比例。下方 Chart.js 顯示 1) reward 函數 2) RL policy 採樣分布 3) GFlowNet 採樣分布。調整「探索-利用平衡」（β 溫度）與「採樣數量」觀察兩者差異。</p></div>
+<div data-lang="en"><p>1D example: reward is a three-Gaussian mixture (low/mid/high mode). <strong>RL</strong> (argmax) dumps all mass on the highest peak; <strong>GFlowNet</strong> samples ∝ reward — covering all three peaks in proportion. The Chart.js panel shows 1) the reward function, 2) RL policy sampling, 3) GFlowNet sampling. Adjust temperature β and sample size to compare.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="採樣數 N" data-en="Samples N">採樣數 N <span id="vN">400</span></label><input type="range" id="sN" min="80" max="2000" value="400" step="40"></div>
+<div class="slider-group"><label data-zh="RL 溫度 β (越大越貪心)" data-en="RL temperature β (higher = greedier)">RL 溫度 β <span id="vB">3.5</span></label><input type="range" id="sB" min="0.5" max="8" value="3.5" step="0.1"></div>
+<div class="slider-group"><label data-zh="高峰相對權重" data-en="Tallest mode weight">高峰相對權重 <span id="vW">2.0</span></label><input type="range" id="sW" min="1.0" max="4.0" value="2.0" step="0.1"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="gfRedraw" class="toggle-btn"><span data-zh="重新採樣" data-en="Resample">重新採樣</span></button>
+</div>
+<canvas id="gfChart" style="width:100%;height:340px;"></canvas>
+<div id="gfInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="GFlowNets 在生物與藥物設計" data-en="GFlowNets in Biology & Drug Design">GFlowNets 在生物與藥物設計</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="GFlowNet-Mol (Bengio 2021)" data-en="GFlowNet-Mol (Bengio 2021)">GFlowNet-Mol</h4>
+<p data-lang="zh">Bengio et al. (2021, NeurIPS) 原始論文應用：用 GFlowNet 逐步建構分子（每步添加 atom/bond），reward 由 docking score 或 QSAR 給出。比 RL-based 方法（REINVENT）生成更<strong>多樣化的候選</strong>，特別是發掘 binding pocket 的多個 scaffold。</p>
+<p data-lang="en">The original Bengio et al. (2021, NeurIPS) application: build molecules atom-by-atom; reward = docking or QSAR score. Generates <strong>far more diverse candidates</strong> than RL-based REINVENT, especially across distinct scaffolds for a binding pocket.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質序列設計" data-en="Protein sequence design">蛋白質序列設計</h4>
+<p data-lang="zh">Jain et al. (2022, NeurIPS) 用 GFlowNet 設計 antimicrobial peptide：reward = 預測 activity + diversity。比 ProteinMPNN-RL 更能避免 mode collapse，找到「結構不同但都有效」的 sequence family。</p>
+<p data-lang="en">Jain et al. (2022, NeurIPS) used GFlowNets for antimicrobial peptide design: reward = predicted activity + diversity. Avoids ProteinMPNN-RL's mode collapse, finds structurally distinct yet effective families.</p></div>
+
+<div class="card"><h4 data-zh="生物反應序列規劃" data-en="Reaction pathway planning">反應序列規劃</h4>
+<p data-lang="zh">SynFlow / RetroFlow (2023) 用 GFlowNet 做合成路線規劃——從目標分子逆推至 commercially available building blocks，每步是一個反應規則。多樣化的路徑讓化學家有多重選擇。</p>
+<p data-lang="en">SynFlow / RetroFlow (2023) plan synthesis routes with GFlowNets — back-track from target to commercial building blocks via reaction templates. Diverse routes give chemists genuine alternatives.</p></div>
+
+<div class="card"><h4 data-zh="多目標藥物優化" data-en="Multi-objective drug optimisation">多目標藥物優化</h4>
+<p data-lang="zh">藥物設計通常要平衡 docking、ADMET、合成可行性、新穎性等。Jain (2023) 用 multi-objective GFlowNet (MOGFN)：定義 reward 為多目標 weighted sum 或 Pareto-set proxy，<strong>一次採樣得到 Pareto-front 上的多個候選</strong>。</p>
+<p data-lang="en">Drug design balances docking, ADMET, synthesisability, novelty. Jain (2023) introduced multi-objective GFlowNet (MOGFN): reward as weighted sum or Pareto proxy — <strong>sampling yields the entire Pareto front in one go</strong>.</p></div>
+
+<div class="card"><h4 data-zh="DiverseDock / FlowDock 對接構象" data-en="DiverseDock / FlowDock conformations">對接構象多樣化</h4>
+<p data-lang="zh">傳統 docking 給「最佳」pose；DiverseDock 用 GFlowNet 給 reward ∝ binding affinity，採樣 <strong>多個構象 ensemble</strong>，反映真實 binding mode 多樣性（cryptic site、induced fit）。</p>
+<p data-lang="en">Classic docking returns one "best" pose. DiverseDock uses GFlowNets with reward ∝ binding affinity to sample <strong>conformation ensembles</strong> reflecting genuine binding diversity (cryptic, induced fit).</p></div>
+
+<div class="card"><h4 data-zh="Active learning + 多樣性" data-en="Active learning + diversity">主動學習 + 多樣性</h4>
+<p data-lang="zh">Active learning 通常選「最不確定」樣本——但這常 collapse 到相似樣本。Jain (2023) 用 GFlowNet 選 batch：reward = uncertainty × diversity。<strong>多樣化、互補性</strong> 的 batch 加速模型收斂。</p>
+<p data-lang="en">Active learning typically picks "most uncertain" samples — often clusters similar items. Jain (2023) uses GFlowNets to pick batches with reward = uncertainty × diversity. <strong>Diverse, complementary</strong> batches accelerate model convergence.</p></div>
+
+<div class="card"><h4 data-zh="基因擾動策略多樣化" data-en="Diverse CRISPR perturbations">基因擾動多樣化</h4>
+<p data-lang="zh">CRISPR combinatorial screens：選哪些 gene set 一起 knock-out？常規方法選「預測效應最大」的組合，缺乏多樣性。<strong>提案：</strong>用 GFlowNet 採樣多樣化高效應組合，揭示不同 pathway 的 synergistic 效應。</p>
+<p data-lang="en">CRISPR combinatorial screens — which gene set to knock out? Standard methods pick top-predicted combos, often redundant. <strong>Proposal:</strong> GFlowNet samples diverse high-effect combos, revealing synergies across pathways.</p></div>
+
+<div class="card"><h4 data-zh="RNA aptamer 設計" data-en="RNA aptamer design">RNA aptamer 設計</h4>
+<p data-lang="zh">SELEX 實驗成本高；用 GFlowNet 從 sequence space 採樣 diverse high-affinity aptamer 候選。已在 fluorescent aptamer（如 Spinach 家族）設計中應用。</p>
+<p data-lang="en">SELEX is expensive; GFlowNets sample diverse high-affinity aptamer candidates from sequence space. Applied in fluorescent aptamer design (Spinach family).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="GFlowNet 進階主題" data-en="Advanced GFlowNet Topics">GFlowNet 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① 與 MaxEnt RL / Soft Q-learning 的關係</h3>
+<p>Soft Q-learning (Haarnoja 2017) 也採樣 ∝ exp(R/T)。當 T → 0 退化為標準 RL；T → ∞ 退化為均勻採樣。GFlowNet 可視為 <strong>T = 1 的特例</strong>，但定義在 DAG 而非 MDP 上，且訓練目標是 flow 守恆而非 Bellman。Malkin (2023) 證明 GFlowNet 與 entropic RL 在某些設定下等價。</p>
+
+<h3>② 與 amortised MCMC / VI 的關係</h3>
+<p>GFlowNet 是 amortised sampler——學一次後可快速採樣。可視為「適用於組合空間的 amortised VI」。在 categorical posterior 上，GFlowNet 比 mean-field VI 更能捕捉多模。</p>
+
+<h3>③ Off-policy 訓練</h3>
+<p>GFlowNet 的 loss 可在任意 trajectory 上算（不需要當前 policy）。<strong>實務優勢：</strong>可用 prioritised replay、expert demonstration、random exploration 等補充訓練資料。Tutorial 推薦：50% on-policy + 50% off-policy / replay。</p>
+
+<h3>④ Conditional GFlowNet</h3>
+<p>把條件 c（如 target property）feed 進 policy：π(s'|s, c)。可做 conditional generation（給定目標屬性生成分子）、目標驅動的 RL。已用於多目標藥物設計。</p>
+
+<h3>⑤ GFlowNet 的數值陷阱</h3>
+<ul>
+<li><strong>Z 的學習：</strong>partition function Z 在 log-scale 訓練；初始化必須合理（用 reward 的 log-mean）。</li>
+<li><strong>Reward scaling：</strong>R 太集中（峰太尖）會讓 P_F 學不出來，常用 R^β（β &lt; 1）soften。</li>
+<li><strong>Backward policy 設計：</strong>uniform P_B 是預設；學 P_B 可改善但增加複雜度。</li>
+<li><strong>長軌跡：</strong>超過 50+ 步時 trajectory balance 也會崩潰，改用 subtrajectory 或 FL loss。</li>
+</ul>
+
+<h3>⑥ Tempering 與多樣性控制</h3>
+<p>實務常用 P(x) ∝ R(x)^β：β = 1 標準 GFlowNet；β &lt; 1 更平坦（多樣性更高）；β &gt; 1 更尖銳（接近 RL）。藥物設計常用 β = 0.5–1.0 平衡探索與利用。</p>
+
+<h3>⑦ 與 Diffusion 的最新整合</h3>
+<p>Sendera (2024) 等工作把 GFlowNet 用於訓練 diffusion model：把 diffusion 的去噪步視為 DAG，用 GFlowNet 學去噪策略，可一次學到 sample-efficient + diversity-aware 的 generation。是 2024–2025 的熱門方向。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Relation to MaxEnt RL / Soft Q-learning</h3>
+<p>Soft Q-learning (Haarnoja 2017) also samples ∝ exp(R/T). T → 0 collapses to standard RL; T → ∞ to uniform. GFlowNet is the <strong>T = 1 case</strong> on a DAG (not an MDP), trained via flow conservation rather than Bellman. Malkin (2023) shows equivalence under certain settings.</p>
+
+<h3>② Relation to amortised MCMC / VI</h3>
+<p>GFlowNet is an amortised sampler — train once, sample fast. Like "amortised VI for combinatorial spaces". For categorical posteriors, GFlowNets capture multimodality better than mean-field VI.</p>
+
+<h3>③ Off-policy training</h3>
+<p>The loss can be evaluated on any trajectory (not just current policy). <strong>Practical win:</strong> mix prioritised replay, expert demos, random exploration. Recipe: 50% on-policy + 50% off-policy / replay.</p>
+
+<h3>④ Conditional GFlowNets</h3>
+<p>Feed condition c (e.g. target property) into the policy: π(s'|s, c). Enables conditional generation (molecules with target affinity) and goal-driven RL. Used in multi-objective drug design.</p>
+
+<h3>⑤ Numerical pitfalls</h3>
+<ul>
+<li><strong>Z learning:</strong> partition function on log scale; initialise to log-mean reward.</li>
+<li><strong>Reward scaling:</strong> overly peaked R breaks P_F learning — use R^β with β &lt; 1 to soften.</li>
+<li><strong>Backward policy:</strong> uniform P_B is default; learning P_B helps but adds complexity.</li>
+<li><strong>Long trajectories:</strong> trajectory balance breaks past 50+ steps; switch to subtrajectory or FL loss.</li>
+</ul>
+
+<h3>⑥ Tempering and diversity control</h3>
+<p>Use P(x) ∝ R(x)^β: β = 1 standard; β &lt; 1 flatter (more diverse); β &gt; 1 sharper (RL-like). Drug design commonly uses β = 0.5–1.0.</p>
+
+<h3>⑦ Integration with diffusion (2024–25 trend)</h3>
+<p>Sendera (2024) uses GFlowNets to train diffusion models: treat denoising steps as a DAG, learn the denoising policy via GFlowNet — sample-efficient and diversity-aware in one shot. A hot research direction.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="GFlowNets 還能改良哪些任務？" data-en="What Else Could GFlowNets Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Combinatorial perturbation 設計</h3>
+<p>從 Perturb-seq 預測「多基因 KO 組合的最大協同效應」。<strong>提案：</strong>用 GFlowNet 採樣 top-K 多樣化的 K-gene 組合（reward = 預測 synergy），覆蓋不同 pathway，比 brute-force top-K 更有實驗價值。</p>
+
+<h3>🎯 2. Bayesian network 結構發現</h3>
+<p>從觀察資料推斷 causal DAG 是 NP-hard。<strong>提案：</strong>GFlowNet over DAG space 採樣多個 plausible DAG（reward = posterior score），呈現模型不確定性，比 single MAP 更有資訊量。Deleu (2022) 已開先例。</p>
+
+<h3>🎯 3. 蛋白質結構多 conformer 採樣</h3>
+<p>AlphaFold 給單一最可能結構；許多蛋白質實際上是 ensemble（IDR、kinase activate-inactive）。<strong>提案：</strong>Continuous GFlowNet over backbone conformations，reward = energy + experimental constraints，採樣 conformer ensemble。</p>
+
+<h3>🎯 4. 多目標 sgRNA 設計</h3>
+<p>guide RNA 設計需要平衡 on-target activity、off-target avoidance、PAM availability。<strong>提案：</strong>MO-GFlowNet 採樣 Pareto-front 上的多樣化 guide candidates，加速 CRISPR library 設計。</p>
+
+<h3>🎯 5. 抗體 CDR 設計</h3>
+<p>抗體互補決定區（CDRs）需要 binding affinity、developability、低免疫原性等多目標平衡。<strong>提案：</strong>GFlowNet 在 CDR sequence space 採樣，比 ESM-IF / RFdiffusion 更能保證候選多樣性。</p>
+
+<h3>🎯 6. RNA secondary structure ensemble</h3>
+<p>RNA 通常有 metastable 構象 ensemble，非單一最低能量結構。<strong>提案：</strong>GFlowNet 對 RNA structure DAG 採樣，reward = 自由能 + SHAPE 數據相容性，覆蓋多個 functionally distinct 構象。</p>
+
+<h3>🎯 7. Cell type 標註的多解釋</h3>
+<p>一個 cluster 可能對應多種合理的 cell type 解釋。<strong>提案：</strong>GFlowNet 採樣 top-K 標註方案（reward = marker gene overlap × biological prior），呈現生物學家可選的合理解釋。</p>
+
+<h3>🎯 8. ChIP-seq peak 解釋 motif 組合</h3>
+<p>單個 peak 通常有多個 TF binding motifs 並存。<strong>提案：</strong>GFlowNet 在 motif combination space 採樣 multiple 解釋（reward = motif score 和），比 single greedy assignment 更能反映 TF 複雜性。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Combinatorial perturbation design</h3>
+<p>From Perturb-seq, predict "synergistic multi-gene KO combos". <strong>Proposal:</strong> GFlowNet samples top-K diverse K-gene combos (reward = predicted synergy), covering distinct pathways — more experimentally valuable than brute-force top-K.</p>
+
+<h3>🎯 2. Bayesian network structure discovery</h3>
+<p>Causal DAG inference is NP-hard. <strong>Proposal:</strong> GFlowNet over DAG space samples plausible DAGs (reward = posterior score), exposing model uncertainty — more informative than a single MAP. Deleu (2022) set the precedent.</p>
+
+<h3>🎯 3. Multi-conformer protein sampling</h3>
+<p>AlphaFold gives one structure; many proteins are ensembles (IDR, kinase active/inactive). <strong>Proposal:</strong> Continuous GFlowNet over backbone conformations; reward = energy + experimental constraints; sample conformer ensembles.</p>
+
+<h3>🎯 4. Multi-objective sgRNA design</h3>
+<p>Guide RNA design balances on-target activity, off-target avoidance, PAM. <strong>Proposal:</strong> MO-GFlowNet samples diverse Pareto-optimal guides — accelerates CRISPR library design.</p>
+
+<h3>🎯 5. Antibody CDR design</h3>
+<p>CDRs balance affinity, developability, immunogenicity. <strong>Proposal:</strong> GFlowNet over CDR sequence space — better candidate diversity than ESM-IF / RFdiffusion.</p>
+
+<h3>🎯 6. RNA secondary structure ensembles</h3>
+<p>RNA often has a metastable ensemble, not one minimum-energy structure. <strong>Proposal:</strong> GFlowNet over RNA structure DAG; reward = free energy + SHAPE compatibility; sample functionally distinct conformers.</p>
+
+<h3>🎯 7. Multi-hypothesis cell type annotation</h3>
+<p>A cluster may admit several plausible cell-type explanations. <strong>Proposal:</strong> GFlowNet samples top-K annotations (reward = marker overlap × biological prior) — presenting reviewable alternatives.</p>
+
+<h3>🎯 8. ChIP-seq motif combination explanations</h3>
+<p>A single peak often hosts multiple co-occurring TF motifs. <strong>Proposal:</strong> GFlowNet over motif combinations samples multiple explanations (reward = summed motif scores) — better than a single greedy assignment.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'gf1')">torchgfn</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gf2')">From scratch TB</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gf3')">gflownet (Bengio lab)</button>
+</div>
+
+<div class="code-tab-content active" id="gf1"><pre><span class="comment"># pip install torchgfn</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> gfn.gym <span class="keyword">import</span> HyperGrid
+<span class="keyword">from</span> gfn.gflownet <span class="keyword">import</span> TBGFlowNet
+<span class="keyword">from</span> gfn.modules <span class="keyword">import</span> DiscretePolicyEstimator
+<span class="keyword">from</span> gfn.utils <span class="keyword">import</span> NeuralNet
+
+env = HyperGrid(ndim=<span class="num">4</span>, height=<span class="num">8</span>, R0=<span class="num">0.01</span>)   <span class="comment"># sparse reward</span>
+
+<span class="comment"># Forward + backward policies</span>
+pf = DiscretePolicyEstimator(NeuralNet(...), env.n_actions)
+pb = DiscretePolicyEstimator(NeuralNet(...), env.n_actions, is_backward=<span class="keyword">True</span>)
+
+gflownet = TBGFlowNet(pf=pf, pb=pb, logZ=<span class="num">0.0</span>)
+
+opt = torch.optim.Adam(gflownet.parameters(), lr=<span class="num">1e-3</span>)
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">10_000</span>):
+    traj = gflownet.sample_trajectories(env, n=<span class="num">64</span>)
+    loss = gflownet.loss(env, traj)
+    opt.zero_grad(); loss.backward(); opt.step()
+
+samples = gflownet.sample_terminating_states(env, n=<span class="num">1000</span>)</pre></div>
+
+<div class="code-tab-content" id="gf2"><pre><span class="comment"># Pure-PyTorch Trajectory Balance for a categorical bandit</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> PolicyNet(nn.Module):
+    <span class="keyword">def</span> __init__(self, n_states, n_actions):
+        super().__init__()
+        self.emb = nn.Embedding(n_states, <span class="num">64</span>)
+        self.head = nn.Linear(<span class="num">64</span>, n_actions)
+    <span class="keyword">def</span> forward(self, s):
+        <span class="keyword">return</span> self.head(self.emb(s))
+
+pf = PolicyNet(N_STATES, N_ACTIONS)
+pb = PolicyNet(N_STATES, N_ACTIONS)
+logZ = nn.Parameter(torch.zeros(<span class="num">1</span>))
+opt = torch.optim.Adam(list(pf.parameters())+list(pb.parameters())+[logZ], lr=<span class="num">1e-3</span>)
+
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">10_000</span>):
+    <span class="comment"># sample trajectory s0 -> ... -> x</span>
+    s, traj_pf, traj_pb = sample_trajectory(pf, pb)
+    R = reward(s[-<span class="num">1</span>])
+
+    <span class="comment"># Trajectory Balance loss</span>
+    logPF = sum(torch.log_softmax(pf(s_t), -<span class="num">1</span>)[a_t]
+                <span class="keyword">for</span> s_t, a_t <span class="keyword">in</span> traj_pf)
+    logPB = sum(torch.log_softmax(pb(s_t), -<span class="num">1</span>)[a_t]
+                <span class="keyword">for</span> s_t, a_t <span class="keyword">in</span> traj_pb)
+    loss = (logZ + logPF - torch.log(R) - logPB).pow(<span class="num">2</span>)
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+
+<div class="code-tab-content" id="gf3"><pre><span class="comment"># pip install gflownet  (Bengio lab implementation)</span>
+<span class="keyword">from</span> gflownet.envs.mol_building_env <span class="keyword">import</span> MolBuildingEnv
+<span class="keyword">from</span> gflownet.models.bengio2021flow <span class="keyword">import</span> FragmentLevelGflowNet
+<span class="keyword">from</span> gflownet.algo.trajectory_balance <span class="keyword">import</span> TrajectoryBalance
+
+env = MolBuildingEnv(fragments=DEFAULT_FRAGMENTS)
+model = FragmentLevelGflowNet(env, ...)
+algo = TrajectoryBalance(env, ctx=ctx, ...)
+
+<span class="keyword">def</span> reward_fn(mol):
+    <span class="keyword">return</span> docking_score(mol) * qed(mol) * sa_score(mol)
+
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">50_000</span>):
+    traj = algo.sample(model, n=<span class="num">256</span>)
+    rewards = [reward_fn(m) <span class="keyword">for</span> m <span class="keyword">in</span> traj.mol]
+    loss = algo.compute_loss(model, traj, rewards)
+    optimizer.step(loss)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">GFlowNet 與標準 RL 最關鍵的差別是什麼？</p><p data-lang="en">What is the key difference between GFlowNets and standard RL?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. GFlowNet 不需要 reward</span><span data-lang="en">A. GFlowNet needs no reward</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. RL 找 argmax reward；GFlowNet 採樣 ∝ reward，自動覆蓋多 modes</span><span data-lang="en">B. RL targets argmax reward; GFlowNet samples ∝ reward, covering multiple modes</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. GFlowNet 只能用於圖像</span><span data-lang="en">C. GFlowNets only work on images</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. GFlowNet 不需要訓練</span><span data-lang="en">D. GFlowNets need no training</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Trajectory Balance loss 是怎麼定義的？</p><p data-lang="en">How is the Trajectory Balance loss defined?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 隨機軌跡的 cross-entropy</span><span data-lang="en">A. Cross-entropy of random trajectories</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 軌跡 reward 的負值</span><span data-lang="en">B. Negative trajectory reward</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. (log Z + log Π P_F − log R(x) − log Π P_B)²，整條軌跡的 squared log error</span><span data-lang="en">C. (log Z + log Π P_F − log R(x) − log Π P_B)² — squared log error over the whole trajectory</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. KL(π‖uniform)</span><span data-lang="en">D. KL(π‖uniform)</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 GFlowNet 特別適合藥物設計？</p><p data-lang="en">Why are GFlowNets especially suited to drug design?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 藥物設計需要「一籃 diverse 候選」，GFlowNet 內建多樣性、避免 mode collapse</span><span data-lang="en">A. Drug design needs a basket of diverse candidates; GFlowNets have built-in diversity, avoiding mode collapse</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. GFlowNet 速度比所有 RL 快 1000x</span><span data-lang="en">B. GFlowNets are 1000× faster than any RL</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. GFlowNet 不需要 reward function</span><span data-lang="en">C. GFlowNets don't need a reward function</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. GFlowNet 自動完成 docking 計算</span><span data-lang="en">D. GFlowNets do docking automatically</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="normalizing-flows.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 39：Normalizing Flows" data-en="Ch 39: Normalizing Flows">Ch 39：Normalizing Flows</span></a>
+<a href="hmc-nuts.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 41：HMC / NUTS" data-en="Ch 41: HMC / NUTS">Ch 41：HMC / NUTS</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: RL vs GFlowNet sampling on 3-mode reward =====
+const ctx=document.getElementById('gfChart').getContext('2d');
+let chart=null;
+
+function rewardFn(x, wHigh){
+  // three Gaussian modes
+  const g=(m,s,w)=>w*Math.exp(-((x-m)**2)/(2*s*s));
+  return g(-2.4,0.45,1.0) + g(0.2,0.5,1.4) + g(2.6,0.4,wHigh);
+}
+
+function sampleRL(N, beta, wHigh, grid){
+  // RL = softmax with temperature β over the grid (greedier when β large)
+  const probs = grid.map(x => Math.pow(Math.max(1e-6, rewardFn(x,wHigh)), beta));
+  const Z = probs.reduce((a,b)=>a+b,0);
+  const cdf=[];let acc=0;
+  probs.forEach(p=>{acc+=p/Z;cdf.push(acc);});
+  const counts = new Array(grid.length).fill(0);
+  for(let i=0;i<N;i++){
+    const u=Math.random();
+    let lo=0,hi=cdf.length-1;
+    while(lo<hi){const m=(lo+hi)>>1; if(cdf[m]<u)lo=m+1; else hi=m;}
+    counts[lo]++;
+  }
+  return counts.map(c=>c/N);
+}
+
+function sampleGFN(N, wHigh, grid){
+  // GFlowNet ideal: P(x) ∝ R(x)
+  const probs = grid.map(x => Math.max(1e-6, rewardFn(x,wHigh)));
+  const Z = probs.reduce((a,b)=>a+b,0);
+  const cdf=[];let acc=0;
+  probs.forEach(p=>{acc+=p/Z;cdf.push(acc);});
+  const counts = new Array(grid.length).fill(0);
+  for(let i=0;i<N;i++){
+    const u=Math.random();
+    let lo=0,hi=cdf.length-1;
+    while(lo<hi){const m=(lo+hi)>>1; if(cdf[m]<u)lo=m+1; else hi=m;}
+    counts[lo]++;
+  }
+  return counts.map(c=>c/N);
+}
+
+function render(){
+  const N=+document.getElementById('sN').value;
+  const beta=+document.getElementById('sB').value;
+  const wHigh=+document.getElementById('sW').value;
+  document.getElementById('vN').textContent=N;
+  document.getElementById('vB').textContent=beta.toFixed(2);
+  document.getElementById('vW').textContent=wHigh.toFixed(2);
+
+  const grid=[];
+  for(let x=-5;x<=5;x+=0.2)grid.push(+x.toFixed(2));
+
+  const rewardCurve=grid.map(x=>rewardFn(x,wHigh));
+  const Rsum=rewardCurve.reduce((a,b)=>a+b,0);
+  const rewardNorm=rewardCurve.map(r=>r/Rsum);
+
+  const rl  = sampleRL(N,beta,wHigh,grid);
+  const gfn = sampleGFN(N,wHigh,grid);
+
+  // count modes covered (peak with > 5% of total samples)
+  function modesCovered(p){
+    let count=0;
+    [Math.round(grid.length*0.26), Math.round(grid.length*0.52), Math.round(grid.length*0.76)].forEach(idx=>{
+      let s=0;
+      for(let k=Math.max(0,idx-3);k<Math.min(grid.length,idx+4);k++)s+=p[k];
+      if(s>0.05)count++;
+    });
+    return count;
+  }
+  const rlModes=modesCovered(rl);
+  const gfnModes=modesCovered(gfn);
+
+  const L=I18n.get();
+  if(chart)chart.destroy();
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{labels:grid, datasets:[
+      {label:(L==='zh'?'Reward R(x) (normalized)':'Reward R(x) (normalised)'),
+       data:rewardNorm, borderColor:'#5a4632', backgroundColor:'rgba(90,70,50,0.10)',
+       borderWidth:2, fill:true, pointRadius:0, tension:0.25},
+      {label:(L==='zh'?'RL 採樣 (argmax-greedy, β)':'RL sampling (argmax-greedy, β)'),
+       data:rl, borderColor:'#c0392b', backgroundColor:'rgba(192,57,43,0.08)',
+       borderWidth:2, fill:false, pointRadius:0, tension:0.2, stepped:false},
+      {label:(L==='zh'?'GFlowNet 採樣 (P ∝ R)':'GFlowNet sampling (P ∝ R)'),
+       data:gfn, borderColor:'#2563a8', backgroundColor:'rgba(37,99,168,0.08)',
+       borderWidth:2, fill:false, pointRadius:0, tension:0.2}
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false,
+      scales:{
+        x:{ticks:{maxTicksLimit:11},title:{display:true,text:(L==='zh'?'狀態 x':'state x')}},
+        y:{title:{display:true,text:(L==='zh'?'採樣機率':'sampling prob')},beginAtZero:true}
+      },
+      plugins:{legend:{position:'top',labels:{boxWidth:12,font:{size:11}}}}
+    }
+  });
+
+  document.getElementById('gfInfo').innerHTML=L==='zh'?
+    `<strong>觀察：</strong>三個 reward modes（左、中、右）相對權重為 1.0 : 1.4 : <strong>${wHigh.toFixed(2)}</strong>。<br>
+    RL (β=${beta.toFixed(2)}) 覆蓋 <strong>${rlModes}/3</strong> 個 modes（β 越大越集中在最高峰）。<br>
+    GFlowNet 覆蓋 <strong>${gfnModes}/3</strong> 個 modes（按 reward 比例分配機率質量）。<br>
+    對藥物設計：RL 給你一個 scaffold 的衍生物；GFlowNet 給你三個 scaffold 各自的候選——多樣性對 hit-to-lead 階段是黃金。`
+    :
+    `<strong>Observation:</strong> three reward modes (left, middle, right) with relative weights 1.0 : 1.4 : <strong>${wHigh.toFixed(2)}</strong>.<br>
+    RL (β=${beta.toFixed(2)}) covers <strong>${rlModes}/3</strong> modes (higher β concentrates on the tallest peak).<br>
+    GFlowNet covers <strong>${gfnModes}/3</strong> modes (allocates probability mass proportionally to reward).<br>
+    For drug design: RL gives derivatives of one scaffold; GFlowNet gives candidates from all three scaffolds — diversity is gold for hit-to-lead.`;
+}
+
+document.getElementById('sN').addEventListener('input',render);
+document.getElementById('sB').addEventListener('input',render);
+document.getElementById('sW').addEventListener('input',render);
+document.getElementById('gfRedraw').addEventListener('click',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！GFlowNet 的精髓是「按 reward 比例採樣」而非 argmax。',
+  q1_n:'答案是 B。RL 收斂到 argmax（單一 mode）；GFlowNet 採樣 P(x) ∝ R(x)，覆蓋所有有意義的 modes。',
+  q2_y:'答對！Trajectory Balance 用整條軌跡的 log-ratio 做 squared error。',
+  q2_n:'答案是 C。Trajectory Balance：(log Z + log Π P_F − log R − log Π P_B)²，把守恆條件寫在整條軌跡上。',
+  q3_y:'答對！藥物設計需要多樣的候選庫，GFlowNet 的天然多樣性正中要害。',
+  q3_n:'答案是 A。drug discovery 需要 explore 多個 scaffold；GFlowNet 的 P ∝ R 自動覆蓋多個高 reward modes。'
+},en:{
+  q1_y:'Correct! The essence is sampling proportional to reward — not argmax.',
+  q1_n:'Answer is B. RL collapses to argmax (single mode); GFlowNet samples P(x) ∝ R(x), covering all meaningful modes.',
+  q2_y:'Correct! Trajectory Balance uses a squared log-ratio over the full trajectory.',
+  q2_n:'Answer is C. Trajectory Balance: (log Z + log Π P_F − log R − log Π P_B)² — flow conservation as a trajectory-level constraint.',
+  q3_y:'Correct! Drug design needs diverse candidate baskets; GFlowNets supply that natively.',
+  q3_n:'Answer is A. Drug discovery wants to explore many scaffolds; GFlowNet\'s P ∝ R automatically covers multiple high-reward modes.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

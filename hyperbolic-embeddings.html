@@ -1,0 +1,420 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Hyperbolic Embeddings — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html" class="active">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 15 / 26</div><h1 data-zh="雙曲嵌入 (Hyperbolic Embeddings)" data-en="Hyperbolic Embeddings">雙曲嵌入 (Hyperbolic Embeddings)</h1>
+<p class="subtitle" data-lang="zh">為什麼把細胞型別、蛋白質家族塞進雙曲空間？因為負曲率讓「半徑指數成長的體積」自然容納樹狀階層。Nickel & Kiela 2017 後爆紅，已成為單細胞 ontology、跨物種對齊、TCR repertoire 等任務的新利器。</p>
+<p class="subtitle" data-lang="en">Why embed cell types and protein families in hyperbolic space? Negative curvature gives volume that grows exponentially with radius — perfectly suited to tree-like hierarchies. Since Nickel & Kiela 2017, hyperbolic embeddings have become a new tool for single-cell ontology, cross-species alignment, and TCR repertoires.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為何需要負曲率空間？" data-en="Why Negative Curvature?">為何需要負曲率空間？</h2>
+<div data-lang="zh">
+<p><strong>歐式空間的困境：</strong>樹（branching factor b, 深度 d）的節點數為 b^d，但歐式 ℝ^k 中半徑 r 的球體積只增長 r^k——若想在不太扭曲距離的前提下嵌入一棵樹，<strong>歐式維度必須隨深度線性增長</strong>（Sarkar 2011: 任何有界扭曲嵌入需要 Ω(d) 維）。</p>
+<p><strong>雙曲空間的優勢：</strong>常曲率 −c 的雙曲空間 ℍ_c 中，半徑 r 的球體積為 sinh(cr)^(d−1) ≈ e^((d−1)cr)——<strong>體積隨 r 指數成長</strong>。剛好對應樹狀結構，故可在 <strong>2 維</strong> 就把任意樹幾乎無失真嵌入（Sarkar 2011）。</p>
+<p><strong>直觀比喻：</strong>歐式空間像平地——往外走 r 步看到的東西大約是 O(r²)。雙曲空間像「永遠在發散的喇叭」——往外走 r 步看到的東西指數增加，就像走進一棵不斷分枝的樹。</p>
+</div>
+<div data-lang="en">
+<p><strong>The Euclidean problem:</strong> A tree (branching factor b, depth d) has b^d nodes, but a ball of radius r in ℝ^k has volume ~r^k. To embed a tree with bounded distortion, <strong>Euclidean dimension must scale linearly with depth</strong> (Sarkar 2011: any low-distortion embedding requires Ω(d) dimensions).</p>
+<p><strong>The hyperbolic advantage:</strong> In hyperbolic space ℍ_c with constant curvature −c, a ball of radius r has volume sinh(cr)^(d−1) ≈ e^((d−1)cr) — <strong>volume grows exponentially in r</strong>. This matches tree structure exactly, so any tree can be embedded almost isometrically in just <strong>2 dimensions</strong> (Sarkar 2011).</p>
+<p><strong>Intuition:</strong> Euclidean space is flat — walking r steps outward exposes O(r²) area. Hyperbolic space is "an ever-flaring trumpet" — walking r steps exposes exponentially more, like stepping into a tree that keeps branching.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🌳</div><h4 data-zh="樹狀容量" data-en="Tree capacity">樹狀容量</h4><p data-lang="zh">2D 雙曲就能裝下任意樹，無需高維。</p><p data-lang="en">2D hyperbolic suffices for any tree — no high dim needed.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="負曲率" data-en="Negative curvature">負曲率</h4><p data-lang="zh">體積指數成長、平行線發散、三角形內角和 &lt; π。</p><p data-lang="en">Volume grows exponentially; parallel lines diverge; triangle angles sum to &lt; π.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="階層先驗" data-en="Hierarchy prior">階層先驗</h4><p data-lang="zh">直接把細胞 ontology / phylogeny 編進幾何，不必額外監督。</p><p data-lang="en">Embeds cell ontology / phylogeny directly into geometry — no extra supervision.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Poincaré disk / Lorentz 模型與優化" data-en="Poincaré Disk / Lorentz Model and Optimization">Poincaré disk / Lorentz 模型與優化</h2>
+<div data-lang="zh">
+<p><strong>① Poincaré disk 模型：</strong>定義在開單位球 𝔻 = {x ∈ ℝ^d : ‖x‖ &lt; 1}，距離為</p>
+<p style="text-align:center;font-family:Georgia,serif;">d(x,y) = acosh(1 + 2 ‖x − y‖² / ((1 − ‖x‖²)(1 − ‖y‖²)))</p>
+<p>越靠邊界距離越「拉長」——一棵樹的根放在原點、葉子放在邊界附近，葉子之間距離指數成長，剛好符合樹的層次。</p>
+<p><strong>② Lorentz / hyperboloid 模型：</strong>把雙曲空間視為 ℝ^(d+1) 中的單側雙曲面 ⟨x,x⟩_L = −1，其中 ⟨x,y⟩_L = −x₀y₀ + Σx_iy_i。距離為 d(x,y) = acosh(−⟨x,y⟩_L)。<strong>數值更穩定</strong>，因為避免了 Poincaré disk 在邊界附近的奇異性。</p>
+<p><strong>③ Riemannian SGD：</strong>標準 SGD 不能用——歐式更新會把點推出單位球或雙曲面。Nickel & Kiela (2017) 提出在 Poincaré disk 上的 Riemannian SGD：</p>
+<p style="text-align:center;font-family:Georgia,serif;">θ ← proj_𝔻(θ − η · (1 − ‖θ‖²)²/4 · ∇L)</p>
+<p>(1 − ‖θ‖²)² 是黎曼度量的倒數，proj_𝔻 把超出邊界的點拉回。Sala et al. (2018) 改用 Lorentz + 高精度 (multi-precision floats) 進一步降低嵌入誤差。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Poincaré disk model:</strong> defined on the open unit ball 𝔻 = {x ∈ ℝ^d : ‖x‖ &lt; 1}, with distance</p>
+<p style="text-align:center;font-family:Georgia,serif;">d(x,y) = acosh(1 + 2 ‖x − y‖² / ((1 − ‖x‖²)(1 − ‖y‖²)))</p>
+<p>Distance "stretches" near the boundary — root at origin, leaves near the edge, leaf-to-leaf distance grows exponentially, matching tree hierarchy.</p>
+<p><strong>② Lorentz / hyperboloid model:</strong> view hyperbolic space as a one-sheeted hyperboloid in ℝ^(d+1) with ⟨x,x⟩_L = −1, where ⟨x,y⟩_L = −x₀y₀ + Σx_iy_i. Distance: d(x,y) = acosh(−⟨x,y⟩_L). <strong>More numerically stable</strong> — avoids the boundary singularity of Poincaré disk.</p>
+<p><strong>③ Riemannian SGD:</strong> Standard SGD doesn't work — Euclidean updates push points outside the unit ball. Nickel & Kiela (2017) introduced Riemannian SGD on Poincaré disk:</p>
+<p style="text-align:center;font-family:Georgia,serif;">θ ← proj_𝔻(θ − η · (1 − ‖θ‖²)²/4 · ∇L)</p>
+<p>(1 − ‖θ‖²)² is the inverse Riemannian metric; proj_𝔻 clips out-of-disk points. Sala et al. (2018) switched to Lorentz + high-precision floats for lower distortion.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>數學性質：</strong>在曲率 −1 的雙曲空間，深度為 d 的二元樹可在 2 維中以扭曲 1 + O(1/d) 嵌入（Sarkar 2011）。歐式空間在同樣扭曲下需要 Ω(d) 維。對單細胞 atlas 動輒上百個 cell type 的 ontology——雙曲幾乎是「強烈推薦」。</div>
+<div data-lang="en"><strong>Theory:</strong> In curvature −1 hyperbolic space, a depth-d binary tree embeds with distortion 1 + O(1/d) in just 2 dimensions (Sarkar 2011). Euclidean needs Ω(d) for the same distortion. For cell-type ontologies with hundreds of classes, hyperbolic is strongly preferred.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Poincaré disk：拖動樹節點看雙曲距離" data-en="Poincaré Disk: Drag Tree Nodes and See Hyperbolic Distance">Poincaré disk：拖動樹節點看雙曲距離</h2>
+<div data-lang="zh"><p>下方為 Poincaré disk 視覺化。樹節點以 radial layout 放置（根在原點、葉子靠近邊界）。<strong>拖動任一節點</strong> 看歐式距離 vs 雙曲距離的差異——越靠邊界，同樣的歐式位移對應越大的雙曲距離。調整曲率 c 觀察邊界效應強度。</p></div>
+<div data-lang="en"><p>The Poincaré disk visualization below shows a tree with radial layout (root at origin, leaves near the boundary). <strong>Drag any node</strong> to see how Euclidean vs hyperbolic distance differ — near the boundary, the same Euclidean displacement maps to a much larger hyperbolic distance. Adjust c to see the strength of the boundary effect.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="曲率係數 c" data-en="Curvature c">曲率係數 c <span id="vC">1.00</span></label><input type="range" id="sC" min="0.3" max="2.5" value="1.0" step="0.05"></div>
+<div class="slider-group"><label data-zh="葉子半徑 (邊界遠近)" data-en="Leaf radius (closer to boundary)">葉子半徑 <span id="vR">0.85</span></label><input type="range" id="sR" min="0.4" max="0.97" value="0.85" step="0.01"></div>
+<svg id="hypSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;cursor:pointer;"></svg>
+<div id="hypInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用雙曲？" data-en="When to use hyperbolic?">什麼時候用雙曲？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>明確階層資料</strong>——cell ontology、phylogeny、Pfam protein family、ICD-10 疾病碼。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>大量葉節點、淺層中間</strong>——TCR repertoire、語意分類等。歐式維度成本太高。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>跨物種對齊</strong>——若兩物種共享 ontology 結構，雙曲嵌入比歐式更容易對齊。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>無明顯階層、流形是「circle / torus / sphere」這類正曲率時——應該用對應的幾何（spherical embedding、torus embedding）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Clear hierarchies</strong> — cell ontology, phylogeny, Pfam, ICD-10.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Many leaves, shallow middle</strong> — TCR repertoires, semantic taxonomies. Euclidean is dimension-expensive.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Cross-species alignment</strong> — if two species share an ontology, hyperbolic aligns easier than Euclidean.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>No hierarchy, or manifold is circle/torus/sphere (positive curvature) — use the matching geometry instead.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="雙曲嵌入在單細胞與生物資訊" data-en="Hyperbolic Embeddings in Single-cell and Bioinformatics">雙曲嵌入在單細胞與生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="HypMor / Cell ontology" data-en="HypMor / Cell ontology">HypMor / Cell ontology</h4>
+<p data-lang="zh">Klimovskaia et al. (2020, Nature Communications) 把 scRNA-seq 細胞型別嵌入 Poincaré disk——根節點為「all cells」、不同階層的 cluster 自然分佈在不同半徑。比 UMAP 更好地保留階層關係。</p>
+<p data-lang="en">Klimovskaia et al. (2020, Nature Communications) embed scRNA-seq cell types in a Poincaré disk — root = "all cells", clusters distribute by hierarchy level. Preserves hierarchy better than UMAP.</p></div>
+
+<div class="card"><h4 data-zh="HypAlign 跨物種對齊" data-en="HypAlign cross-species alignment">HypAlign 跨物種對齊</h4>
+<p data-lang="zh">2023 年數個工作（如 Klimovskaia 後續、Skinnider lab）用雙曲嵌入做人–鼠細胞型別對齊：兩物種共享的 cell-type ontology 結構在雙曲空間自然對齊，比歐式 + CCA 更穩。</p>
+<p data-lang="en">Several 2023 works (Klimovskaia follow-up, Skinnider lab) align human–mouse cell types in hyperbolic space — shared ontology structure aligns naturally, more robust than Euclidean + CCA.</p></div>
+
+<div class="card"><h4 data-zh="Pfam / 蛋白質家族階層" data-en="Pfam / Protein family hierarchy">Pfam / 蛋白質家族階層</h4>
+<p data-lang="zh">Nickel & Kiela (2017, NeurIPS) 原始論文就有 protein family taxonomy 範例——Pfam 的 family / clan / subfamily 三層階層幾乎無扭曲嵌入。後續被用於 protein function prediction。</p>
+<p data-lang="en">The original Nickel & Kiela (2017, NeurIPS) paper used Pfam family/clan/subfamily as a benchmark — nearly distortion-free. Later extended to protein function prediction.</p></div>
+
+<div class="card"><h4 data-zh="Single-cell phylogeny" data-en="Single-cell phylogeny">Single-cell phylogeny</h4>
+<p data-lang="zh">CellTagging / lineage barcode 加上雙曲嵌入可重建細胞家譜——譜系樹本質是樹，雙曲幾何是最自然選擇。Macaulay et al. (2024) 應用於 zebrafish 發育。</p>
+<p data-lang="en">CellTagging / lineage barcodes + hyperbolic embedding reconstruct cell lineage trees — phylogenies are intrinsically trees, hyperbolic is the natural choice. Macaulay et al. (2024) applied this to zebrafish development.</p></div>
+
+<div class="card"><h4 data-zh="ATAC-seq 染色質階層" data-en="ATAC-seq chromatin hierarchy">ATAC-seq 染色質階層</h4>
+<p data-lang="zh">TAD (topological associated domains) 與 sub-TAD 構成樹狀階層；雙曲嵌入可用於對齊不同細胞型別的染色質結構。</p>
+<p data-lang="en">TADs and sub-TADs form a hierarchical tree — hyperbolic embeddings help align chromatin architectures across cell types.</p></div>
+
+<div class="card"><h4 data-zh="TCR repertoire" data-en="TCR repertoire">TCR repertoire</h4>
+<p data-lang="zh">TCR V/D/J 段組合構成隱性樹狀階層；雙曲嵌入比 Levenshtein clustering 更能保留 clonotype 結構，已用於 COVID-19 / 癌症免疫資料。</p>
+<p data-lang="en">TCR V/D/J segments form an implicit hierarchical tree — hyperbolic embeddings preserve clonotype structure better than Levenshtein clustering. Applied to COVID-19 and cancer immunology data.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="雙曲嵌入的進階主題" data-en="Advanced Topics in Hyperbolic Embeddings">雙曲嵌入的進階主題</h2>
+<div data-lang="zh">
+<h3>① Hyperbolic Neural Networks</h3>
+<p>Ganea et al. (2018, NeurIPS) 把神經網路的線性層、活化函數推廣到雙曲空間：使用 <strong>Möbius 加法、scalar mul</strong>，並用 exp/log map 在切空間做運算。HyperboloidNN、HGCN (Hyperbolic GCN, Chami 2019) 是後續代表作。</p>
+
+<h3>② 與 Lorentz model 的選擇</h3>
+<p>Poincaré disk 直覺但在邊界 (‖x‖→1) 數值不穩；Lorentz / hyperboloid 數值穩但需投影。實務建議：<strong>訓練用 Lorentz、視覺化用 Poincaré</strong>（可雙向轉換）。</p>
+
+<h3>③ 混合幾何（product space）</h3>
+<p>Gu et al. (2019) 提出 ℍ × 𝕊 × ℝ product space embedding——資料可能有「樹 + 環 + 平面」多種結構同時存在（如細胞型別樹 + 細胞週期環）。每個因子分別嵌入後 concatenate。</p>
+
+<h3>④ 評估指標</h3>
+<ul>
+<li><strong>distortion:</strong> Σ |d_embed(i,j) − d_tree(i,j)| / d_tree(i,j)</li>
+<li><strong>mAP:</strong> 對每個節點，其鄰居在嵌入空間中也應該是最近的 → mean average precision</li>
+<li><strong>hierarchical clustering 一致性:</strong> 嵌入空間做 HDBSCAN / k-means 後與 ground truth ontology 比較</li>
+</ul>
+
+<h3>⑤ 與 UMAP / t-SNE 的關係</h3>
+<p>UMAP 假設資料在 manifold 上局部歐式；對階層資料其實是「強拉直」。<strong>HyperMap、Hyperbolic UMAP</strong>（Klimovskaia 2020, Sala 2024）用雙曲做投影，能在低維保留樹狀關係——對細胞 ontology 視覺化比標準 UMAP 更忠實。</p>
+
+<h3>⑥ 數值陷阱</h3>
+<p>雙曲距離 acosh 在 argument 接近 1 時數值梯度爆炸（因 acosh'(1) = ∞）；常用 <strong>clamp(argument, ≥ 1 + ε)</strong> 防止。Sala et al. (2018) 用 multi-precision 直接避免。<code>geoopt</code> 套件已內建這些 trick。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Hyperbolic Neural Networks</h3>
+<p>Ganea et al. (2018, NeurIPS) generalize linear layers and activations to hyperbolic space via <strong>Möbius operations</strong> and tangent-space exp/log maps. HyperboloidNN, HGCN (Chami 2019) are notable follow-ups.</p>
+
+<h3>② Poincaré disk vs Lorentz</h3>
+<p>Poincaré is intuitive but numerically unstable near the boundary; Lorentz is stable but needs projection. Rule of thumb: <strong>train in Lorentz, visualize in Poincaré</strong> (they are inter-convertible).</p>
+
+<h3>③ Product-space geometry</h3>
+<p>Gu et al. (2019) propose ℍ × 𝕊 × ℝ product embeddings — data may have tree + cycle + flat structure simultaneously (e.g. cell-type tree + cell-cycle ring). Each factor embeds separately, then concatenate.</p>
+
+<h3>④ Evaluation metrics</h3>
+<ul>
+<li><strong>Distortion:</strong> Σ |d_embed − d_tree| / d_tree</li>
+<li><strong>mAP:</strong> for each node, are its neighbors nearest in embedding? → mean average precision</li>
+<li><strong>Hierarchical clustering consistency:</strong> HDBSCAN/k-means on embedding vs ground-truth ontology</li>
+</ul>
+
+<h3>⑤ Relation to UMAP / t-SNE</h3>
+<p>UMAP assumes local Euclidean manifold; on hierarchical data it forces flatness. <strong>HyperMap, Hyperbolic UMAP</strong> (Klimovskaia 2020, Sala 2024) project into hyperbolic space, preserving tree structure in low dimensions — more faithful than standard UMAP for cell ontology visualization.</p>
+
+<h3>⑥ Numerical pitfalls</h3>
+<p>The acosh gradient blows up as argument → 1 (since acosh'(1) = ∞). Use <strong>clamp(argument, ≥ 1 + ε)</strong>. Sala et al. (2018) use multi-precision to bypass this. The <code>geoopt</code> library bundles these tricks.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="雙曲嵌入還能改良哪些任務？" data-en="What Else Could Hyperbolic Embeddings Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 把 cell ontology 當先驗約束嵌入</h3>
+<p>目前 scRNA-seq 嵌入（PCA、scVI、UMAP）大多 ignore 已知 cell ontology。<strong>提案：</strong>把 Cell Ontology (CL) 樹當作 prior，學一個 hyperbolic latent 使「ontology 相近的細胞嵌入相近」，可同時做 cluster + 階層 annotation。</p>
+
+<h3>🎯 2. 跨物種 lineage 對齊</h3>
+<p>用雙曲嵌入做 Tabula Sapiens × Tabula Muris 對齊——共享 ontology 結構（如「免疫細胞 → T cell → CD4+」階層）在雙曲空間可對齊更穩。<strong>提案：</strong>HypHarmony 或類似的雙曲版 Harmony。</p>
+
+<h3>🎯 3. 多解析度細胞圖譜</h3>
+<p>單一嵌入難以同時看「粗類別」與「細亞型」。雙曲嵌入天然有「半徑 = 解析度」的詮釋——靠原點看到粗結構，靠邊界看到細結構。<strong>提案：</strong>互動式雙曲細胞圖譜瀏覽器。</p>
+
+<h3>🎯 4. TCR/BCR clonotype 動態</h3>
+<p>免疫 repertoire 隨時間演化——某 clonotype 在某時刻擴增為 clonal family。雙曲嵌入可同時表示家系結構與擴增動態（時間 = 半徑變化）。<strong>提案：</strong>雙曲時序 TCR 模型，用於疫苗反應 / 癌症免疫追蹤。</p>
+
+<h3>🎯 5. Single-cell phylogeny + spatial 整合</h3>
+<p>結合 lineage barcoding 與空間轉錄體（如 spatial CellTagging）：細胞既有時間階層（譜系）又有空間鄰居關係。雙曲 × 歐式 product space 可同時保留兩者。<strong>提案：</strong>HypSpatial framework。</p>
+
+<h3>🎯 6. Hyperbolic embedding 評估 scLLM 階層理解</h3>
+<p>scGPT/Geneformer 的 latent 是否「真的」學到細胞型別階層？將其 latent 投影到 hyperbolic 空間，看 ontology 是否在嵌入中保留。<strong>提案：</strong>scLLM 階層解釋性 benchmark。</p>
+
+<h3>🎯 7. 染色質階層的 dynamic 模型</h3>
+<p>TAD-subTAD 階層在發育過程中動態重組。雙曲嵌入可緊湊表示這種「半徑變化」的階層動態。<strong>提案：</strong>Hyperbolic Hi-C dynamics，比現有 graph-based 方法更節省維度。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Use cell ontology as a prior</h3>
+<p>Current scRNA-seq embeddings (PCA, scVI, UMAP) usually ignore known cell ontology. <strong>Proposal:</strong> learn a hyperbolic latent where the Cell Ontology (CL) tree acts as a prior — ontology-close cells embed close — enabling joint clustering + hierarchical annotation.</p>
+
+<h3>🎯 2. Cross-species lineage alignment</h3>
+<p>Hyperbolic alignment for Tabula Sapiens × Tabula Muris — shared ontology (immune → T cell → CD4+) aligns more stably in hyperbolic space. <strong>Proposal:</strong> HypHarmony — a hyperbolic version of Harmony.</p>
+
+<h3>🎯 3. Multi-resolution cell atlas</h3>
+<p>A single embedding rarely shows coarse + fine simultaneously. Hyperbolic embedding's "radius = resolution" interpretation handles this naturally — near origin you see coarse, near boundary you see fine. <strong>Proposal:</strong> interactive hyperbolic atlas browser.</p>
+
+<h3>🎯 4. TCR/BCR clonotype dynamics</h3>
+<p>Immune repertoires evolve over time — clonal families expand at specific moments. Hyperbolic embedding can represent both family structure and expansion dynamics (time = radial change). <strong>Proposal:</strong> hyperbolic temporal TCR model for vaccine response / cancer immune tracking.</p>
+
+<h3>🎯 5. Phylogeny + spatial integration</h3>
+<p>Combine lineage barcoding with spatial transcriptomics: cells have temporal hierarchy (lineage) and spatial neighbors. Hyperbolic × Euclidean product space preserves both. <strong>Proposal:</strong> HypSpatial framework.</p>
+
+<h3>🎯 6. Evaluate scLLM hierarchy understanding</h3>
+<p>Do scGPT/Geneformer latents truly learn cell-type hierarchy? Project their latents to hyperbolic space and check ontology preservation. <strong>Proposal:</strong> scLLM hierarchy interpretability benchmark.</p>
+
+<h3>🎯 7. Dynamic chromatin hierarchy</h3>
+<p>TAD-subTAD hierarchies reorganize during development. Hyperbolic embedding compactly represents radial-dynamic hierarchy. <strong>Proposal:</strong> Hyperbolic Hi-C dynamics, more dimension-efficient than current graph methods.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / geoopt</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / Poincaré dist</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / hydra</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install geoopt torch</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> geoopt
+<span class="keyword">from</span> geoopt <span class="keyword">import</span> PoincareBall, ManifoldParameter
+<span class="keyword">from</span> geoopt.optim <span class="keyword">import</span> RiemannianAdam
+
+ball = PoincareBall(c=<span class="num">1.0</span>)                    <span class="comment"># curvature = 1</span>
+emb = ManifoldParameter(
+    ball.random(n_nodes, <span class="num">2</span>, std=<span class="num">0.01</span>),     <span class="comment"># 2D Poincaré</span>
+    manifold=ball)
+
+opt = RiemannianAdam([emb], lr=<span class="num">1e-2</span>)
+
+<span class="keyword">for</span> step <span class="keyword">in</span> range(<span class="num">5000</span>):
+    <span class="comment"># margin-based contrastive loss on tree edges</span>
+    pos = ball.dist(emb[u], emb[v])           <span class="comment"># tree edges</span>
+    neg = ball.dist(emb[u], emb[w])           <span class="comment"># random negatives</span>
+    loss = torch.nn.functional.relu(pos - neg + <span class="num">1.0</span>).mean()
+    opt.zero_grad(); loss.backward(); opt.step()</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> poincare_dist(x, y, eps=<span class="num">1e-7</span>):
+    <span class="str">"""x, y : (..., d) inside open unit ball"""</span>
+    nx2 = (x*x).sum(-<span class="num">1</span>)
+    ny2 = (y*y).sum(-<span class="num">1</span>)
+    nxy2 = ((x - y)**<span class="num">2</span>).sum(-<span class="num">1</span>)
+    arg = <span class="num">1</span> + <span class="num">2</span> * nxy2 / ((<span class="num">1</span> - nx2)*(<span class="num">1</span> - ny2) + eps)
+    <span class="keyword">return</span> np.arccosh(np.clip(arg, <span class="num">1</span>+eps, <span class="keyword">None</span>))
+
+<span class="comment"># Lorentz model — more stable</span>
+<span class="keyword">def</span> lorentz_dist(x, y):
+    inn = -x[..., <span class="num">0</span>]*y[..., <span class="num">0</span>] + (x[..., <span class="num">1</span>:]*y[..., <span class="num">1</span>:]).sum(-<span class="num">1</span>)
+    <span class="keyword">return</span> np.arccosh(np.clip(-inn, <span class="num">1</span>+<span class="num">1e-7</span>, <span class="keyword">None</span>))</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages("hydra")</span>
+<span class="keyword">library</span>(hydra)
+
+<span class="comment"># Hyperbolic Distance Recovery and Approximation</span>
+<span class="comment"># Input: pairwise distance matrix D (e.g. from a tree)</span>
+emb &lt;- hydra(D, dim = <span class="num">2</span>, curvature = <span class="num">1</span>)
+<span class="comment"># emb$r, emb$directional — polar coords in Poincaré disk</span>
+
+<span class="comment"># Convert to Cartesian on disk</span>
+xy &lt;- emb$r * emb$directional</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為什麼雙曲空間特別適合嵌入樹狀資料？</p><p data-lang="en">Why is hyperbolic space well-suited to tree data?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 雙曲空間沒有距離概念</span><span data-lang="en">A. It has no distance</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 球體積隨半徑指數成長，剛好匹配樹的節點指數成長</span><span data-lang="en">B. Ball volume grows exponentially with radius, matching tree branching</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 它是離散空間</span><span data-lang="en">C. It is discrete</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 它的曲率正好為 0</span><span data-lang="en">D. Its curvature is 0</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Poincaré disk 與 Lorentz / hyperboloid 模型相比，哪個敘述正確？</p><p data-lang="en">Comparing Poincaré disk and Lorentz / hyperboloid models, which is correct?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Poincaré 數值更穩定</span><span data-lang="en">A. Poincaré is more numerically stable</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 兩者代表不同的雙曲空間</span><span data-lang="en">B. They represent different hyperbolic spaces</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Lorentz 數值更穩、Poincaré 視覺更直覺；兩者等價可互轉</span><span data-lang="en">C. Lorentz is more stable; Poincaré is more intuitive; they are isometric</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 兩者都需要 GPU</span><span data-lang="en">D. Both require GPU</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼直接用標準 SGD 訓練 Poincaré embedding 會失敗？</p><p data-lang="en">Why does naive SGD fail for Poincaré embeddings?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 歐式梯度更新會把點推出單位球，且度量隨位置變化</span><span data-lang="en">A. Euclidean updates push points outside the unit ball; the metric varies with position</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. SGD 速度太慢</span><span data-lang="en">B. SGD is too slow</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 雙曲空間沒有梯度</span><span data-lang="en">C. Hyperbolic space has no gradient</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不能用 PyTorch</span><span data-lang="en">D. Can't use PyTorch</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="index.html"><span class="nav-dir" data-zh="← 回首頁" data-en="← Home">← 回首頁</span><span class="nav-title" data-zh="進階方法演算法" data-en="Advanced Methods">進階方法演算法</span></a>
+<a href="neural-ode.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 16：Neural ODE" data-en="Ch 16: Neural ODE">Ch 16：Neural ODE</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive Poincaré disk =====
+const SVG=document.getElementById('hypSvg');const CX=300,CY=180,RAD=160;
+// Tree: root + 3 children + 9 grandchildren (12 nodes incl root, 13 total)
+const tree=[
+  {id:0,parent:-1,angle:0,depth:0},
+  {id:1,parent:0,angle:0,depth:1},{id:2,parent:0,angle:2.094,depth:1},{id:3,parent:0,angle:4.189,depth:1},
+  {id:4,parent:1,angle:-0.5,depth:2},{id:5,parent:1,angle:0,depth:2},{id:6,parent:1,angle:0.5,depth:2},
+  {id:7,parent:2,angle:1.594,depth:2},{id:8,parent:2,angle:2.094,depth:2},{id:9,parent:2,angle:2.594,depth:2},
+  {id:10,parent:3,angle:3.689,depth:2},{id:11,parent:3,angle:4.189,depth:2},{id:12,parent:3,angle:4.689,depth:2}
+];
+let nodes=[];let dragIdx=-1;
+
+function initLayout(){
+  const rLeaf=+document.getElementById('sR').value;
+  nodes=tree.map(t=>{
+    let r;
+    if(t.depth===0)r=0;
+    else if(t.depth===1)r=rLeaf*0.55;
+    else r=rLeaf;
+    return{x:r*Math.cos(t.angle),y:r*Math.sin(t.angle),depth:t.depth,parent:t.parent};
+  });
+}
+
+function poincareDist(a,b,c){
+  const na2=a.x*a.x+a.y*a.y, nb2=b.x*b.x+b.y*b.y;
+  const dx=a.x-b.x,dy=a.y-b.y;
+  const arg=1+2*c*(dx*dx+dy*dy)/Math.max(1e-9,(1-na2)*(1-nb2));
+  return Math.acosh(Math.max(1,arg))/Math.sqrt(c);
+}
+
+function geodesicPath(a,b){
+  // For visualization, draw as straight line in Poincaré model is fine (true geodesics are circular arcs orthogonal to boundary, but lines suffice for clarity here)
+  return `M ${CX+a.x*RAD},${CY+a.y*RAD} L ${CX+b.x*RAD},${CY+b.y*RAD}`;
+}
+
+function render(){
+  const c=+document.getElementById('sC').value;
+  const rLeaf=+document.getElementById('sR').value;
+  document.getElementById('vC').textContent=c.toFixed(2);
+  document.getElementById('vR').textContent=rLeaf.toFixed(2);
+  let svg='';
+  // Boundary circle
+  svg+=`<circle cx="${CX}" cy="${CY}" r="${RAD}" fill="#fdfdfd" stroke="#1a6b5a" stroke-width="2.5" stroke-dasharray="4 4"/>`;
+  // Concentric radial rings (visualizing "shells")
+  for(let r=0.25;r<1;r+=0.25)svg+=`<circle cx="${CX}" cy="${CY}" r="${r*RAD}" fill="none" stroke="#d5cfc0" stroke-width="0.8"/>`;
+  // Tree edges
+  for(let i=1;i<nodes.length;i++){const p=nodes[nodes[i].parent];svg+=`<path d="${geodesicPath(p,nodes[i])}" stroke="#888" stroke-width="1.4" fill="none"/>`;}
+  // Nodes
+  const colors=['#c0392b','#1a6b5a','#2563a8'];
+  nodes.forEach((n,i)=>{
+    const cx=CX+n.x*RAD,cy=CY+n.y*RAD;
+    const r=n.depth===0?9:(n.depth===1?7:5);
+    svg+=`<circle data-i="${i}" cx="${cx}" cy="${cy}" r="${r}" fill="${colors[n.depth]}" stroke="#fff" stroke-width="1.5" style="cursor:grab;"/>`;
+  });
+  // Boundary label
+  svg+=`<text x="${CX}" y="${CY-RAD-8}" text-anchor="middle" font-size="11" fill="#888">∂𝔻 (boundary, distance → ∞)</text>`;
+  SVG.innerHTML=svg;
+
+  // Pick a leaf pair to display distance
+  const a=nodes[4],b=nodes[12];   // leaves of different subtrees
+  const aP=nodes[1],bP=nodes[3];
+  const eucL=Math.hypot(a.x-b.x,a.y-b.y);
+  const hypL=poincareDist(a,b,c);
+  const eucS=Math.hypot(a.x-nodes[5].x,a.y-nodes[5].y);
+  const hypS=poincareDist(a,nodes[5],c);
+  const L=I18n.get();
+  document.getElementById('hypInfo').innerHTML=L==='zh'?
+    `跨子樹的兩葉子（id 4 ↔ id 12）：歐式 ≈ <strong>${eucL.toFixed(3)}</strong>，雙曲 ≈ <strong>${hypL.toFixed(3)}</strong>。<br>同子樹的兩葉子（id 4 ↔ id 5）：歐式 ≈ <strong>${eucS.toFixed(3)}</strong>，雙曲 ≈ <strong>${hypS.toFixed(3)}</strong>。<br>注意雙曲距離放大了「跨子樹 vs 同子樹」的對比——這就是樹結構在負曲率下被自然保留的方式。`
+    :
+    `Two leaves across subtrees (id 4 ↔ 12): Euclidean ≈ <strong>${eucL.toFixed(3)}</strong>, hyperbolic ≈ <strong>${hypL.toFixed(3)}</strong>.<br>Two leaves in the same subtree (id 4 ↔ 5): Euclidean ≈ <strong>${eucS.toFixed(3)}</strong>, hyperbolic ≈ <strong>${hypS.toFixed(3)}</strong>.<br>Hyperbolic distance amplifies the cross-subtree vs same-subtree contrast — that's how tree structure is naturally preserved under negative curvature.`;
+}
+
+// Drag interactivity
+SVG.addEventListener('mousedown',e=>{const t=e.target;if(t.tagName==='circle'&&t.dataset.i!==undefined){dragIdx=+t.dataset.i;}});
+window.addEventListener('mouseup',()=>{dragIdx=-1;});
+SVG.addEventListener('mousemove',e=>{
+  if(dragIdx<0)return;
+  const rect=SVG.getBoundingClientRect();
+  const sx=600/rect.width, sy=360/rect.height;
+  const mx=(e.clientX-rect.left)*sx, my=(e.clientY-rect.top)*sy;
+  let nx=(mx-CX)/RAD, ny=(my-CY)/RAD;
+  const nr=Math.hypot(nx,ny);
+  if(nr>0.97){nx*=0.97/nr;ny*=0.97/nr;}
+  nodes[dragIdx].x=nx;nodes[dragIdx].y=ny;
+  render();
+});
+
+document.getElementById('sC').addEventListener('input',render);
+document.getElementById('sR').addEventListener('input',()=>{initLayout();render();});
+document.addEventListener('langchange',render);
+initLayout();render();
+
+window._QF={zh:{
+  q1_y:'答對！體積在雙曲空間隨半徑指數成長，剛好對應樹的指數分枝。',
+  q1_n:'答案是 B。雙曲空間 ball volume 隨 r 指數成長，匹配樹的節點數指數成長。',
+  q2_y:'答對！Lorentz 數值穩、Poincaré 直觀，兩者等距同構。',
+  q2_n:'答案是 C。兩者代表相同的雙曲空間，可互相轉換。',
+  q3_y:'答對！黎曼度量 (1−‖x‖²)² 隨位置變化，且歐式更新會逃出單位球。',
+  q3_n:'答案是 A。需要 Riemannian SGD：考慮度量縮放並做球內投影。'
+},en:{
+  q1_y:'Correct! Volume grows exponentially with radius, matching tree branching.',
+  q1_n:'Answer is B. Hyperbolic ball volume grows exponentially in r, matching exponential node growth in trees.',
+  q2_y:'Correct! Lorentz is stable, Poincaré is intuitive; they are isometric.',
+  q2_n:'Answer is C. Both represent the same hyperbolic space and are inter-convertible.',
+  q3_y:'Correct! Riemannian metric (1−‖x‖²)² varies with position, and Euclidean updates escape the unit ball.',
+  q3_n:'Answer is A. Riemannian SGD scales gradients by the metric and projects back into the ball.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

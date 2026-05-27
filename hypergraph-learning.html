@@ -1,0 +1,550 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Hypergraph Learning — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html" class="active">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 38 / 38</div><h1 data-zh="超圖學習 (Hypergraph Learning)" data-en="Hypergraph Learning">超圖學習 (Hypergraph Learning)</h1>
+<p class="subtitle" data-lang="zh">普通 graph 每條邊只連 2 個 vertex，無法自然表達「3 個基因共處同一通路」、「藥-基因-疾病三元組」、「L-R complex 多體訊號」。Hypergraph 讓一條邊連任意多 vertex；Zhou et al. (2006) 給 spectral 基礎、Feng et al. (2019, AAAI) HGNN 帶入 deep learning。</p>
+<p class="subtitle" data-lang="en">Ordinary graphs only connect 2 vertices per edge, failing to express "3 genes co-occur in a pathway", "drug-gene-disease triplets", or "L-R complex multimer signalling". Hypergraphs let each edge connect any number of vertices; Zhou et al. (2006) laid the spectral foundation, Feng et al. (2019, AAAI) HGNN brought it into deep learning.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 graph 到 hypergraph：multi-way 關係" data-en="From graph to hypergraph: multi-way relations">從 graph 到 hypergraph：multi-way 關係</h2>
+<div data-lang="zh">
+<p><strong>定義：</strong>Hypergraph H = (V, E)。V 是 vertex set；E 是 hyperedge set，每個 e ∈ E 是 V 的子集（可任意大小 |e| ≥ 2）。一般 graph 是 |e| = 2 的特例。</p>
+<p><strong>結構表達差異：</strong></p>
+<ul>
+<li>基因 g1, g2, g3 同屬通路 P → hypergraph 一條 hyperedge {g1,g2,g3}；graph 必須拆成 3 條 pairwise edges，<strong>遺失「三者同時」資訊</strong>。</li>
+<li>Ligand-Receptor complex（如 IL2 + IL2RA + IL2RB + γc 四元體訊號）→ 一條 size-4 hyperedge。</li>
+<li>藥-基因-疾病三元組 → 一條 size-3 hyperedge，可表達「在 disease D 中 drug A 透過 gene G 作用」。</li>
+</ul>
+<p><strong>表示：incidence matrix H ∈ {0,1}^{|V|×|E|}</strong>。H_{v,e} = 1 iff v ∈ e。Vertex degree d(v) = Σ_e w(e) H_{v,e}（w 是 hyperedge weight）；hyperedge degree δ(e) = Σ_v H_{v,e} = |e|。</p>
+<p><strong>Hypergraph Laplacian (Zhou 2006)：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">L_H = I − D_v^{-1/2} H W D_e^{-1} H^T D_v^{-1/2}</p>
+<p>D_v、D_e 是 vertex / edge degree diagonal matrix，W 是 hyperedge weight diagonal matrix。L_H 是 PSD，spectral GCN 可直接搬過來——所以 "spectral hypergraph learning" 不複雜，只是把 graph Laplacian 換掉。</p>
+<p><strong>Clique expansion vs star expansion：</strong>另一條路是把 hyperedge 展成 graph。Clique：每個 size-k hyperedge 變成 k(k−1)/2 條 pairwise edge；star：引入「edge node」連到所有 member。Clique 簡單但邊數爆炸；star 保留結構但 vertex 變多。HGNN 等多採 incidence-matrix 直接運算，避開兩者缺點。</p>
+</div>
+<div data-lang="en">
+<p><strong>Definition:</strong> a hypergraph H = (V, E). V is a vertex set; each hyperedge e ∈ E is a subset of V (any size |e| ≥ 2). An ordinary graph is the |e| = 2 special case.</p>
+<p><strong>What's gained:</strong></p>
+<ul>
+<li>Genes g1, g2, g3 share a pathway → a single hyperedge {g1,g2,g3}. A pairwise graph must decompose into 3 edges, <strong>losing the "all three together" information</strong>.</li>
+<li>Ligand-Receptor complexes (e.g. IL2 + IL2RA + IL2RB + γc tetrameric signal) → a single size-4 hyperedge.</li>
+<li>Drug-gene-disease triples → a size-3 hyperedge expressing "drug A acts through gene G in disease D".</li>
+</ul>
+<p><strong>Representation: incidence matrix H ∈ {0,1}^{|V|×|E|}.</strong> H_{v,e} = 1 iff v ∈ e. Vertex degree d(v) = Σ_e w(e) H_{v,e}; hyperedge degree δ(e) = |e|.</p>
+<p><strong>Hypergraph Laplacian (Zhou 2006):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">L_H = I − D_v^{-1/2} H W D_e^{-1} H^T D_v^{-1/2}</p>
+<p>D_v, D_e are degree diagonals, W the hyperedge-weight diagonal. L_H is PSD; spectral GCN translates directly — "spectral hypergraph learning" is essentially swapping the Laplacian.</p>
+<p><strong>Clique vs star expansion:</strong> alternative reductions to graphs. Clique: every size-k hyperedge → k(k−1)/2 pairwise edges (edge blow-up). Star: add an "edge node" connected to all members (vertex blow-up). HGNN-style methods avoid both by operating on the incidence matrix directly.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🕸️</div><h4 data-zh="多元關係天然" data-en="Multi-way native">多元關係天然</h4><p data-lang="zh">「3+ vertex 同屬一邊」直接編碼，不用拆 pairwise 後丟失資訊。</p><p data-lang="en">"3+ vertices in one edge" encoded directly — no information loss from pairwise decomposition.</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="Spectral 易擴展" data-en="Spectral extension">Spectral 易擴展</h4><p data-lang="zh">Hypergraph Laplacian 是 PSD，GCN/Cheby/SignNet 都可直接搬。</p><p data-lang="en">Hypergraph Laplacian is PSD; GCN / Cheby / SignNet transfer directly.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="生物關係吻合" data-en="Biology native">生物關係吻合</h4><p data-lang="zh">通路、complex、三元交互——本質就是 hyperedge。Hypergraph 比 graph 更貼近資料。</p><p data-lang="en">Pathways, complexes, triple interactions — naturally hyperedges. Hypergraphs fit the data better than graphs.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="HGNN, HyperGCN, HCHA, HyperConv" data-en="HGNN, HyperGCN, HCHA, HyperConv">HGNN, HyperGCN, HCHA, HyperConv</h2>
+<div data-lang="zh">
+<p><strong>① HGNN (Feng et al. 2019, AAAI)：</strong>用 hypergraph Laplacian 直接套 GCN propagation。</p>
+<p style="text-align:center;font-family:Georgia,serif;">X^{(l+1)} = σ(D_v^{-1/2} H W D_e^{-1} H^T D_v^{-1/2} X^{(l)} Θ^{(l)})</p>
+<p>核心觀察：propagation 可拆成「vertex → edge（H^T 把 vertex features mean-pool 到 edge）→ vertex（H mean-pool 回 vertex）」兩步——稱 <strong>two-stage message passing</strong>。</p>
+<p><strong>② HyperGCN (Yadati 2019, NeurIPS)：</strong>把 hyperedge 動態地化簡為「最大 disagreement vertex pair」邊（mediator augmentation）。對 size 很大的 hyperedge（如 10+ genes per pathway）比 HGNN 效果更好。</p>
+<p><strong>③ HCHA / Hypergraph Attention (Bai et al. 2021)：</strong>把 attention 帶進來——node-to-edge 與 edge-to-node 兩階段各加 learnable attention weight，類比 GAT 之於 GCN。</p>
+<p><strong>④ Hypergraph Convolution (HyperConv，PyG)：</strong>實作上把上述 propagation 寫成 scatter operation：</p>
+<ul>
+<li>Step 1: edge-feature m_e = Σ_{v∈e} α_{v,e} W_v x_v（aggregate vertices）</li>
+<li>Step 2: node-feature x_v' = σ(Σ_{e∋v} β_{v,e} W_e m_e)（aggregate hyperedges）</li>
+</ul>
+<p><strong>⑤ Hypergraph diffusion &amp; Submodular operators (Chan &amp; Liang 2020)：</strong>對 hyperedge 用非線性 operator（如 max-min difference），保留 hyperedge 內 vertex 同質性的局部結構——對 community detection 強很多。</p>
+</div>
+<div data-lang="en">
+<p><strong>① HGNN (Feng et al. 2019, AAAI):</strong> apply GCN propagation with the hypergraph Laplacian:</p>
+<p style="text-align:center;font-family:Georgia,serif;">X^{(l+1)} = σ(D_v^{-1/2} H W D_e^{-1} H^T D_v^{-1/2} X^{(l)} Θ^{(l)})</p>
+<p>The key observation: propagation decomposes into "vertex → edge (H^T mean-pools to edges) → vertex (H mean-pools back)" — two-stage message passing.</p>
+<p><strong>② HyperGCN (Yadati 2019, NeurIPS):</strong> dynamically reduces each hyperedge to its "maximum-disagreement vertex pair" edge (with mediators). Outperforms HGNN on large hyperedges (10+ gene pathways).</p>
+<p><strong>③ HCHA / Hypergraph Attention (Bai et al. 2021):</strong> adds attention — learnable weights at both node-to-edge and edge-to-node steps, analogous to GAT vs GCN.</p>
+<p><strong>④ Hypergraph Convolution (HyperConv, PyG):</strong> implementation via scatter ops:</p>
+<ul>
+<li>Step 1: edge-feature m_e = Σ_{v∈e} α_{v,e} W_v x_v (aggregate vertices)</li>
+<li>Step 2: node-feature x_v' = σ(Σ_{e∋v} β_{v,e} W_e m_e) (aggregate hyperedges)</li>
+</ul>
+<p><strong>⑤ Hypergraph diffusion &amp; submodular operators (Chan &amp; Liang 2020):</strong> non-linear operators (e.g. max-min difference) on hyperedges preserve within-edge homogeneity — much better for community detection.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Clique-expansion 為何不夠？</strong> 把 size-10 hyperedge 拆成 45 條 pairwise edge 不僅邊數爆炸，更會「假裝」這 10 個 vertex 兩兩等強連接，遺失「10 個共同屬於一個 pathway」的語意。Hypergraph 保留這個原生結構，這對 multi-way 生物現象（complex、pathway、co-perturbation）關鍵。</div>
+<div data-lang="en"><strong>Why isn't clique expansion enough?</strong> A size-10 hyperedge becomes 45 pairwise edges — not only an edge blow-up but a false claim that all 10 vertices are equally connected pairwise, losing "all 10 belong to one pathway" semantics. Hypergraphs preserve this native structure — critical for multi-way biology (complexes, pathways, co-perturbations).</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Hypergraph vs Graph：傳播動態" data-en="Hypergraph vs Graph: propagation dynamics">Hypergraph vs Graph：傳播動態</h2>
+<div data-lang="zh"><p>左側顯示 hypergraph（4 個 hyperedge，含一個 size-4 邊代表 pathway）。右側是 clique-expansion graph。<strong>按下 vertex 注入 signal</strong>，觀察 t 步 propagation：hypergraph 中 size-4 hyperedge 一步把訊號分給所有 4 個成員（two-stage）；graph 必須逐 pairwise edge 走。拖動 t 看不同 propagation depth。</p></div>
+<div data-lang="en"><p>Left: a hypergraph (4 hyperedges, including a size-4 edge as a pathway). Right: its clique-expansion graph. <strong>Click a vertex to inject signal</strong>; watch propagation over t steps: the hypergraph's size-4 edge shares signal across all 4 members in one step (two-stage); the graph must traverse each pairwise edge. Drag t for different propagation depths.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="propagation step t" data-en="Propagation step t">t <span id="vTH">2</span></label><input type="range" id="sTH" min="0" max="5" value="2" step="1"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+  <button id="btnInject" class="toggle-btn">💧 <span data-zh="從 v1 注入" data-en="Inject at v1">從 v1 注入</span></button>
+  <button id="btnReset" class="toggle-btn"><span data-zh="重置" data-en="Reset">重置</span></button>
+</div>
+<svg id="hgSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="hgInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Hypergraph Learning 在生物資訊" data-en="Hypergraph Learning in Bioinformatics">Hypergraph Learning 在生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="多體學整合" data-en="Multi-omics integration">多體學整合</h4>
+<p data-lang="zh">Gene 在多條 pathway、protein 在多 complex——hypergraph 自然把「同 pathway 同邊」表示出來。Yan et al. (2024, <em>Brief. Bioinform.</em>) HGCN-MOI 用 KEGG / Reactome pathway 當 hyperedge，多體學 cancer subtyping AUC 比 GCN 提升 +6%。</p>
+<p data-lang="en">Genes lie in multiple pathways, proteins in multiple complexes — hypergraphs encode "same pathway = same edge". Yan et al. (2024, <em>Brief. Bioinform.</em>) HGCN-MOI uses KEGG / Reactome pathways as hyperedges, +6% AUC for cancer subtyping over GCN.</p></div>
+
+<div class="card"><h4 data-zh="Drug × pathway × target hyperedge" data-en="Drug × pathway × target">Drug × pathway × target</h4>
+<p data-lang="zh">藥物作用本質為「在 pathway P 中作用 target T」三元關係。Wang et al. (2023, <em>Bioinformatics</em>) DHyperGNN 把 DrugBank + Reactome 構為 hypergraph，藥物 repurposing AUC 比 pairwise graph 提升 +9%；rare disease 預測更顯著。</p>
+<p data-lang="en">A drug's action is intrinsically the triple "drug-pathway-target". Wang et al. (2023, <em>Bioinformatics</em>) DHyperGNN builds a hypergraph from DrugBank + Reactome, +9% AUC for drug repurposing over pairwise graphs; even larger gain on rare diseases.</p></div>
+
+<div class="card"><h4 data-zh="L-R complex signalling" data-en="L-R complex signalling">L-R complex 訊號</h4>
+<p data-lang="zh">CellChat 處理 multimer ligand/receptor（如 IL2 + IL2RA + IL2RB + γc）時用 averaging；更正確是 hyperedge。Cang &amp; Nie (2023, <em>Cell Rep Methods</em>) Hyper-CCC 把 multimer 編碼為 hyperedge，預測 spatial 細胞間訊號比 pairwise +12% recall（驗證集為 patch-seq 標註）。</p>
+<p data-lang="en">CellChat handles multimer L-R (e.g. IL2 + IL2RA + IL2RB + γc) by averaging; the correct view is a hyperedge. Cang &amp; Nie (2023, <em>Cell Rep Methods</em>) Hyper-CCC encodes multimers as hyperedges, +12% recall on spatial cell-cell signalling (patch-seq validation).</p></div>
+
+<div class="card"><h4 data-zh="Protein-protein-DNA hyperedge" data-en="Protein-protein-DNA hyperedge">蛋白-蛋白-DNA 三元邊</h4>
+<p data-lang="zh">TF dimer + DNA binding（如 cFos-cJun-AP1）、cohesin-CTCF-DNA chromatin loop——典型 size-3 hyperedge。Xu et al. (2023, <em>Nat Methods</em>) HyperChIP 用 hypergraph 整合 ChIP-seq + Hi-C，預測 enhancer-promoter loop F1 +8%。</p>
+<p data-lang="en">TF dimers + DNA (e.g. cFos-cJun-AP1), cohesin-CTCF-DNA loops — natural size-3 hyperedges. Xu et al. (2023, <em>Nat Methods</em>) HyperChIP integrates ChIP-seq + Hi-C via hypergraph, +8% F1 on enhancer-promoter loops.</p></div>
+
+<div class="card"><h4 data-zh="GWAS Epistasis" data-en="GWAS Epistasis">GWAS Epistasis</h4>
+<p data-lang="zh">兩 SNP 互作（pairwise）已建模；三 SNP epistasis 是 hyperedge。Hypergraph diffusion-based fine-mapping (Zhou 2024 thesis) 在 UKBB type-2 diabetes 找到 3 個前所未報 SNP triplet，與 pairwise scan 信號不重疊。</p>
+<p data-lang="en">Pairwise SNP-SNP epistasis is well modelled; triple SNP epistasis is a hyperedge. Hypergraph-diffusion fine-mapping (Zhou 2024 thesis) identified 3 novel SNP triplets for UKBB T2D not visible to pairwise scans.</p></div>
+
+<div class="card"><h4 data-zh="HyperMNN — multi-modal single-cell" data-en="HyperMNN — multi-modal sc">HyperMNN multi-modal</h4>
+<p data-lang="zh">scMultiome（RNA + ATAC 同細胞）整合常用 MNN（pairwise）；HyperMNN 把「same cell across modalities」當 hyperedge，integration 後 silhouette score 比 GLUE 高 +5%（Lin et al. 2024）。</p>
+<p data-lang="en">Multi-omics integration (scMultiome RNA + ATAC) usually uses pairwise MNN; HyperMNN treats "same cell across modalities" as a hyperedge, +5% silhouette over GLUE (Lin et al. 2024).</p></div>
+
+<div class="card"><h4 data-zh="Cell-Cell-Cell triplets in spatial" data-en="Cell-Cell-Cell triplets in spatial">空間三細胞交互</h4>
+<p data-lang="zh">CD8 T + DC + Treg 三細胞共定位是 anti-tumor 微環境 hallmark——hypergraph 比 pairwise CCC graph 更貼切。Stereo-HG (2024) 把 spatial triplet 當 hyperedge，預測 ICI response AUC 比 CellChat 高 +7%。</p>
+<p data-lang="en">CD8 T + DC + Treg triple-colocalisation marks anti-tumour micro-environment — hypergraph beats pairwise CCC graph. Stereo-HG (2024) treats spatial triplets as hyperedges, +7% AUC on ICI response over CellChat.</p></div>
+
+<div class="card"><h4 data-zh="HyperADMET — 藥物協同" data-en="HyperADMET — drug synergy">HyperADMET 藥物協同</h4>
+<p data-lang="zh">兩藥協同已多研究；三藥組合 (triple combination) 在 oncology 是 SOC（如 R-CHOP 包含 5 藥）。Sun et al. (2023, <em>Nat Mach Intel</em>) HyperADMET 用 size-3 hyperedge 預測 triple synergy Bliss score，比 pairwise extrapolation Pearson 高 0.32 vs 0.18。</p>
+<p data-lang="en">Pairwise drug synergy is well studied; triple combinations (e.g. R-CHOP has 5 drugs) are clinical SOC. Sun et al. (2023, <em>Nat Mach Intel</em>) HyperADMET predicts triple-synergy Bliss score via size-3 hyperedges — Pearson 0.32 vs 0.18 for pairwise extrapolation.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Hypergraph Learning 進階主題" data-en="Advanced Hypergraph Topics">Hypergraph Learning 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Spectral theory of hypergraph</h3>
+<p>Zhou 2006 的 Laplacian 是「reduced clique」spectrum 的近似。Chan &amp; Liang 2020 提出 <strong>non-linear hypergraph Laplacian</strong>（用 max-min on hyperedge）保留更多 multi-way 結構，spectral gap 與 community recovery bound 都更緊。</p>
+
+<h3>② Equivariance and message passing</h3>
+<p>Hypergraph message passing 應對「edge member permutation」保持 equivariant（同 hyperedge 內 vertex 順序不應改變輸出）。Huang 2023 (ICML) 提出 <strong>UniGNN</strong>，把所有 hypergraph propagation 統一為 vertex-edge bipartite GNN，理論等價於 set-transformer-style 處理。</p>
+
+<h3>③ Expressive power</h3>
+<p>WL test 對 graph 已知；對 hypergraph 對應是 <strong>k-WL hyperedge test</strong>。Hyperedge size k 越大，可區分的 hypergraph 越多；但 over-smoothing 也更嚴重。實用 trade-off：先 reduce 高 cardinality hyperedge，再用 standard HGNN。</p>
+
+<h3>④ Over-smoothing &amp; over-squashing</h3>
+<p>HGNN 也有 over-smoothing：multi-layer 後所有 vertex feature 趨同。Hypergraph 比 graph 更嚴重，因為大 hyperedge 一步 propagation 跨度大。解法：residual + drop hyperedge + skip connection（如 HyperGNN++）。</p>
+
+<h3>⑤ Hyperedge prediction (link prediction)</h3>
+<p>傳統 link prediction 預測 pairwise edge；hyperedge prediction 預測「k 個 vertex 是否共邊」——組合爆炸。Chien 2022 (ICLR) 用 set-prediction transformer 處理；Kim 2023 (NeurIPS) 用 latent factor + DPP-style 多元 prediction。</p>
+
+<h3>⑥ Dynamic / temporal hypergraph</h3>
+<p>Cell-Cell-Cell 隨時間變、drug-pathway-disease 隨知識更新。Temporal hypergraph (Yin 2023) 在 hyperedge 上加 timestamp + GRU。Bio 應用：scRNA-velocity-on-hypergraph，把 pathway level 動態納入。</p>
+
+<h3>⑦ Hypergraph + Transformer</h3>
+<p>HyperGraphTransformer (Chien 2024)：把 hyperedge 當作 attention head 的 group，set-attention 跨 hyperedge member。比 spectral HGNN 在大 hyperedge dataset (size avg ≥ 10) 顯著好。</p>
+
+<h3>⑧ Cellular complex &amp; Sheaf</h3>
+<p>更廣義：simplicial complex（k-simplex = k+1 vertex 的 hyperedge）、CW complex、sheaf。Hypergraph 是 simplicial complex 的「flag」抽象。Cellular sheaf (Ch 25) 對 hypergraph 給「each edge 上 vector space + restriction map」，generalisation 更深。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Spectral theory of hypergraphs</h3>
+<p>Zhou 2006's Laplacian approximates the clique-reduced spectrum. Chan &amp; Liang 2020 propose <strong>non-linear hypergraph Laplacians</strong> (max-min on hyperedges) that preserve more multi-way structure, with tighter spectral-gap and community-recovery bounds.</p>
+
+<h3>② Equivariance and message passing</h3>
+<p>Hypergraph message passing must be equivariant to permutations within a hyperedge. Huang 2023 (ICML) <strong>UniGNN</strong> unifies hypergraph propagation as a vertex-edge bipartite GNN, theoretically equivalent to set-transformer-style processing.</p>
+
+<h3>③ Expressive power</h3>
+<p>The WL test is known for graphs; the hypergraph analogue is <strong>k-WL hyperedge test</strong>. Larger k separates more hypergraphs but increases over-smoothing. Practical trade-off: reduce high-cardinality hyperedges first, then use standard HGNN.</p>
+
+<h3>④ Over-smoothing &amp; over-squashing</h3>
+<p>HGNNs also suffer over-smoothing: stacking layers collapses features. Worse than graphs because large hyperedges propagate far in one step. Mitigations: residual + drop-hyperedge + skip connection (HyperGNN++).</p>
+
+<h3>⑤ Hyperedge prediction (link prediction)</h3>
+<p>Pairwise link prediction generalises to "do k vertices form a hyperedge?" — a combinatorial explosion. Chien 2022 (ICLR) uses a set-prediction transformer; Kim 2023 (NeurIPS) uses latent factors + DPP-style diverse prediction.</p>
+
+<h3>⑥ Dynamic / temporal hypergraphs</h3>
+<p>Cell-cell-cell relations evolve, drug-pathway-disease knowledge updates. Temporal hypergraphs (Yin 2023) add timestamps + GRU on hyperedges. Bio application: RNA-velocity-on-hypergraph captures pathway-level dynamics.</p>
+
+<h3>⑦ Hypergraph + Transformer</h3>
+<p>HyperGraphTransformer (Chien 2024) treats hyperedges as attention-head groups, with set-attention across members. Clearly outperforms spectral HGNNs on datasets with average hyperedge size ≥ 10.</p>
+
+<h3>⑧ Cellular complex &amp; sheaf</h3>
+<p>Generalisations: simplicial complexes (k-simplex = (k+1)-vertex hyperedge), CW complexes, sheaves. Hypergraphs are a "flag" abstraction of simplicial complexes. Cellular sheaves (Ch 25) attach a vector space and restriction map to each edge — a deeper generalisation.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Hypergraph 還能改良哪些任務？" data-en="What else could hypergraphs improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Multi-gene perturbation effect prediction</h3>
+<p>Perturb-seq 多 KO（雙、三 gene combo）資料增加；pairwise GEARS 對 triple KO 外推差。<strong>提案：</strong>HyperGNN 上 triple KO 直接 hyperedge，預測 phenotype 比 pairwise 模型 +15% Pearson。</p>
+
+<h3>🎯 2. Pathway-aware scLLM</h3>
+<p>Geneformer/scGPT 用 gene-token，pathway 訊息只間接從 co-expression 學。<strong>提案：</strong>把 KEGG/Reactome pathway 當作 hyperedge attention bias，注入 pretrain stage。</p>
+
+<h3>🎯 3. Hypergraph for Hi-C TAD discovery</h3>
+<p>Hi-C 拓撲 domain 是「多個 loci 共處同一 TAD」高階關係。<strong>提案：</strong>hypergraph community detection on contact matrix → 比 pairwise TAD caller 更貼合多重 contact loci。</p>
+
+<h3>🎯 4. Multi-cell-type spatial niche</h3>
+<p>Tumor micro-environment niche = 3–5 cell type 共處。<strong>提案：</strong>spatial hypergraph，每 niche 一邊；HGNN 預測 immunotherapy response。</p>
+
+<h3>🎯 5. Drug combination beyond pairwise</h3>
+<p>HyperADMET 已示 triple；下一步 quadruple（如 anti-TB 4-drug combo）。<strong>提案：</strong>hypergraph + monotonic decomposition prior 防止組合空間爆炸。</p>
+
+<h3>🎯 6. T-cell-pMHC-coreceptor 三元結合</h3>
+<p>TCR binding 是 TCR + peptide + MHC + 可能 coreceptor (CD8/CD4) 四元。<strong>提案：</strong>HyperTCR 把這四元當 hyperedge，預測 binding 比 pairwise TCR-pMHC 更準（特別對 CD8/CD4-dependent 差異）。</p>
+
+<h3>🎯 7. Pathway-pathway crosstalk</h3>
+<p>兩通路間 crosstalk 已研究；三通路 cross-cross 罕見探索。<strong>提案：</strong>把 pathway 當 vertex、cross-pathway gene 當 hyperedge → hypergraph 上找 multi-pathway hub。</p>
+
+<h3>🎯 8. Hyperedge-based federated learning</h3>
+<p>跨醫院共訓 hypergraph model（如 cancer subtyping）。<strong>提案：</strong>Federated HGNN，每醫院 local hypergraph + shared HGNN weight，整合不同 institution 構建 pathway 的 hyperedge。</p>
+
+<h3>🎯 9. Hypergraph + diffusion model</h3>
+<p>分子生成已用 graph diffusion (DiGress)。<strong>提案：</strong>hypergraph diffusion 處理 multi-atom interaction (3-center bond, aromatic ring as size-6 edge)，比 graph diffusion 更幾何正確。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Multi-gene perturbation prediction</h3>
+<p>Perturb-seq increasingly contains double/triple KO data; pairwise GEARS extrapolates poorly to triples. <strong>Proposal:</strong> HyperGNN treats triple KO as a hyperedge — +15% Pearson over pairwise on phenotype prediction.</p>
+
+<h3>🎯 2. Pathway-aware scLLM</h3>
+<p>Geneformer / scGPT use gene tokens; pathway info is learned indirectly through co-expression. <strong>Proposal:</strong> inject KEGG/Reactome pathways as hyperedge attention biases during pretraining.</p>
+
+<h3>🎯 3. Hypergraph for Hi-C TAD discovery</h3>
+<p>TADs in Hi-C are higher-order "multi-locus co-occurrence" structures. <strong>Proposal:</strong> hypergraph community detection on the contact matrix → better fits multi-loci contacts than pairwise TAD callers.</p>
+
+<h3>🎯 4. Multi-cell-type spatial niches</h3>
+<p>Tumour micro-environment niches involve 3–5 cell types. <strong>Proposal:</strong> spatial hypergraph (one hyperedge per niche) + HGNN predicts immunotherapy response.</p>
+
+<h3>🎯 5. Drug combinations beyond pairwise</h3>
+<p>HyperADMET shows triples; next is quadruples (e.g. 4-drug TB regimens). <strong>Proposal:</strong> hypergraph + monotonic-decomposition prior to control combinatorial explosion.</p>
+
+<h3>🎯 6. TCR-pMHC-coreceptor quadruple</h3>
+<p>TCR binding is TCR + peptide + MHC + possibly coreceptor (CD8/CD4) — a quadruple. <strong>Proposal:</strong> HyperTCR encodes the quadruple as a hyperedge, beats pairwise TCR-pMHC especially for CD8/CD4-dependent differences.</p>
+
+<h3>🎯 7. Pathway-pathway crosstalk</h3>
+<p>Pairwise pathway crosstalk is studied; triple crosstalk is rare. <strong>Proposal:</strong> treat pathways as vertices, cross-pathway genes as hyperedges → hypergraph community finds multi-pathway hubs.</p>
+
+<h3>🎯 8. Hyperedge-based federated learning</h3>
+<p>Cross-hospital hypergraph models (e.g. cancer subtyping). <strong>Proposal:</strong> federated HGNN — each hospital builds its local hypergraph with shared HGNN weights, fusing institution-specific pathway hyperedges.</p>
+
+<h3>🎯 9. Hypergraph + diffusion model</h3>
+<p>Molecular generation uses graph diffusion (DiGress). <strong>Proposal:</strong> hypergraph diffusion handles multi-atom interactions (3-centre bonds, aromatic rings as size-6 edges) — more geometrically faithful than graph diffusion.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pyg')">PyG HypergraphConv</button>
+<button class="code-tab-btn" onclick="switchTab(this,'dhg')">DHG</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scr')">From scratch</button>
+</div>
+
+<div class="code-tab-content active" id="pyg"><pre><span class="comment"># pip install torch_geometric</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torch.nn <span class="keyword">as</span> nn
+<span class="keyword">from</span> torch_geometric.nn <span class="keyword">import</span> HypergraphConv
+
+<span class="comment"># Incidence in PyG format:</span>
+<span class="comment"># hyperedge_index = [[v_ids], [e_ids]] — 2 x (sum of hyperedge sizes)</span>
+<span class="comment"># If hyperedges are e0={v0,v1,v2}, e1={v1,v3}, then:</span>
+hyperedge_index = torch.tensor([
+    [<span class="num">0</span>,<span class="num">1</span>,<span class="num">2</span>,  <span class="num">1</span>,<span class="num">3</span>],     <span class="comment"># vertex ids</span>
+    [<span class="num">0</span>,<span class="num">0</span>,<span class="num">0</span>,  <span class="num">1</span>,<span class="num">1</span>],     <span class="comment"># hyperedge ids</span>
+])
+
+<span class="keyword">class</span> HGNN(nn.Module):
+    <span class="keyword">def</span> __init__(self, d_in, d_h, d_out):
+        super().__init__()
+        self.conv1 = HypergraphConv(d_in, d_h)
+        self.conv2 = HypergraphConv(d_h, d_out)
+    <span class="keyword">def</span> forward(self, x, hg_idx):
+        h = torch.relu(self.conv1(x, hg_idx))
+        <span class="keyword">return</span> self.conv2(h, hg_idx)
+
+model = HGNN(<span class="num">128</span>, <span class="num">64</span>, <span class="num">10</span>)
+out = model(node_features, hyperedge_index)</pre></div>
+
+<div class="code-tab-content" id="dhg"><pre><span class="comment"># pip install dhg                          # Deep Hypergraph library</span>
+<span class="keyword">import</span> torch, dhg
+<span class="keyword">from</span> dhg.nn <span class="keyword">import</span> HGNNConv, HGNNPConv
+
+<span class="comment"># Build hypergraph from edge_list</span>
+edge_list = [
+    [<span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span>],          <span class="comment"># pathway gene set {g0, g1, g2}</span>
+    [<span class="num">2</span>, <span class="num">3</span>, <span class="num">4</span>, <span class="num">5</span>],       <span class="comment"># IL2 + IL2RA + IL2RB + γc complex</span>
+    [<span class="num">1</span>, <span class="num">4</span>],             <span class="comment"># normal pairwise edge</span>
+]
+hg = dhg.Hypergraph(num_v=<span class="num">10</span>, e_list=edge_list)
+
+<span class="keyword">class</span> HGNN(torch.nn.Module):
+    <span class="keyword">def</span> __init__(self, d_in, d_h, d_out, drop=<span class="num">0.5</span>):
+        super().__init__()
+        self.lay1 = HGNNConv(d_in, d_h, drop_rate=drop)
+        self.lay2 = HGNNConv(d_h, d_out, drop_rate=drop, is_last=<span class="keyword">True</span>)
+    <span class="keyword">def</span> forward(self, x, hg):
+        x = self.lay1(x, hg); <span class="keyword">return</span> self.lay2(x, hg)
+
+model = HGNN(<span class="num">64</span>, <span class="num">32</span>, <span class="num">10</span>)
+logits = model(x, hg)                       <span class="comment"># node-level prediction</span></pre></div>
+
+<div class="code-tab-content" id="scr"><pre><span class="comment"># Pure PyTorch HGNN (Feng 2019) — for understanding</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">def</span> hypergraph_laplacian(H, W=<span class="keyword">None</span>):
+    <span class="comment"># H : (N, |E|) incidence matrix; W : (|E|,) edge weights</span>
+    <span class="keyword">if</span> W <span class="keyword">is</span> <span class="keyword">None</span>:
+        W = torch.ones(H.size(<span class="num">1</span>))
+    Dv = (H * W).sum(dim=<span class="num">1</span>) + <span class="num">1e-8</span>         <span class="comment"># vertex degree</span>
+    De = H.sum(dim=<span class="num">0</span>) + <span class="num">1e-8</span>              <span class="comment"># edge degree</span>
+    Dv_inv_sqrt = torch.diag(Dv.pow(-<span class="num">0.5</span>))
+    De_inv      = torch.diag(<span class="num">1.0</span> / De)
+    W_diag      = torch.diag(W)
+    L_sym = Dv_inv_sqrt @ H @ W_diag @ De_inv @ H.t() @ Dv_inv_sqrt
+    <span class="keyword">return</span> L_sym                            <span class="comment"># propagation operator</span>
+
+<span class="keyword">class</span> HGNN(nn.Module):
+    <span class="keyword">def</span> __init__(self, d_in, d_h, d_out):
+        super().__init__()
+        self.W1 = nn.Linear(d_in, d_h)
+        self.W2 = nn.Linear(d_h, d_out)
+    <span class="keyword">def</span> forward(self, X, H):
+        L = hypergraph_laplacian(H)
+        h = torch.relu(L @ self.W1(X))
+        <span class="keyword">return</span> L @ self.W2(h)
+
+<span class="comment"># Usage</span>
+H = torch.zeros(<span class="num">10</span>, <span class="num">3</span>)
+H[[<span class="num">0</span>,<span class="num">1</span>,<span class="num">2</span>], <span class="num">0</span>] = <span class="num">1</span>                           <span class="comment"># pathway {g0,g1,g2}</span>
+H[[<span class="num">2</span>,<span class="num">3</span>,<span class="num">4</span>,<span class="num">5</span>], <span class="num">1</span>] = <span class="num">1</span>                         <span class="comment"># complex IL2-IL2RA-IL2RB-gc</span>
+H[[<span class="num">1</span>,<span class="num">4</span>], <span class="num">2</span>] = <span class="num">1</span>                               <span class="comment"># pairwise edge</span>
+model = HGNN(<span class="num">8</span>, <span class="num">4</span>, <span class="num">2</span>)
+X = torch.randn(<span class="num">10</span>, <span class="num">8</span>)
+out = model(X, H)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Hypergraph 與普通 graph 最關鍵的差異是什麼？</p><p data-lang="en">What is the key difference between a hypergraph and an ordinary graph?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Hypergraph 沒有 Laplacian</span><span data-lang="en">A. Hypergraphs have no Laplacian</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Hypergraph 必為 directed</span><span data-lang="en">B. Hypergraphs are necessarily directed</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 每條 hyperedge 可連任意多個 vertex（|e|≥2），不限於 pairwise</span><span data-lang="en">C. Each hyperedge can connect any number of vertices (|e|≥2), not restricted to pairwise</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Hypergraph 一定有 cycle</span><span data-lang="en">D. Hypergraphs always contain cycles</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 clique-expansion 把 hyperedge 展成 pairwise graph 不夠好？</p><p data-lang="en">Why is clique expansion (hyperedge → pairwise edges) insufficient?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 邊數爆炸 + 假設所有 member 兩兩等強連接，遺失「同邊」語意</span><span data-lang="en">A. Edge blow-up + falsely assumes all members are equally pairwise connected, losing "same edge" semantics</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Clique expansion 違反 PSD 條件</span><span data-lang="en">B. Clique expansion violates the PSD condition</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Pairwise graph 不能用 GCN</span><span data-lang="en">C. Pairwise graphs can't use GCN</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Clique expansion 不可學</span><span data-lang="en">D. Clique expansion isn't learnable</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">下列哪個生物現象用 hypergraph 比 graph 表達更自然？</p><p data-lang="en">Which biological phenomenon is more naturally expressed by a hypergraph than a graph?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 兩個 gene 的 co-expression</span><span data-lang="en">A. Co-expression of two genes</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. IL2 + IL2RA + IL2RB + γc 四元 complex 訊號</span><span data-lang="en">B. IL2 + IL2RA + IL2RB + γc tetrameric complex signalling</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 兩個 TF 之間的 motif 相似度</span><span data-lang="en">C. Motif similarity between two TFs</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 兩 patient 的相似度</span><span data-lang="en">D. Patient–patient similarity</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="federated-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 37：Federated Learning" data-en="Ch 37: Federated Learning">Ch 37：Federated Learning</span></a>
+<a href="index.html"><span class="nav-dir" data-zh="返回首頁 →" data-en="Back to Index →">返回首頁 →</span><span class="nav-title" data-zh="完成 38 章！" data-en="38 Chapters Complete!">完成 38 章！</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Hypergraph vs Graph propagation =====
+// Toy hypergraph: 7 vertices, 4 hyperedges
+//   e0 = {0,1,2}            pathway
+//   e1 = {2,3,4,5}          IL2 complex (size 4)
+//   e2 = {5,6}              pairwise
+//   e3 = {0,6}              pairwise long-range
+const HG_V = 7;
+const HG_E = [
+  {ids:[0,1,2], label:'pathway'},
+  {ids:[2,3,4,5], label:'IL2 complex'},
+  {ids:[5,6], label:'pairwise'},
+  {ids:[0,6], label:'pairwise'},
+];
+// Vertex coordinates for the left (hypergraph) panel
+const posL = [
+  [60, 80], [60,180], [60,280],
+  [160,180], [220,260], [220,100],
+  [320,180]
+];
+// Same vertices on the right (clique-expanded graph) panel
+const posR = posL.map(p=>[p[0]+260, p[1]]);
+
+// Build incidence H_ij = 1 if v_i in e_j
+const H = Array.from({length:HG_V},()=>Array(HG_E.length).fill(0));
+HG_E.forEach((e,j)=>e.ids.forEach(v=>H[v][j]=1));
+
+// Hypergraph "operator" L_H = D_v^-1/2 H W D_e^-1 H^T D_v^-1/2 (normalised)
+function buildOps(){
+  const N=HG_V, E=HG_E.length;
+  const Dv = Array(N).fill(0), De = Array(E).fill(0);
+  for(let i=0;i<N;i++)for(let j=0;j<E;j++){ Dv[i]+=H[i][j]; De[j]+=H[i][j]; }
+  const Lh = Array.from({length:N},()=>Array(N).fill(0));
+  for(let i=0;i<N;i++)for(let k=0;k<N;k++){
+    let s=0;
+    for(let j=0;j<E;j++){
+      if(De[j]<=0||Dv[i]<=0||Dv[k]<=0)continue;
+      s += (H[i][j]*H[k][j])/(De[j]*Math.sqrt(Dv[i]*Dv[k]));
+    }
+    Lh[i][k]=s;
+  }
+  // Clique expansion adjacency on the right
+  const Aclique = Array.from({length:N},()=>Array(N).fill(0));
+  HG_E.forEach(e=>{
+    for(let a=0;a<e.ids.length;a++)for(let b=a+1;b<e.ids.length;b++){
+      Aclique[e.ids[a]][e.ids[b]]=1; Aclique[e.ids[b]][e.ids[a]]=1;
+    }
+  });
+  // Row-normalise A
+  const A=Array.from({length:N},()=>Array(N).fill(0));
+  for(let i=0;i<N;i++){
+    let s=0; for(let k=0;k<N;k++)s+=Aclique[i][k];
+    if(s>0) for(let k=0;k<N;k++)A[i][k]=Aclique[i][k]/s;
+  }
+  return {Lh, A};
+}
+const OPS = buildOps();
+
+function propagate(op, x, steps){
+  let cur=x.slice();
+  for(let t=0;t<steps;t++){
+    const next=Array(HG_V).fill(0);
+    for(let i=0;i<HG_V;i++)for(let k=0;k<HG_V;k++)next[i]+=op[i][k]*cur[k];
+    // blend with self (residual-like) to keep activation visible
+    for(let i=0;i<HG_V;i++)next[i]=0.6*next[i]+0.4*cur[i];
+    cur=next;
+  }
+  return cur;
+}
+
+let injected = Array(HG_V).fill(0);
+injected[0]=1;
+
+function render(){
+  const t=+document.getElementById('sTH').value;
+  document.getElementById('vTH').textContent=t;
+  const hgAct = propagate(OPS.Lh, injected, t);
+  const gAct  = propagate(OPS.A,  injected, t);
+  let svg='';
+  // Panel separator
+  svg += `<line x1="260" y1="0" x2="260" y2="360" stroke="#ddd" stroke-dasharray="4 4"/>`;
+  svg += `<text x="20" y="22" font-size="13" fill="#2c5d4f" font-weight="600">Hypergraph (size-2,3,4 edges)</text>`;
+  svg += `<text x="280" y="22" font-size="13" fill="#c0392b" font-weight="600">Clique-expansion graph</text>`;
+
+  // Draw hyperedges as translucent blobs (convex-hull-like ellipse) on the LEFT
+  HG_E.forEach((e,j)=>{
+    const xs=e.ids.map(v=>posL[v][0]);
+    const ys=e.ids.map(v=>posL[v][1]);
+    const cx=xs.reduce((a,b)=>a+b)/xs.length;
+    const cy=ys.reduce((a,b)=>a+b)/ys.length;
+    const rx=Math.max(...xs)-Math.min(...xs);
+    const ry=Math.max(...ys)-Math.min(...ys);
+    const color=['rgba(38,99,168,0.18)','rgba(212,160,23,0.20)','rgba(192,57,43,0.18)','rgba(60,160,90,0.18)'][j%4];
+    if(e.ids.length>=3){
+      svg += `<ellipse cx="${cx}" cy="${cy}" rx="${rx/2+22}" ry="${ry/2+22}" fill="${color}" stroke="${color.replace('0.18','0.5').replace('0.20','0.55')}" stroke-width="1.2"/>`;
+      svg += `<text x="${cx}" y="${cy-ry/2-26}" font-size="10" text-anchor="middle" fill="#2c5d4f">${e.label} (size ${e.ids.length})</text>`;
+    } else {
+      const [a,b]=e.ids;
+      svg += `<line x1="${posL[a][0]}" y1="${posL[a][1]}" x2="${posL[b][0]}" y2="${posL[b][1]}" stroke="#888" stroke-width="1.5"/>`;
+    }
+  });
+  // Clique edges on the RIGHT
+  HG_E.forEach((e,j)=>{
+    for(let a=0;a<e.ids.length;a++)for(let b=a+1;b<e.ids.length;b++){
+      const va=e.ids[a], vb=e.ids[b];
+      svg += `<line x1="${posR[va][0]}" y1="${posR[va][1]}" x2="${posR[vb][0]}" y2="${posR[vb][1]}" stroke="rgba(120,120,120,0.5)" stroke-width="1"/>`;
+    }
+  });
+
+  function vertColor(val){
+    val=Math.max(0,Math.min(1,val));
+    const r=Math.round(255-val*210);
+    const g=Math.round(245-val*200);
+    const b=Math.round(225-val*60);
+    return `rgb(${r},${g},${b})`;
+  }
+  // Vertices
+  for(let i=0;i<HG_V;i++){
+    const [x,y]=posL[i];
+    svg += `<circle cx="${x}" cy="${y}" r="14" fill="${vertColor(hgAct[i])}" stroke="#444" stroke-width="1.4"/>`;
+    svg += `<text x="${x}" y="${y+4}" font-size="11" text-anchor="middle" fill="#222">v${i}</text>`;
+    svg += `<text x="${x}" y="${y+30}" font-size="10" text-anchor="middle" fill="#666">${hgAct[i].toFixed(2)}</text>`;
+  }
+  for(let i=0;i<HG_V;i++){
+    const [x,y]=posR[i];
+    svg += `<circle cx="${x}" cy="${y}" r="14" fill="${vertColor(gAct[i])}" stroke="#444" stroke-width="1.4"/>`;
+    svg += `<text x="${x}" y="${y+4}" font-size="11" text-anchor="middle" fill="#222">v${i}</text>`;
+    svg += `<text x="${x}" y="${y+30}" font-size="10" text-anchor="middle" fill="#666">${gAct[i].toFixed(2)}</text>`;
+  }
+  document.getElementById('hgSvg').innerHTML=svg;
+
+  // Spread measure
+  const hgReach=hgAct.filter(v=>v>0.05).length;
+  const gReach =gAct.filter(v=>v>0.05).length;
+  const L=I18n.get();
+  document.getElementById('hgInfo').innerHTML = L==='zh' ?
+    `t=<strong>${t}</strong> 步 propagation。Hypergraph 中 active vertex 數 = <strong>${hgReach}</strong>；clique-graph = <strong>${gReach}</strong>。<br>注意：hypergraph 中 v2 透過 size-4 IL2-complex hyperedge，<strong>一步</strong> 就把訊號分散到 {v2,v3,v4,v5}；graph 仍以 pairwise 邊逐步傳。對 multi-way complex 訊號學習，hypergraph 結構保留至關重要。`
+    :
+    `t=<strong>${t}</strong> propagation steps. Hypergraph active vertices = <strong>${hgReach}</strong>; clique-graph = <strong>${gReach}</strong>.<br>Note: in the hypergraph, v2's signal reaches all of {v2,v3,v4,v5} in <strong>one step</strong> through the size-4 IL2-complex hyperedge; the clique graph still propagates pairwise. Preserving multi-way complex structure is crucial.`;
+}
+document.getElementById('btnInject').addEventListener('click',()=>{injected=Array(HG_V).fill(0); injected[0]=1; render();});
+document.getElementById('btnReset').addEventListener('click',()=>{injected=Array(HG_V).fill(0); injected[0]=1; document.getElementById('sTH').value=0; render();});
+document.getElementById('sTH').addEventListener('input',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！Hyperedge 可連多個 vertex。',
+  q1_n:'答案是 C。Hypergraph 的核心差異就是 hyperedge 可連任意數量 vertex，普通 graph 限 pairwise。',
+  q2_y:'答對！Clique expansion 邊數爆炸 + 語意流失。',
+  q2_n:'答案是 A。Clique expansion 把 size-k hyperedge 展成 k(k−1)/2 條邊，且假設兩兩等強，遺失「同邊」資訊。',
+  q3_y:'答對！多體 complex 本身就是 hyperedge。',
+  q3_n:'答案是 B。IL2 訊號是 4 個分子同時參與一個 complex，自然 size-4 hyperedge；其餘選項都是 pairwise 關係。'
+},en:{
+  q1_y:'Correct! Hyperedges can connect multiple vertices.',
+  q1_n:'Answer is C. The defining feature is that hyperedges connect any number of vertices, unlike pairwise graphs.',
+  q2_y:'Correct! Clique expansion suffers blow-up and semantic loss.',
+  q2_n:'Answer is A. Clique expansion makes k(k−1)/2 edges and falsely treats members as equally pairwise connected.',
+  q3_y:'Correct! Multimer complexes are naturally hyperedges.',
+  q3_n:'Answer is B. IL2 signalling involves 4 molecules in one complex — naturally a size-4 hyperedge. The others are pairwise.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

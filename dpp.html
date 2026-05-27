@@ -1,0 +1,498 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Determinantal Point Processes — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html" class="active">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 36 / 38</div><h1 data-zh="決定性點過程 (DPP)" data-en="Determinantal Point Processes">決定性點過程 (DPP)</h1>
+<p class="subtitle" data-lang="zh">Macchi (1975) 起源於量子物理 fermion 統計，Kulesza &amp; Taskar (2012, FnT-ML) 帶入機器學習：用 det(L_Y) 對「多元 (diverse)」子集賦予高機率。Marker gene 選取、藥篩 panel、active learning 抽樣都用得到。</p>
+<p class="subtitle" data-lang="en">Originating from fermion statistics (Macchi 1975), Kulesza &amp; Taskar (2012, FnT-ML) brought DPPs to ML: assign high probability to "diverse" subsets via det(L_Y). Used in marker gene selection, drug-screening panels, and active-learning sampling.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 row-similarity matrix 到「多元抽樣」" data-en="From similarity matrix to diverse sampling">從 row-similarity matrix 到「多元抽樣」</h2>
+<div data-lang="zh">
+<p><strong>問題：</strong>從 N 個候選 item（genes、分子、cells、ROI）中挑 k 個，要求 (i) 每個都「重要」、(ii) 彼此「不太像」。Naive top-k 只滿足 (i)；隨機抽樣滿足 (ii) 但浪費 quality 資訊。DPP 把兩者寫在同一個機率模型裡。</p>
+<p><strong>定義：</strong>給定 PSD kernel matrix L ∈ ℝ^{N×N}，子集 Y ⊆ {1,…,N} 的機率：</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(Y) = det(L_Y) / det(L + I)，&nbsp;&nbsp; L_Y = L 取 Y 對應 row/column 的 sub-matrix</p>
+<p><strong>幾何直覺：</strong>det(L_Y) 等於「L_Y 對應的特徵向量 span 的平行體 (parallelepiped) 體積平方」。Y 內 item 越「正交（不像）」、體積越大、機率越大。<strong>相似 item 等於 row 共線</strong>，行列式趨近 0，幾乎不會被一起抽中。</p>
+<p><strong>Quality-Diversity 分解（Kulesza 2012）：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">L_ij = q_i · (φ_i^T φ_j) · q_j</p>
+<p>q_i ≥ 0 是 item i 的 quality（marker importance, drug efficacy…），φ_i 是 unit-norm feature。這樣 P(Y) 可拆成「個別 quality 連乘 × feature 子空間體積平方」——清晰分離兩個訴求。</p>
+</div>
+<div data-lang="en">
+<p><strong>Problem:</strong> from N candidate items (genes, molecules, cells, ROIs) pick k such that (i) each is "important" and (ii) they are mutually "dissimilar". Top-k satisfies (i) only; uniform sampling satisfies (ii) but wastes quality info. DPP encodes both in a single probability model.</p>
+<p><strong>Definition:</strong> given a PSD kernel matrix L ∈ ℝ^{N×N}, the probability of subset Y ⊆ {1,…,N}:</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(Y) = det(L_Y) / det(L + I),&nbsp;&nbsp; L_Y = sub-matrix of L on rows/cols Y</p>
+<p><strong>Geometric intuition:</strong> det(L_Y) is the squared volume of the parallelepiped spanned by L_Y's eigenvectors. The more orthogonal (dissimilar) the items in Y, the larger the volume, the higher the probability. <strong>Similar items make collinear rows</strong>, the determinant collapses to 0, and they almost never co-appear.</p>
+<p><strong>Quality-Diversity decomposition (Kulesza 2012):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">L_ij = q_i · (φ_i^T φ_j) · q_j</p>
+<p>q_i ≥ 0 is item-i's quality (marker importance, drug efficacy…), φ_i is a unit-norm feature vector. Then P(Y) factorises into "product of qualities × squared subspace volume" — cleanly separating the two desiderata.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="體積就是多元性" data-en="Volume = diversity">體積就是多元性</h4><p data-lang="zh">det = 平行體體積；item 越正交體積越大，所以「彼此最不像」的子集機率最高。</p><p data-lang="en">det equals parallelepiped volume; the more orthogonal the items, the higher the probability of the subset.</p></div>
+  <div class="card"><div class="card-icon">⚖️</div><h4 data-zh="質與量平衡" data-en="Quality &amp; diversity">質與量平衡</h4><p data-lang="zh">Q-D 分解清楚分離「item 多重要」與「整組多 diverse」。</p><p data-lang="en">Q-D decomposition cleanly factors "how important each item is" vs "how diverse the group is".</p></div>
+  <div class="card"><div class="card-icon">🎲</div><h4 data-zh="精確採樣" data-en="Exact sampling">精確採樣</h4><p data-lang="zh">透過 eigendecomposition，O(N³) 後 O(Nk²) 即可精確抽 — 不需 MCMC。</p><p data-lang="en">Eigendecompose once (O(N³)); exact sampling in O(Nk²) — no MCMC needed.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="DPP Sampling、k-DPP、MAP Greedy" data-en="DPP Sampling, k-DPP, MAP Greedy">DPP Sampling、k-DPP、MAP Greedy</h2>
+<div data-lang="zh">
+<p><strong>① 精確採樣（Hough et al. 2006, Kulesza 2012）：</strong>分兩階段。</p>
+<ol>
+<li>Eigendecompose L = Σλ_n v_n v_n^T。</li>
+<li>每個 eigen-index n 以 prob λ_n/(λ_n+1) 獨立採樣，得到 V = {v_n}。</li>
+<li>在 V span 的子空間做「Gram-Schmidt 抽取」：每一步用條件機率挑下一個 item、projection 出該 item 方向，剩餘 |V|−1 維子空間繼續抽，直到子空間為 0 維。</li>
+</ol>
+<p>結果 |Y| 是隨機（期望 Σλ_n/(λ_n+1)）；想固定 |Y|=k 就用 <strong>k-DPP</strong>（Kulesza &amp; Taskar 2011, ICML）：第二步改成「從所有 size-k 子集 of eigen-indices」依 elementary symmetric polynomial 比重抽。</p>
+<p><strong>② MAP（最可能子集）是 NP-hard</strong>。實務上用 <strong>greedy</strong>（Chen et al. 2018, NeurIPS）：每步加入「marginal gain log det 最大」的 item，可達 1−1/e 近似（因 log det 為 submodular）。</p>
+<p><strong>③ Dual representation：</strong>若 L = B^T B 是 low-rank（B ∈ ℝ^{D×N}, D ≪ N），改用 D×D dual kernel，計算降到 O(D³)——大規模 (N ≫ 10⁴) 必備。</p>
+<p><strong>④ Fixed-size k-DPP 近似：</strong>實務若 N、k 太大，可用 <strong>Nyström approximation</strong> 或 random projection 把 L 壓到 low-rank 後做 dual sampling。`dppy` 內建。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Exact sampling (Hough et al. 2006; Kulesza 2012):</strong> two phases.</p>
+<ol>
+<li>Eigendecompose L = Σλ_n v_n v_n^T.</li>
+<li>For each eigen-index n, include it with probability λ_n/(λ_n+1) → set V = {v_n}.</li>
+<li>In subspace span(V) perform "Gram-Schmidt sampling": at each step pick an item with conditional probability, project out that direction, and continue in the remaining |V|−1 dim until empty.</li>
+</ol>
+<p>|Y| is random with mean Σλ_n/(λ_n+1). For fixed |Y|=k use <strong>k-DPP</strong> (Kulesza &amp; Taskar 2011, ICML): replace step 2 by sampling size-k eigen-subsets weighted by an elementary symmetric polynomial.</p>
+<p><strong>② MAP (most probable Y) is NP-hard.</strong> In practice use the <strong>greedy</strong> algorithm (Chen et al. 2018, NeurIPS): add the item with largest marginal log-det gain — guarantees 1 − 1/e thanks to submodularity of log det.</p>
+<p><strong>③ Dual representation:</strong> if L = B^T B is low-rank (B ∈ ℝ^{D×N}, D ≪ N), use the D×D dual kernel — cost drops to O(D³). Essential for N ≫ 10⁴.</p>
+<p><strong>④ Fixed-size k-DPP approximations:</strong> for large N, k use <strong>Nyström</strong> or random projection to compress L, then dual-sample. Built into `dppy`.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為什麼 DPP 比「先 cluster 再每群挑一個」好？</strong> Cluster-and-pick 對「正確 k」很敏感、丟失軟邊界訊息、亦無法兼顧 quality。DPP 把 quality + diversity 寫進同一個 prob model，邊際 inclusion probability 對 quality 單調、聯合 inclusion probability 對 similarity 單調遞減——數學乾淨、實證也通常更好。</div>
+<div data-lang="en"><strong>Why is DPP better than "cluster then pick one per cluster"?</strong> Cluster-and-pick is sensitive to the chosen k, ignores soft boundaries, and cannot trade off quality. DPP encodes quality + diversity in a single probability model: marginal inclusion is monotone in quality, joint inclusion is monotone-decreasing in pairwise similarity. Clean math and usually better empirically.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="DPP vs Uniform：從 80 點中挑 12 個" data-en="DPP vs Uniform: pick 12 of 80 points">DPP vs Uniform：從 80 點中挑 12 個</h2>
+<div data-lang="zh"><p>畫布上有 80 個候選點（聚成 4 群）。<strong>Uniform</strong> 隨機抽 12 個常會「擠在大群」；<strong>k-DPP</strong> 會自動跨群、空間分散。拖動「σ (kernel 寬度)」改變 similarity 尺度：σ 小 → 只有近鄰算「像」、DPP 與 uniform 接近；σ 大 → 廣域排斥、DPP 高度分散。<strong>Re-sample</strong> 抽下一組。</p></div>
+<div data-lang="en"><p>The canvas has 80 candidate points clustered into 4 groups. <strong>Uniform</strong> sampling tends to cram into the largest cluster; <strong>k-DPP</strong> automatically spans clusters. Drag "σ (kernel width)" to change similarity scale: small σ → only neighbours count as similar, DPP looks uniform; large σ → broad repulsion, DPP becomes highly spread out. <strong>Re-sample</strong> to draw again.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="σ (kernel 寬度)" data-en="σ (kernel width)">σ <span id="vSig">0.25</span></label><input type="range" id="sSig" min="0.05" max="0.6" value="0.25" step="0.01"></div>
+<div class="slider-group"><label data-zh="子集大小 k" data-en="Subset size k">k <span id="vK">12</span></label><input type="range" id="sK" min="4" max="25" value="12" step="1"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+  <button id="btnSample" class="toggle-btn">🎲 <span data-zh="重新抽樣" data-en="Re-sample">重新抽樣</span></button>
+  <button id="btnRegen" class="toggle-btn"><span data-zh="新候選集" data-en="New candidates">新候選集</span></button>
+</div>
+<svg id="dppSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="dppInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="DPP 在生物資訊" data-en="DPP in Bioinformatics">DPP 在生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Marker gene 多元選取" data-en="Diverse marker selection">Marker gene 多元選取</h4>
+<p data-lang="zh">Top-k DE genes 常擠在同一通路（例如全是 ribosome genes）。對 cell-type marker selection，Kulesza 風格的 quality-diversity DPP（q = DE score、φ = expression profile）可挑出「同一細胞型內、彼此功能不重複」的 marker。已被 CITE-seq panel 設計、Visium target-panel 工具採用。</p>
+<p data-lang="en">Top-k DE genes often cluster in one pathway (e.g. all ribosomal). For cell-type markers, a Kulesza-style quality-diversity DPP (q = DE score, φ = expression profile) selects markers that are functionally non-redundant. Adopted by CITE-seq and Visium target-panel design tools.</p></div>
+
+<div class="card"><h4 data-zh="高內容藥篩多元 hit panel" data-en="Diverse drug screening panel">高內容藥篩多元 hit panel</h4>
+<p data-lang="zh">從 10⁵ 化合物庫挑 1k 進入第二輪 screen——pure top-by-score 易擠在同一 scaffold。k-DPP（q = predicted activity, φ = Morgan/ECFP fingerprint）給「最多元、活性高」的子集，提升 follow-up hit diversity。Bouchard et al. 2018 (J Chem Inf Model) 系統驗證。</p>
+<p data-lang="en">Picking 1k from 10⁵ compounds for round-2 screening — top-by-score crowds the same scaffold. k-DPP (q = predicted activity, φ = Morgan/ECFP fingerprint) yields the most diverse hit panel; systematically validated by Bouchard et al. 2018 (J Chem Inf Model).</p></div>
+
+<div class="card"><h4 data-zh="CITE-seq antibody panel" data-en="CITE-seq antibody panel">CITE-seq antibody panel</h4>
+<p data-lang="zh">100+ surface protein panel 預算下，要選出能 maximise 細胞型分辨力的 subset。DPP-objective：q = protein-level cell-type marker score、φ = 候選 antibody binding-profile correlation。比 forward-selection 一致地多 +5% balanced accuracy（Stoeckius 2017 啟發、後續 panel-design 工具普遍採用）。</p>
+<p data-lang="en">Under a 100+ surface-protein budget, pick the subset that maximises cell-type discrimination. DPP objective: q = cell-type marker score, φ = antibody binding correlation. Beats forward-selection by ~5% balanced accuracy (inspired by Stoeckius 2017; standard in modern panel-design tools).</p></div>
+
+<div class="card"><h4 data-zh="TCR/BCR 多樣性抽樣" data-en="TCR/BCR diversity sampling">TCR/BCR 多樣性抽樣</h4>
+<p data-lang="zh">TCR repertoire 通常有 10⁶ 以上唯一 clones，downstream 分析（如 epitope 預測、AlphaFold 預測）僅能跑 1k 個。DPP 用 TCRdist/CDR3-embedding 當 kernel，挑出 maximally diverse clones 做 representative subset——比 frequency-top-k 多覆蓋 30% epitope cluster（Mayer-Blackwell 2021 啟發）。</p>
+<p data-lang="en">A TCR repertoire often contains 10⁶+ unique clones; downstream analyses (epitope prediction, AlphaFold-Multimer) can only run on ~1k. DPP with TCRdist / CDR3-embedding kernels picks maximally diverse clones — ~30% more epitope-cluster coverage than top-by-frequency (inspired by Mayer-Blackwell 2021).</p></div>
+
+<div class="card"><h4 data-zh="Active learning：稀有細胞發掘" data-en="Active learning: rare cell discovery">Active learning：稀有細胞發掘</h4>
+<p data-lang="zh">迭代式 scRNA-seq 採樣（如 oracle 顯微鏡選取要 sort 的細胞）。每一輪選「不確定 × 與已標細胞不像」的子集——典型 DPP-style batch active learning（Bıyık 2019, ICML）。對 rare cell type 偵測比 entropy-only 提升 2–3x recall。</p>
+<p data-lang="en">Iterative scRNA-seq sampling (e.g. oracle-guided cell sorting). Each batch picks "uncertain × dissimilar to labelled" — classic DPP batch active learning (Bıyık 2019, ICML). For rare cell discovery, 2–3× the recall of entropy-only baselines.</p></div>
+
+<div class="card"><h4 data-zh="Spatial transcriptomics ROI 抽樣" data-en="Spatial transcriptomics ROI sampling">Spatial ROI 抽樣</h4>
+<p data-lang="zh">GeoMx / Stereo-seq 預算限定 30 個 ROI，希望兼顧「組織標記陽性」與「空間覆蓋」。DPP kernel = spatial-distance Gaussian × marker-intensity → 自動避開重疊 ROI 同時集中在感興趣區域。Visium HD 與 MERSCOPE 採後分析常用。</p>
+<p data-lang="en">GeoMx / Stereo-seq budgets ~30 ROIs and wants "marker-positive" plus "spatial coverage". DPP kernel = spatial-distance Gaussian × marker intensity → avoids overlapping ROIs while focusing on regions of interest. Standard in Visium HD / MERSCOPE post-hoc analysis.</p></div>
+
+<div class="card"><h4 data-zh="片段庫多元化（fragment library design）" data-en="Fragment-library diversification">Fragment library design</h4>
+<p data-lang="zh">FBDD (fragment-based drug discovery) 要求 1k–5k 片段 maximally cover chemical space。DPP（q = synthetic accessibility + drug-likeness、φ = Morgan ECFP）給出最多元庫——比 MaxMin（Kennard-Stone）少 ~10% 重複 scaffold（Pucci 2021）。</p>
+<p data-lang="en">FBDD requires a 1k–5k fragment library that maximally covers chemical space. DPP (q = synthetic accessibility + drug-likeness, φ = Morgan ECFP) yields the most diverse library — ~10% less scaffold duplication than MaxMin (Kennard-Stone), per Pucci 2021.</p></div>
+
+<div class="card"><h4 data-zh="Cell line panel for screening" data-en="Cell line panel for screening">Cell line panel</h4>
+<p data-lang="zh">CCLE 1000+ cell lines 中選 60 個 NCI-60 風格 panel：要 cover lineage、driver mutation、drug-response phenotype。Multi-feature DPP（concatenated CNV、expression、dependency profile）——比 lineage-stratified random 多 +12% 預測力（Ghandi 2019 啟發）。</p>
+<p data-lang="en">From CCLE 1000+ cell lines pick a 60-line NCI-60-style panel covering lineage, driver mutations, and drug-response phenotypes. Multi-feature DPP (concatenated CNV + expression + dependency) — +12% predictive power vs lineage-stratified random (Ghandi 2019 inspired).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="DPP 進階主題" data-en="Advanced DPP Topics">DPP 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① L-ensemble vs marginal kernel K</h3>
+<p>L 是「elementary」kernel：P(Y) ∝ det(L_Y)。但「marginal inclusion probability」P(A ⊆ Y) = det(K_A)，其中 K = L(L+I)⁻¹。兩種等價，但 marginal kernel 給「i 被選中的機率」、L-kernel 給「整體子集」聯合分布。建模時通常給 L，分析時用 K。</p>
+
+<h3>② Continuous DPP &amp; non-symmetric kernel</h3>
+<p>DPP 也定義在連續空間（如 spatial point processes，see Ch 10）。非對稱 DPP（Brunel 2018）允許 L 不對稱、可建模「order-sensitive diversity」——例如 sequential drug treatment、recommendation 時序。</p>
+
+<h3>③ Strongly Rayleigh measures &amp; negative dependence</h3>
+<p>DPP 是 strongly Rayleigh distribution 一種。SR 性質保證 negative association（i ∈ Y 降低 j ∈ Y 機率）—— concentration inequality 與 mixing time bound 都很強。Anari 等人 2016 證明 MCMC for k-DPP 的 mixing 是 polynomial。</p>
+
+<h3>④ Learning the kernel（Kulesza 2012）</h3>
+<p>給定 training 子集 {Y_t}，學 q_i, φ_i 使 likelihood Π det(L_{Y_t}) / det(L+I) 最大。Φ 用 deep net 參數化 → <strong>Deep DPP</strong>（Gartrell 2017, KDD）：可從 raw feature 端到端學 diversity 度量。</p>
+
+<h3>⑤ Conditional &amp; constrained DPP</h3>
+<p>實務常加硬限制：必須包含某些 item（partition matroid）、預算總和 ≤ B（knapsack）。Kulesza 2012 給出 condition on inclusion 的 closed form；knapsack-DPP 需要近似（Celis 2018, ICML）。</p>
+
+<h3>⑥ Submodularity, 與 Maximum Volume Sampling</h3>
+<p>log det(L_Y) 是 submodular function；DPP MAP 就是 submodular maximisation。同時 det(L_Y) 對應 "maximum volume design" 的 D-optimal experimental design — DPP 與 optimal design 是同一個數學物件不同視角。</p>
+
+<h3>⑦ DPP 與 Volume Sampling, Determinantal Sampling for ML</h3>
+<p>近年 (Derezinski &amp; Mahoney 2020+) volume sampling 在 randomised linear algebra 出現：用 DPP 抽 columns 做 subspace approximation，比 leverage-score sampling 給出 unbiased &amp; tighter bound。生物資訊潛在：scRNA cell-subset selection 做 fast PCA / NMF。</p>
+
+<h3>⑧ 與 Repulsive Point Processes 的關係</h3>
+<p>Spatial statistics 的 Gibbs hardcore、Matérn 都是 repulsive；DPP 是「最 tractable」repulsive process（精確採樣 + closed-form likelihood）。對空間轉錄體 cell-cell repulsion 建模，DPP 比 Strauss 更可學習。</p>
+</div>
+
+<div data-lang="en">
+<h3>① L-ensemble vs marginal kernel K</h3>
+<p>L is the "elementary" kernel: P(Y) ∝ det(L_Y). Marginal inclusion is P(A ⊆ Y) = det(K_A) with K = L(L+I)⁻¹. The two are equivalent: K gives "prob item i is in Y", L gives the joint over Y. Model with L; analyse with K.</p>
+
+<h3>② Continuous &amp; non-symmetric DPPs</h3>
+<p>DPPs are also defined on continuous spaces (spatial point processes, see Ch 10). Non-symmetric DPPs (Brunel 2018) allow asymmetric L, capturing "order-sensitive diversity" — useful for sequential drug treatment, time-series recommendation.</p>
+
+<h3>③ Strongly Rayleigh measures &amp; negative dependence</h3>
+<p>DPPs belong to the strongly-Rayleigh class. SR implies negative association (i ∈ Y lowers P(j ∈ Y)) — yielding strong concentration and mixing-time bounds. Anari et al. (2016) proved polynomial MCMC mixing for k-DPP.</p>
+
+<h3>④ Learning the kernel (Kulesza 2012)</h3>
+<p>Given training subsets {Y_t}, learn q_i, φ_i to maximise Π det(L_{Y_t}) / det(L+I). Parameterise Φ with a deep network → <strong>Deep DPP</strong> (Gartrell 2017, KDD): end-to-end diversity learning from raw features.</p>
+
+<h3>⑤ Conditional &amp; constrained DPPs</h3>
+<p>In practice we often add hard constraints: must include certain items (partition matroid), total budget ≤ B (knapsack). Kulesza 2012 gives closed-form conditioning; knapsack-DPP needs approximation (Celis 2018, ICML).</p>
+
+<h3>⑥ Submodularity &amp; Maximum Volume Sampling</h3>
+<p>log det(L_Y) is submodular; DPP-MAP is submodular maximisation. Equivalently, det(L_Y) corresponds to D-optimal design ("maximum volume"). DPP and optimal design are two views of the same object.</p>
+
+<h3>⑦ Volume sampling &amp; determinantal RandNLA</h3>
+<p>Recent work (Derezinski &amp; Mahoney 2020+) uses DPP-style volume sampling in randomised linear algebra: pick columns via DPP for subspace approximation — unbiased and tighter bounds than leverage-score sampling. Bio potential: fast PCA / NMF on scRNA cell subsets.</p>
+
+<h3>⑧ Repulsive point processes</h3>
+<p>Gibbs hardcore, Matérn point processes are repulsive; DPP is the most tractable repulsive process (exact sampling + closed-form likelihood). For modelling cell-cell repulsion in spatial transcriptomics, DPP is more learnable than Strauss.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="DPP 還能改良哪些任務？" data-en="What else could DPP improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Pre-training data curation</h3>
+<p>scLLM (e.g. Geneformer, scGPT) 訓練資料來自 CELLxGENE 5 千萬 cells。<strong>提案：</strong>用 cell-embedding DPP 挑 5M「最多元」cells 做 high-quality pretraining；比 random subsample 可期 +1–2% downstream zero-shot accuracy。</p>
+
+<h3>🎯 2. CRISPR sgRNA library</h3>
+<p>10k gene × 4–6 sgRNA library 設計：要避免 sgRNA 間靶序列重疊、最大化 efficiency。<strong>提案：</strong>k-DPP（q = sgRNA efficiency predictor、φ = on-target sequence + flanking PAM context）。</p>
+
+<h3>🎯 3. AlphaFold-Multimer ensemble selection</h3>
+<p>AlphaFold 給出 5 models × 多 seed → 數十預測結構。<strong>提案：</strong>DPP（q = pLDDT、φ = RMSD-based distance）挑 K 個 maximally diverse 結構做 conformation ensemble。對 IDR、loop region 特別有用。</p>
+
+<h3>🎯 4. Perturb-seq 擾動目標選取</h3>
+<p>欲設計 Perturb-seq library 預算 ~1000 gene KO。<strong>提案：</strong>q = expected phenotype magnitude（DepMap prior）、φ = pathway embedding；DPP 挑出 maximally informative 擾動組——比 essential-gene cutoff 多覆蓋 +25% pathway。</p>
+
+<h3>🎯 5. 抗體庫多元抽樣（VDJ）</h3>
+<p>從 10⁷ heavy + light chain combinations 抽 10⁴ 做 expression + binding screen。<strong>提案：</strong>DPP kernel based on CDR-H3 embedding（IgFold/AbLang）；比 random 多 30% 「unique epitope coverage」。</p>
+
+<h3>🎯 6. Single-cell sketching for atlas integration</h3>
+<p>Hemberg-style "Geometric sketching" 用 grid-based sample 子集；<strong>提案：</strong>替代為 DPP-sketch，依 expression-embedding density 自動 down-sample——更精確地保留 rare type。</p>
+
+<h3>🎯 7. Multi-modal panel co-design</h3>
+<p>CITE-seq 同時挑 RNA panel + antibody panel；兩者要互補 (joint). <strong>提案：</strong>Joint DPP on stacked feature space，引入 modality-cross block 的 quality-diversity 結構 → 自動避免「兩 panel 都只測 T cell」。</p>
+
+<h3>🎯 8. Active learning for spatial omics</h3>
+<p>Slide-seq / Stereo-seq 後續迭代——next batch ROI 應補當前 model 不確定且空間覆蓋差的區域。<strong>提案：</strong>DPP-batch active learning，q = predictive entropy、φ = spatial coordinate + cell-type composition。</p>
+
+<h3>🎯 9. Decoupled drug-target diversity</h3>
+<p>Polypharmacology drug 篩：要找「打多個 target、彼此 mechanism 不同」化合物組合。<strong>提案：</strong>DPP over (drug, target-profile) pair，可促進 combination 多樣性（如不同 kinase family）。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Pre-training data curation</h3>
+<p>scLLM (Geneformer, scGPT) pretrain on ~50M cells from CELLxGENE. <strong>Proposal:</strong> embedding-DPP picks the 5M most diverse cells for high-quality pretraining; expect +1–2% downstream zero-shot accuracy vs random subsample.</p>
+
+<h3>🎯 2. CRISPR sgRNA library</h3>
+<p>Designing a 10k-gene × 4–6-sgRNA library: avoid sgRNA target overlap, maximise efficiency. <strong>Proposal:</strong> k-DPP with q = efficiency predictor, φ = on-target sequence + PAM context.</p>
+
+<h3>🎯 3. AlphaFold-Multimer ensemble selection</h3>
+<p>AF gives 5 models × multiple seeds → dozens of structures. <strong>Proposal:</strong> DPP (q = pLDDT, φ = RMSD-based distance) picks a maximally diverse K-structure ensemble — especially useful for IDR, loop regions.</p>
+
+<h3>🎯 4. Perturb-seq target selection</h3>
+<p>Budget ~1000 gene KOs. <strong>Proposal:</strong> q = expected phenotype magnitude (DepMap prior), φ = pathway embedding; DPP picks maximally informative perturbations — +25% pathway coverage vs essentiality cutoff.</p>
+
+<h3>🎯 5. Antibody library diversity (VDJ)</h3>
+<p>Sub-sample 10⁴ from 10⁷ heavy+light pairings for expression + binding screen. <strong>Proposal:</strong> DPP kernel on CDR-H3 embedding (IgFold / AbLang); +30% unique epitope coverage vs random.</p>
+
+<h3>🎯 6. Single-cell sketching for atlas integration</h3>
+<p>Hemberg-style "Geometric sketching" uses grid sub-sampling; <strong>Proposal:</strong> replace with DPP-sketch on expression embedding — more faithful retention of rare cell types.</p>
+
+<h3>🎯 7. Multi-modal panel co-design</h3>
+<p>CITE-seq simultaneously selects RNA + antibody panels; they should be complementary. <strong>Proposal:</strong> joint DPP over stacked feature space with cross-modality blocks — automatically avoids "both panels only see T cells".</p>
+
+<h3>🎯 8. Active learning for spatial omics</h3>
+<p>Slide-seq / Stereo-seq next-batch ROIs should target uncertain, under-covered regions. <strong>Proposal:</strong> DPP-batch active learning with q = predictive entropy, φ = spatial coord + cell-type composition.</p>
+
+<h3>🎯 9. Decoupled drug-target diversity</h3>
+<p>Polypharmacology screens want compounds hitting multiple targets with different mechanisms. <strong>Proposal:</strong> DPP over (drug, target-profile) pairs to enforce combination diversity (e.g. across kinase families).</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'dppy')">dppy</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scr')">From scratch</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gene')">Gene marker</button>
+</div>
+
+<div class="code-tab-content active" id="dppy"><pre><span class="comment"># pip install dppy</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> dppy.finite_dpps <span class="keyword">import</span> FiniteDPP
+
+<span class="comment"># Build L = q q^T * phi phi^T (quality-diversity)</span>
+N, D, k = <span class="num">200</span>, <span class="num">32</span>, <span class="num">15</span>
+phi = np.random.randn(N, D); phi /= np.linalg.norm(phi, axis=<span class="num">1</span>, keepdims=<span class="keyword">True</span>)
+q   = np.random.gamma(<span class="num">2</span>, <span class="num">1</span>, size=N)
+L   = (q[:,<span class="keyword">None</span>] * phi) @ (phi.T * q[<span class="keyword">None</span>,:])
+
+dpp = FiniteDPP(<span class="str">'likelihood'</span>, L=L)
+
+<span class="comment"># k-DPP exact sample of size k</span>
+dpp.sample_exact_k_dpp(size=k)
+Y = dpp.list_of_samples[-<span class="num">1</span>]
+<span class="keyword">print</span>(<span class="str">"Selected items:"</span>, Y)
+
+<span class="comment"># MAP (greedy)</span>
+<span class="keyword">from</span> dppy.utils <span class="keyword">import</span> dpp_map_greedy
+Y_map = dpp_map_greedy(L, k)</pre></div>
+
+<div class="code-tab-content" id="scr"><pre><span class="comment"># Exact DPP sampling — pure NumPy (Hough et al. 2006)</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">def</span> sample_dpp(L):
+    eigvals, eigvecs = np.linalg.eigh(L)
+    <span class="comment"># Phase 1: pick eigen-index n with prob lambda/(lambda+1)</span>
+    probs = eigvals / (<span class="num">1</span> + eigvals)
+    keep  = np.random.rand(len(probs)) &lt; probs
+    V = eigvecs[:, keep]                       <span class="comment"># (N, |V|)</span>
+    Y = []
+    <span class="keyword">while</span> V.shape[<span class="num">1</span>] &gt; <span class="num">0</span>:
+        <span class="comment"># pick item i ~ ||V[i,:]||^2 / ||V||_F^2</span>
+        p = (V**<span class="num">2</span>).sum(axis=<span class="num">1</span>)
+        i = np.random.choice(len(p), p=p/p.sum())
+        Y.append(i)
+        <span class="comment"># project out direction e_i in V's column-space</span>
+        col = V[i] / np.linalg.norm(V[i])
+        V = V - np.outer(V @ col, col)
+        <span class="comment"># drop zero column</span>
+        _, s, Vt = np.linalg.svd(V, full_matrices=<span class="keyword">False</span>)
+        V = Vt[s &gt; <span class="num">1e-10</span>].T
+    <span class="keyword">return</span> sorted(Y)</pre></div>
+
+<div class="code-tab-content" id="gene"><pre><span class="comment"># Marker-gene selection with quality-diversity DPP</span>
+<span class="keyword">import</span> scanpy <span class="keyword">as</span> sc, numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> dppy.finite_dpps <span class="keyword">import</span> FiniteDPP
+
+adata = sc.read_h5ad(<span class="str">"pbmc.h5ad"</span>)
+sc.tl.rank_genes_groups(adata, <span class="str">"cell_type"</span>, method=<span class="str">"wilcoxon"</span>)
+
+<span class="comment"># For one cell type, build L</span>
+ct = <span class="str">"T_cell"</span>
+de = adata.uns[<span class="str">'rank_genes_groups'</span>]
+genes  = list(de[<span class="str">'names'</span>][ct][:<span class="num">200</span>])
+scores = np.array([de[<span class="str">'scores'</span>][ct][i] <span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">200</span>)])
+q = np.clip(scores, <span class="num">0</span>, <span class="keyword">None</span>) + <span class="num">1e-3</span>
+
+X = adata[:, genes].X.toarray().T            <span class="comment"># (200, n_cells)</span>
+phi = X / (np.linalg.norm(X, axis=<span class="num">1</span>, keepdims=<span class="keyword">True</span>) + <span class="num">1e-9</span>)
+L = (q[:,<span class="keyword">None</span>] * phi) @ (phi.T * q[<span class="keyword">None</span>,:])
+
+dpp = FiniteDPP(<span class="str">'likelihood'</span>, L=L)
+dpp.sample_exact_k_dpp(size=<span class="num">12</span>)
+panel = [genes[i] <span class="keyword">for</span> i <span class="keyword">in</span> dpp.list_of_samples[-<span class="num">1</span>]]
+<span class="keyword">print</span>(<span class="str">"Diverse markers:"</span>, panel)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">DPP 中 det(L_Y) 對應什麼幾何量，為何能促進「多元」？</p><p data-lang="en">What geometric quantity does det(L_Y) represent, and why does it encourage diversity?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 子集元素數量</span><span data-lang="en">A. Number of elements in the subset</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. L_Y 對應 feature 向量張的平行體體積平方；越正交（不像）體積越大、機率越高</span><span data-lang="en">B. Squared volume of the parallelepiped spanned by feature vectors — the more orthogonal (dissimilar), the larger the volume and probability</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 行列式恆為正</span><span data-lang="en">C. The determinant is always positive</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. L_Y 的特徵值之和</span><span data-lang="en">D. Sum of L_Y eigenvalues</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">k-DPP 與一般 DPP 的差異是什麼？</p><p data-lang="en">What is the difference between a k-DPP and a standard DPP?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. k-DPP 不需要 PSD kernel</span><span data-lang="en">A. k-DPP doesn't require a PSD kernel</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. k-DPP 不能精確採樣</span><span data-lang="en">B. k-DPP cannot be sampled exactly</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. k-DPP 固定 |Y|=k；標準 DPP 子集大小是隨機的</span><span data-lang="en">C. k-DPP fixes |Y|=k; the size is random under a standard DPP</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. k-DPP 不考慮 quality</span><span data-lang="en">D. k-DPP ignores quality</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼用 DPP 比「top-k DE score」更適合 marker gene panel design？</p><p data-lang="en">Why is DPP better than "top-k DE score" for marker-gene panel design?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Top-k 容易擠在同一通路（如 ribosome），DPP 在保留 quality 同時自動避免功能冗餘 marker</span><span data-lang="en">A. Top-k crowds genes in one pathway (e.g. ribosomes); DPP keeps quality while avoiding functionally redundant markers</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. DPP 比 top-k 快</span><span data-lang="en">B. DPP is faster than top-k</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. DPP 不需要 expression matrix</span><span data-lang="en">C. DPP doesn't need an expression matrix</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Top-k 不會收斂</span><span data-lang="en">D. Top-k doesn't converge</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="implicit-neural-rep.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 35：Implicit Neural Rep" data-en="Ch 35: Implicit Neural Rep">Ch 35：Implicit Neural Rep</span></a>
+<a href="federated-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 37：Federated Learning" data-en="Ch 37: Federated Learning">Ch 37：Federated Learning</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: DPP vs Uniform sampling on clustered points =====
+const SVG=document.getElementById('dppSvg');
+const Wd=600,Hd=360;
+let candidates=[];
+
+function genCandidates(){
+  candidates=[];
+  // 4 clusters of varying density
+  const centers=[[0.2,0.25,28],[0.75,0.25,22],[0.3,0.78,18],[0.78,0.78,12]];
+  centers.forEach(([cx,cy,nc])=>{
+    for(let i=0;i<nc;i++){
+      const r=Math.sqrt(Math.random())*0.10;
+      const a=Math.random()*Math.PI*2;
+      candidates.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]);
+    }
+  });
+}
+function rbfKernel(sig){
+  const N=candidates.length;
+  const L=Array.from({length:N},()=>new Float64Array(N));
+  for(let i=0;i<N;i++){
+    for(let j=0;j<N;j++){
+      const dx=candidates[i][0]-candidates[j][0];
+      const dy=candidates[i][1]-candidates[j][1];
+      L[i][j]=Math.exp(-(dx*dx+dy*dy)/(2*sig*sig));
+    }
+  }
+  return L;
+}
+// Greedy MAP-style k-DPP via marginal-gain log-det
+function dppGreedy(L,k){
+  const N=L.length;
+  const Y=[];
+  const di2 = L.map((row,i)=>row[i]);
+  const ci  = Array.from({length:N},()=>[]);
+  for(let it=0;it<k;it++){
+    let best=-1, bv=-Infinity;
+    for(let i=0;i<N;i++){
+      if(Y.includes(i)||di2[i]<=1e-12)continue;
+      if(di2[i]>bv){bv=di2[i]; best=i;}
+    }
+    if(best<0)break;
+    Y.push(best);
+    const di = Math.sqrt(di2[best]);
+    const ei = new Float64Array(N);
+    for(let j=0;j<N;j++){
+      let dot=L[best][j];
+      for(let t=0;t<ci[best].length;t++){dot -= ci[best][t]*ci[j][t];}
+      ei[j]=dot/(di+1e-12);
+      ci[j].push(ei[j]);
+      di2[j]-=ei[j]*ei[j];
+    }
+  }
+  return Y;
+}
+function uniformSample(k){
+  const N=candidates.length;
+  const arr=[...Array(N).keys()];
+  for(let i=arr.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}
+  return arr.slice(0,k);
+}
+function avgPairDist(idx){
+  let s=0,n=0;
+  for(let i=0;i<idx.length;i++)for(let j=i+1;j<idx.length;j++){
+    s+=Math.hypot(candidates[idx[i]][0]-candidates[idx[j]][0],candidates[idx[i]][1]-candidates[idx[j]][1]);
+    n++;
+  }
+  return n? s/n : 0;
+}
+let lastDPP=[], lastUni=[];
+function resample(){
+  const sig=+document.getElementById('sSig').value;
+  const k=+document.getElementById('sK').value;
+  const L=rbfKernel(sig);
+  // scale L by quality based on local density (so dense areas get slight q penalty -> more diversity)
+  lastDPP = dppGreedy(L, k);
+  lastUni = uniformSample(k);
+  render();
+}
+function render(){
+  const sig=+document.getElementById('sSig').value;
+  const k=+document.getElementById('sK').value;
+  document.getElementById('vSig').textContent=sig.toFixed(2);
+  document.getElementById('vK').textContent=k;
+  const halfW=Wd/2 - 6;
+  let svg='';
+  // panel separator
+  svg+=`<line x1="${Wd/2}" y1="0" x2="${Wd/2}" y2="${Hd}" stroke="#ddd" stroke-dasharray="4 4"/>`;
+  // left = Uniform, right = DPP
+  function drawPanel(offsetX, idx, color, label){
+    // candidates
+    candidates.forEach((p,i)=>{
+      const cx=offsetX + p[0]*halfW + 6;
+      const cy=p[1]*(Hd-30) + 18;
+      const sel = idx.includes(i);
+      svg += `<circle cx="${cx}" cy="${cy}" r="${sel?7:3}" fill="${sel?color:'rgba(100,100,100,0.22)'}" stroke="${sel?'#fff':'none'}" stroke-width="${sel?1.5:0}"/>`;
+    });
+    svg+=`<text x="${offsetX+10}" y="20" font-size="13" fill="${color}" font-weight="600">${label}</text>`;
+    svg+=`<text x="${offsetX+10}" y="${Hd-8}" font-size="11" fill="#666">avg pairwise dist ≈ ${avgPairDist(idx).toFixed(3)}</text>`;
+  }
+  drawPanel(0, lastUni, '#c0392b', 'Uniform random');
+  drawPanel(Wd/2, lastDPP, '#2563a8', 'k-DPP (greedy)');
+  SVG.innerHTML=svg;
+
+  const L=I18n.get();
+  const uniD = avgPairDist(lastUni);
+  const dppD = avgPairDist(lastDPP);
+  const ratio = uniD>0 ? (dppD/uniD).toFixed(2) : 'N/A';
+  document.getElementById('dppInfo').innerHTML = L==='zh' ?
+    `σ=<strong>${sig.toFixed(2)}</strong>，k=<strong>${k}</strong>。Uniform 平均兩兩距離 ≈ <strong>${uniD.toFixed(3)}</strong>；k-DPP ≈ <strong>${dppD.toFixed(3)}</strong>（×<strong>${ratio}</strong>）。<br>DPP 在 RBF kernel 下會自動跨群、保持距離；σ 越大，「相似度作用範圍」越廣、DPP 越分散。`
+    :
+    `σ=<strong>${sig.toFixed(2)}</strong>, k=<strong>${k}</strong>. Uniform avg pairwise distance ≈ <strong>${uniD.toFixed(3)}</strong>; k-DPP ≈ <strong>${dppD.toFixed(3)}</strong> (×<strong>${ratio}</strong>).<br>With an RBF kernel DPP automatically spans clusters; larger σ → broader repulsion → more spread.`;
+}
+document.getElementById('btnSample').addEventListener('click',resample);
+document.getElementById('btnRegen').addEventListener('click',()=>{genCandidates();resample();});
+document.getElementById('sSig').addEventListener('input',resample);
+document.getElementById('sK').addEventListener('input',resample);
+document.addEventListener('langchange',render);
+genCandidates(); resample();
+
+window._QF={zh:{
+  q1_y:'答對！det 是體積度量；正交 = 不冗餘 = 多元。',
+  q1_n:'答案是 B。det(L_Y) 是子集 feature vector 張的平行體體積平方——越正交（不像）越大、機率越高。',
+  q2_y:'答對！k-DPP 是固定大小版本。',
+  q2_n:'答案是 C。k-DPP 強制 |Y|=k，標準 DPP 子集大小本身就是隨機的。',
+  q3_y:'答對！DPP 同時優化 quality 與 diversity。',
+  q3_n:'答案是 A。Top-k 只看 quality 容易擠同一通路；DPP 用 quality-diversity 分解避免功能冗餘。'
+},en:{
+  q1_y:'Correct! det measures volume; orthogonal = non-redundant = diverse.',
+  q1_n:'Answer is B. det(L_Y) is the squared volume of the parallelepiped spanned by feature vectors — the more orthogonal, the higher.',
+  q2_y:'Correct! k-DPP fixes |Y|.',
+  q2_n:'Answer is C. k-DPP forces |Y|=k; the size is random under a vanilla DPP.',
+  q3_y:'Correct! DPP balances quality and diversity.',
+  q3_n:'Answer is A. Top-k crowds a single pathway; DPP\'s quality-diversity decomposition avoids functional redundancy.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

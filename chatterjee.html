@@ -1,0 +1,465 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Chatterjee ξ — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html" class="active">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 1 / 14</div><h1 data-zh="Chatterjee 相關係數 (ξ)" data-en="Chatterjee's ξ Correlation">Chatterjee 相關係數 (ξ)</h1>
+<p class="subtitle" data-lang="zh">2021 年 Sourav Chatterjee 提出的新型秩相關係數——能偵測 Pearson 與 Spearman 看不到的非單調依賴關係，O(n log n) 時間複雜度，已成為 scRNA-seq GRN 推論的新利器。</p>
+<p class="subtitle" data-lang="en">A 2021 rank-based correlation by Sourav Chatterjee — detects non-monotonic dependencies that Pearson/Spearman miss, runs in O(n log n), and has become a new tool for scRNA-seq GRN inference.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="動機" data-en="MOTIVATION">動機</div>
+<h2 data-zh="為什麼 Pearson / Spearman 不夠用？" data-en="Why Pearson / Spearman Aren't Enough">為什麼 Pearson / Spearman 不夠用？</h2>
+<div data-lang="zh"><p>傳統相關係數對 <strong>單調關係</strong>（Spearman）或 <strong>線性關係</strong>（Pearson）才敏感。但 scRNA-seq 裡基因–基因關係常常是非單調的——例如某個轉錄因子在中等表現量時最強、過高反而抑制下游基因；或細胞週期相關基因隨假時間呈正弦波振盪。Pearson/Spearman 對這類關係幾乎是「盲的」（係數接近 0）。</p>
+<p>Chatterjee 的 ξ（讀作 xi）填補了這個缺口：它 <strong>對任意函數依賴都敏感</strong>，且只比排序多花一點時間。</p></div>
+<div data-lang="en"><p>Classical correlation responds only to <strong>monotonic</strong> (Spearman) or <strong>linear</strong> (Pearson) relationships. But gene–gene relationships in scRNA-seq are often non-monotonic — a TF may peak at moderate expression and repress downstream targets at high levels; cell-cycle genes oscillate sinusoidally along pseudotime. Pearson/Spearman are essentially blind to such patterns (≈ 0).</p>
+<p>Chatterjee's ξ (xi) fills this gap: it is sensitive to <strong>any functional dependency</strong>, with only slightly more cost than sorting.</p></div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="任意函數" data-en="Any function">任意函數</h4><p data-lang="zh">線性、非線性、非單調、振盪皆能偵測。</p><p data-lang="en">Detects linear, non-linear, non-monotonic, and oscillatory dependencies.</p></div>
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="O(n log n)" data-en="O(n log n)">O(n log n)</h4><p data-lang="zh">和排序同等複雜度——適合 scRNA-seq 大樣本。</p><p data-lang="en">Same complexity as sorting — scales to large scRNA-seq datasets.</p></div>
+  <div class="card"><div class="card-icon">↔️</div><h4 data-zh="不對稱" data-en="Asymmetric">不對稱</h4><p data-lang="zh">ξ(X→Y) ≠ ξ(Y→X) 提供方向訊息，可推估調控方向。</p><p data-lang="en">ξ(X→Y) ≠ ξ(Y→X) provides directional information — useful for regulatory direction.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="ξ 怎麼算？" data-en="How to Compute ξ?">ξ 怎麼算？</h2>
+<div data-lang="zh"><ol>
+<li><strong>排序：</strong>把 (X<sub>i</sub>, Y<sub>i</sub>) 依 X 由小到大排序，得到對應的 Y 序列。</li>
+<li><strong>取秩：</strong>計算 Y 的秩 r<sub>1</sub>, r<sub>2</sub>, ..., r<sub>n</sub>（依排序後的順序）。</li>
+<li><strong>相鄰差：</strong>計算 |r<sub>i+1</sub> − r<sub>i</sub>| 的總和。</li>
+<li><strong>標準化：</strong>ξ<sub>n</sub>(X,Y) = 1 − 3 · Σ|r<sub>i+1</sub> − r<sub>i</sub>| / (n² − 1)</li>
+</ol>
+<p><strong>解讀：</strong>如果 X 完全決定 Y（Y = f(X)），把資料依 X 排序後，相鄰的 Y 秩會非常接近 → Σ|Δr| 很小 → ξ ≈ 1。反之獨立時相鄰秩跳躍劇烈 → ξ ≈ 0。</p></div>
+<div data-lang="en"><ol>
+<li><strong>Sort:</strong> Order (X<sub>i</sub>, Y<sub>i</sub>) pairs by X ascending; record the corresponding Y values.</li>
+<li><strong>Rank:</strong> Compute ranks r<sub>1</sub>, r<sub>2</sub>, ..., r<sub>n</sub> of the sorted Y sequence.</li>
+<li><strong>Adjacent diffs:</strong> Sum |r<sub>i+1</sub> − r<sub>i</sub>|.</li>
+<li><strong>Normalize:</strong> ξ<sub>n</sub>(X,Y) = 1 − 3 · Σ|r<sub>i+1</sub> − r<sub>i</sub>| / (n² − 1)</li>
+</ol>
+<p><strong>Intuition:</strong> If X fully determines Y (Y = f(X)), sorting by X makes adjacent Y ranks close → Σ|Δr| small → ξ ≈ 1. If independent, adjacent ranks jump wildly → ξ ≈ 0.</p></div>
+
+<div class="callout"><div data-lang="zh"><strong>數學性質：</strong>當 n → ∞，若 X、Y 獨立則 ξ → 0；若 Y 為 X 的可測函數則 ξ → 1。對連續變數，獨立檢定的漸近分布為 √n · ξ → N(0, 2/5)，可直接做假設檢定。</div>
+<div data-lang="en"><strong>Theoretical properties:</strong> As n → ∞, ξ → 0 iff X, Y are independent; ξ → 1 iff Y is a measurable function of X. For continuous variables, the null asymptotic distribution is √n · ξ → N(0, 2/5), enabling direct hypothesis testing.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="ξ vs Pearson vs Spearman：誰看得到？" data-en="ξ vs Pearson vs Spearman: Who Sees It?">ξ vs Pearson vs Spearman：誰看得到？</h2>
+<div data-lang="zh"><p>選擇不同關係形狀，比較三種係數的偵測能力。注意非單調關係（正弦、二次）下 Pearson/Spearman 趨近 0，而 ξ 仍能捕捉到強訊號。</p></div>
+<div data-lang="en"><p>Pick different relationship shapes and compare the three coefficients. For non-monotonic shapes (sine, quadratic), Pearson/Spearman ≈ 0 while ξ still captures the dependency.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="關係形狀" data-en="Relationship shape">關係形狀</label>
+  <select id="relType" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="linear">Linear / 線性</option>
+    <option value="monotone">Monotone non-linear / 單調非線性</option>
+    <option value="quadratic" selected>Quadratic / 二次</option>
+    <option value="sine">Sine / 正弦波</option>
+    <option value="step">Step / 階梯</option>
+    <option value="noise">Pure noise / 純噪音</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="噪音水準" data-en="Noise">噪音水準 <span id="valNoise">0.30</span></label><input type="range" id="sliderNoise" min="0" max="1" value="0.3" step="0.05"></div>
+<div class="chart-container" style="height:280px;"><canvas id="scatterChart"></canvas></div>
+
+<div class="card-grid cols-3" style="margin-top:14px;">
+  <div class="card"><h4>Pearson r</h4><p style="font-size:1.6rem;font-weight:700;margin:0;" id="rPearson">—</p></div>
+  <div class="card"><h4>Spearman ρ</h4><p style="font-size:1.6rem;font-weight:700;margin:0;" id="rSpearman">—</p></div>
+  <div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4>Chatterjee ξ</h4><p style="font-size:1.6rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="rChatterjee">—</p></div>
+</div>
+<div id="interpret" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 ξ？" data-en="When to use ξ?">什麼時候用 ξ？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>非線性 GRN 推論</strong>——轉錄因子–標靶基因常有非單調關係，ξ 能找到 Pearson 漏掉的真實調控。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>振盪基因偵測</strong>——細胞週期、晝夜節律基因隨時間呈正弦變化，ξ 直接捕捉。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>調控方向推估</strong>——比較 ξ(TF→target) 與 ξ(target→TF)，較大者可能為「因」端（謹慎解釋）。</div></div>
+<div class="dt-node"><span class="dt-q">注意:</span><div>對單調訊號 ξ 的「功率」（statistical power）比 Spearman 略低——所以不是要取代，是要 <strong>互補</strong>。常見做法是 max(|Pearson|, |Spearman|, ξ) 或加權整合。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Non-linear GRN inference</strong> — TF–target relationships are often non-monotonic; ξ finds true regulations missed by Pearson.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Oscillatory gene detection</strong> — cell cycle and circadian genes vary sinusoidally; ξ captures them directly.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Direction inference</strong> — compare ξ(TF→target) vs ξ(target→TF); larger value suggests the "cause" side (interpret with care).</div></div>
+<div class="dt-node"><span class="dt-q">Caveat:</span><div>For monotonic signals, ξ has slightly less power than Spearman — it's <strong>complementary</strong>, not a replacement. Combine via max(|Pearson|, |Spearman|, ξ) or ensemble.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="在 scRNA-seq / 多體學的應用" data-en="Applications in scRNA-seq / Multi-omics">在 scRNA-seq / 多體學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="GRN 推論 (2025)" data-en="GRN Inference (2025)">GRN 推論 (2025)</h4>
+<p data-lang="zh">Liu 等人 (2025, bioRxiv) 提出基於 Chatterjee ξ 的 GRN 推論框架，利用 ξ 的不對稱性建立 <strong>有方向</strong> 的調控網路，並設計多重檢定框架處理 scRNA-seq 非獨立樣本的統計問題。在模擬與真實資料上勝過多個 state-of-the-art 方法。</p>
+<p data-lang="en">Liu et al. (2025, bioRxiv) introduce a GRN framework using Chatterjee's ξ, exploiting its asymmetry to build <strong>directed</strong> regulatory networks. They develop a multiple-testing framework for the non-IID nature of scRNA-seq, outperforming SOTA methods on simulated and real data.</p></div>
+
+<div class="card"><h4 data-zh="細胞–細胞通訊" data-en="Cell–cell communication">細胞–細胞通訊</h4>
+<p data-lang="zh">在 ligand–receptor 共表達分析中，ξ 對「閾值依賴」型的訊號（受體只在配體達某閾值才啟動）比 Pearson 更敏感。</p>
+<p data-lang="en">For ligand–receptor co-expression with threshold-dependent signaling (receptor activates only above a ligand threshold), ξ outperforms Pearson.</p></div>
+
+<div class="card"><h4 data-zh="批次效應檢測" data-en="Batch effect detection">批次效應檢測</h4>
+<p data-lang="zh">用 ξ 檢驗 batch label 與 PC 的依賴性——即使是非線性偏移也能偵測，比經典 ANOVA 更靈敏。</p>
+<p data-lang="en">Test dependency between batch labels and PCs with ξ — catches non-linear shifts that classical ANOVA misses.</p></div>
+
+<div class="card"><h4 data-zh="多體學模態間關聯" data-en="Cross-modal multi-omics">多體學模態間關聯</h4>
+<p data-lang="zh">在 multi-omics 整合（RNA × ATAC × protein）中，ξ 適合衡量染色質開放性與基因表現的非單調對應關係。</p>
+<p data-lang="en">In multi-omics integration (RNA × ATAC × protein), ξ captures non-monotonic correspondence between chromatin accessibility and gene expression.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 ξ：陷阱、變體、效應量解讀" data-en="Deep Dive: Pitfalls, Variants, Effect Sizes">深入解析 ξ：陷阱、變體、效應量解讀</h2>
+
+<div data-lang="zh">
+<h3>① 效應量怎麼讀？</h3>
+<p>Chatterjee ξ 的範圍是 [0, 1]（樣本估計值可能略小於 0 或在獨立時呈 N(0, 2/(5n))，但通常以 0 為參考）。和 Pearson r 不同的是，ξ 沒有「正/負相關」之分——它只回答「Y 在多大程度上由 X 決定？」這個尺度的經驗詮釋：</p>
+<ul>
+<li><strong>ξ &lt; 0.05：</strong>幾乎獨立；可能因樣本噪音呈現非零。</li>
+<li><strong>0.05 ≤ ξ &lt; 0.15：</strong>弱依賴；scRNA-seq 中對應「微弱共表達」。</li>
+<li><strong>0.15 ≤ ξ &lt; 0.4：</strong>中等依賴；很多真實 TF–target 關係落在這個區間（受 dropout、bursty expression 影響）。</li>
+<li><strong>0.4 ≤ ξ &lt; 0.7：</strong>強依賴；具有明確函數結構，值得進一步驗證。</li>
+<li><strong>ξ ≥ 0.7：</strong>近乎決定性關係；在 scRNA-seq 罕見，常為共因（同一複合體成員）或技術 artefact。</li>
+</ul>
+
+<h3>② Tie（相同值）的處理</h3>
+<p>原始 ξ 在 Y 有大量平局時偏低估。scRNA-seq 因 dropout 與整數 UMI counts 平局極多，建議使用 <strong>Chatterjee–Lin (2022)</strong> 提出的「ties-aware」變體：用 mid-rank 並調整正則項 ℓᵢ = Σⱼ I(Yⱼ ≥ Yᵢ)。R 套件 <code>XICOR</code> 從 v0.4.1 起內建 <code>ties=TRUE</code> 旗標處理。</p>
+
+<h3>③ p-value 與多重檢定</h3>
+<p>連續變數無 ties 時：√n · ξ → N(0, 2/5)，可直接用 z 檢定。</p>
+<p>有 ties 時：變異數變大（最壞時可達 0.5），須用 permutation。實務上，做基因–基因 GRN 推論時樣本數 n 大（細胞數通常 ≥ 500），permutation 太貴，建議 (a) 用「Asymptotic with ties correction」(b) 對所有 pair 跑 Benjamini-Hochberg FDR 控制（q &lt; 0.05），不只是單一 p-value。</p>
+
+<h3>④ 不對稱性的真實意涵</h3>
+<p>ξ(X→Y) 衡量「給定 X，Y 有多確定」；ξ(Y→X) 衡量「給定 Y，X 有多確定」。理論上：若 Y 是 X 的函數但 X 不是 Y 的函數（例如多對一映射），ξ(X→Y) &gt; ξ(Y→X)。但 <strong>不對稱性≠因果方向</strong>——它只反映「資訊量」的不對稱。要嚴謹推因果還是要回到 Ch 14 的干預資料。</p>
+
+<h3>⑤ 與其他「現代相關」的比較</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">方法</th><th style="padding:8px;border:1px solid #e0dcd0;">計算量</th><th style="padding:8px;border:1px solid #e0dcd0;">獨立性</th><th style="padding:8px;border:1px solid #e0dcd0;">可解釋</th><th style="padding:8px;border:1px solid #e0dcd0;">多變量</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Pearson r</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌ 線性</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 強</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">部分</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Spearman ρ</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌ 單調</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 強</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr style="background:#e8f0ec;"><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Chatterjee ξ</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 完全</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 強</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>HSIC / dCor</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n²)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 完全</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">⚠ 中</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>MIC (Reshef 2011)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n^1.5+)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 完全</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 強</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>HHG (Heller 2013)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n² log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 完全</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌ 弱</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>MI (KSG)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅ 完全</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">⚠ 中</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+</tbody></table>
+<p style="margin-top:10px;"><strong>挑選原則：</strong>單細胞大樣本 (n &gt; 1000) + 想做 pair-wise GRN → ξ 最划算；高維（向量 × 向量）→ HSIC/dCor；想得到 bits 解釋 → MI；只有少量樣本 (n &lt; 100) → HHG 統計檢力較高。</p>
+
+<h3>⑥ Power-vs-noise 圖譜（ξ 的弱點）</h3>
+<p>Chatterjee ξ 的<strong>統計檢力（power）</strong>在純線性 + 高斯噪音情境下「不如」Pearson/Spearman——這是已被 Shi, Drton, Han (2022) 數學嚴格證明的。實務上 ξ 在「弱線性 + 大樣本」的情境會給出偏小的值，並非 ξ 算錯，而是它根本不為這個情境設計。<strong>建議：用 max(|r|, ξ) 或加權整合作為 robust 量測。</strong></p>
+</div>
+
+<div data-lang="en">
+<h3>① How to read the effect size?</h3>
+<p>Chatterjee ξ ranges [0, 1] (sample estimate may slightly dip below 0; under independence it is ~N(0, 2/(5n))). Unlike Pearson r there is <strong>no positive/negative direction</strong>; ξ only answers "to what extent does X determine Y?" Empirical interpretation:</p>
+<ul>
+<li><strong>ξ &lt; 0.05:</strong> nearly independent; may appear non-zero due to noise.</li>
+<li><strong>0.05 ≤ ξ &lt; 0.15:</strong> weak dependence; in scRNA-seq this often reflects mild co-expression.</li>
+<li><strong>0.15 ≤ ξ &lt; 0.4:</strong> moderate; many real TF–target relationships fall here (limited by dropout, bursty expression).</li>
+<li><strong>0.4 ≤ ξ &lt; 0.7:</strong> strong; well-defined functional structure, worth follow-up.</li>
+<li><strong>ξ ≥ 0.7:</strong> nearly deterministic; rare in scRNA-seq, often complex co-membership or technical artefact.</li>
+</ul>
+
+<h3>② Handling ties</h3>
+<p>The original ξ underestimates when Y has many ties — scRNA-seq has plenty due to dropouts and integer UMIs. Use the <strong>Chatterjee–Lin (2022)</strong> ties-aware variant with mid-rank and adjusted ℓᵢ = Σⱼ I(Yⱼ ≥ Yᵢ). R package <code>XICOR</code> ≥ v0.4.1 supports <code>ties=TRUE</code>.</p>
+
+<h3>③ p-value and multiple testing</h3>
+<p>No ties + continuous: √n · ξ → N(0, 2/5), z-test directly.</p>
+<p>With ties: variance grows (up to 0.5 worst case); use permutation. For pair-wise GRN over many cells, permutation is too expensive — use asymptotic-with-ties-correction and apply BH-FDR (q &lt; 0.05) across all gene pairs.</p>
+
+<h3>④ What asymmetry really means</h3>
+<p>ξ(X→Y) measures "how determined is Y given X"; ξ(Y→X) the reverse. If Y is a many-to-one function of X, ξ(X→Y) &gt; ξ(Y→X). But <strong>asymmetry ≠ causal direction</strong> — it only reflects information asymmetry. Strict causal inference still requires interventional data (see Ch 14).</p>
+
+<h3>⑤ Comparison with other "modern correlation" measures</h3>
+<table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:.9rem;"><thead><tr style="background:#f0ede6;"><th style="padding:8px;border:1px solid #e0dcd0;text-align:left;">Method</th><th style="padding:8px;border:1px solid #e0dcd0;">Compute</th><th style="padding:8px;border:1px solid #e0dcd0;">Independence</th><th style="padding:8px;border:1px solid #e0dcd0;">Interpretable</th><th style="padding:8px;border:1px solid #e0dcd0;">Multivariate</th></tr></thead><tbody>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Pearson r</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌ linear only</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">partial</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Spearman ρ</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌ monotone</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr style="background:#e8f0ec;"><td style="padding:6px;border:1px solid #e0dcd0;"><strong>Chatterjee ξ</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>HSIC / dCor</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n²)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">⚠</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>MIC</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n^1.5+)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>HHG</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n² log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">❌</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+<tr><td style="padding:6px;border:1px solid #e0dcd0;"><strong>MI (KSG)</strong></td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">O(n log n)</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">⚠</td><td style="padding:6px;border:1px solid #e0dcd0;text-align:center;">✅</td></tr>
+</tbody></table>
+<p style="margin-top:10px;"><strong>Selection rule:</strong> large-sample (n &gt; 1000) pair-wise GRN → ξ wins on cost; high-dimensional (vector × vector) → HSIC/dCor; want bits interpretation → MI; small samples (n &lt; 100) → HHG has higher power.</p>
+
+<h3>⑥ The power-vs-noise trade-off (ξ's weakness)</h3>
+<p>ξ's <strong>statistical power</strong> in pure linear + Gaussian noise is provably <strong>lower</strong> than Pearson/Spearman (Shi, Drton, Han 2022). For "weak linear + large sample," ξ may produce values that look small — not wrong, but ξ wasn't designed for that. <strong>Recommendation: use max(|r|, ξ) or weighted ensemble as a robust measure.</strong></p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="ξ 在生物資訊的具體案例" data-en="Concrete Cases of ξ in Bioinformatics">ξ 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：Chatterjee-GRN（Liu et al. 2025, bioRxiv）</h3>
+<p>這是目前最完整的 scRNA-seq ξ 應用。他們的貢獻：</p>
+<ul>
+<li><strong>核心創新：</strong>利用 ξ 的不對稱性建構「有方向」的 GRN，而 Pearson/MI/dCor 都只能給出無向邊。</li>
+<li><strong>多重檢定框架：</strong>處理 scRNA-seq 非獨立觀測（細胞共享技術因子），提出「resampling-based calibration」估計實際 null 分布——避免標準 BH-FDR 在相關樣本下失效。</li>
+<li><strong>實證結果：</strong>在 BEELINE benchmark（涵蓋 7 個模擬與 5 個真實資料集）上 AUPR/AUROC 都勝過 GENIE3、PIDC、SCODE 等 state-of-the-art。在 mouse embryonic stem cell (mESC) 資料上發現多個被傳統方法漏掉的真實 TF–target 對，後續經 Perturb-seq 驗證。</li>
+<li><strong>計算可行：</strong>33,000 細胞 × 5000 基因約 8 分鐘（24 cores）。</li>
+</ul>
+
+<h3>🧪 案例 2：Damásio et al. (2024) 神經學基因網路</h3>
+<p>用 ξ 找 Alzheimer's brain 中與認知功能相關的非線性 gene–gene 關係。Pearson 找出 ~300 個 hub gene；ξ 額外找出 ~80 個 hub，多數為早期警告基因（與 tau 蛋白聚集相關但表現非單調）。</p>
+
+<h3>📊 案例 3：Lin & Han (2023)：spike-and-slab gene selection</h3>
+<p>把 ξ 整合進高維貝氏變數選擇——以 ξ 的單調轉換作為先驗的權重。在乳癌微陣列資料上比 Lasso、Elastic Net 選出更少但更具生物意義的基因。</p>
+
+<h3>🌍 案例 4：跨領域驗證</h3>
+<ul>
+<li><strong>氣候科學：</strong>Mehta et al. (2023) 用 ξ 找 ENSO 與全球溫度的非單調滯後關係，揭示 Pearson 看不到的非線性遠端關聯。</li>
+<li><strong>金融：</strong>Wang & Tsay (2022) 用 ξ 偵測股票回報的「閾值依賴」（在某波動度以上才出現相關）。</li>
+<li><strong>單細胞 fLuc 螢光：</strong>2024 年數個論文用 ξ 在 live-cell imaging 軌跡資料找週期性表現基因，比傳統 cosinor analysis 更穩健。</li>
+</ul>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: Chatterjee-GRN (Liu et al. 2025, bioRxiv)</h3>
+<p>The most complete scRNA-seq ξ application to date:</p>
+<ul>
+<li><strong>Core innovation:</strong> exploit ξ's asymmetry to build <strong>directed</strong> GRNs — Pearson/MI/dCor only give undirected edges.</li>
+<li><strong>Multiple-testing framework:</strong> resampling-based calibration handles scRNA-seq's non-IID observations (cells share technical factors), avoiding standard BH-FDR's failure under dependence.</li>
+<li><strong>Empirical results:</strong> on BEELINE benchmark (7 simulated, 5 real datasets), AUPR/AUROC beat GENIE3, PIDC, SCODE. In mESC data, recovered TF–target pairs missed by prior methods — later validated by Perturb-seq.</li>
+<li><strong>Tractable:</strong> 33,000 cells × 5000 genes in ~8 min (24 cores).</li>
+</ul>
+
+<h3>🧪 Case 2: Damásio et al. (2024) Neural Gene Networks</h3>
+<p>Used ξ to find non-linear gene–gene relationships tied to cognition in Alzheimer's brain. Pearson found ~300 hubs; ξ added ~80, most being early-warning genes (non-monotonic with tau aggregation).</p>
+
+<h3>📊 Case 3: Lin & Han (2023) — spike-and-slab gene selection</h3>
+<p>Embedded ξ into high-dim Bayesian variable selection as prior weight. On breast cancer microarray data, selected fewer but more biologically meaningful genes than Lasso / Elastic Net.</p>
+
+<h3>🌍 Case 4: Cross-domain validations</h3>
+<ul>
+<li><strong>Climate science:</strong> Mehta et al. (2023) used ξ for non-monotonic lagged ENSO–temperature relations, revealing nonlinear teleconnections.</li>
+<li><strong>Finance:</strong> Wang & Tsay (2022) detected threshold-dependent stock returns (correlation appears only above some volatility level).</li>
+<li><strong>Live-cell imaging:</strong> several 2024 papers used ξ on fluorescent live-cell trajectories to find oscillatory genes, more robust than classical cosinor.</li>
+</ul>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="ξ 還能改良 / 新解決哪些單細胞與多體學任務？" data-en="What Else Could ξ Improve?">ξ 還能改良哪些單細胞與多體學任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 找到傳統 DE 漏掉的「非線性 marker gene」</h3>
+<p>Seurat::FindMarkers 用 Wilcoxon 假設「兩群之間表現分布有 shift」。但有些 marker 在某 cluster 內部呈雙峰（subpopulation）、在其他 cluster 呈單峰——這種「distribution shape 差異」Wilcoxon 看不到。<strong>提案：</strong>用 ξ(cluster_label, gene_expression) 找出與群集 label「強函數依賴」的基因，能補足傳統 DE 漏掉的 marker。</p>
+
+<h3>🎯 2. 軌跡 (pseudotime) 中的振盪基因偵測</h3>
+<p>細胞週期、晝夜節律、發炎週期的基因表現沿 pseudotime 呈正弦曲線。Pearson(pseudotime, gene) ≈ 0 因為正負相消；ξ(pseudotime, gene) 反而看得很清楚。<strong>提案：</strong>取代或補充 tradeSeq/Monocle 的線性 GAM-based 振盪偵測，特別是在 cycle following 章節描述的循環軌跡上。</p>
+
+<h3>🎯 3. Ligand–Receptor 閾值偵測</h3>
+<p>CellChat、CellPhoneDB 用 expression product 或 mean 篩 L–R 對。但很多 L–R 關係是「閾值型」（受體只在 ligand 達某水準才啟動），用 ξ 量「ligand → downstream signaling gene」的依賴比平均值乘法更敏感。<strong>提案：</strong>建構 ξ-based L–R 偵測流程，與 CellChat 整合作為「下游驗證」階段。</p>
+
+<h3>🎯 4. 多體學「鬆耦合」對應偵測</h3>
+<p>scRNA + scATAC 配對細胞時，染色質開放性與表現量常呈「on/off」型關係（peak 開了 ⇒ 表現可能上升也可能不變）。Pearson 看不到，但 ξ(ATAC peak, gene expression) 能找到這類「條件式」對應。<strong>提案：</strong>取代/補充 Cicero、ArchR 的線性 link 偵測。</p>
+
+<h3>🎯 5. 空間轉錄體的非線性空間模式</h3>
+<p>SpatialDE 等假設 Gaussian Process kernel；ξ(spatial_coord_x, gene) 與 ξ(spatial_coord_y, gene) 能直接偵測「依距離有結構但非高斯」的基因（例如多焦點 hotspot）。<strong>提案：</strong>新的 SVG 偵測管線，特別適合 Stereo-seq 等高解析度資料。</p>
+
+<h3>🎯 6. scLLM embedding 評估</h3>
+<p>scGPT/Geneformer 預訓練後產生的 latent 維度有不同「語意」。用 ξ(latent_dim_i, gene_j) 可量化每個 latent 維度與「具體基因表現」的依賴強度，比 Pearson 更能找到非線性編碼的維度。<strong>提案：</strong>scLLM 可解釋性分析工具。</p>
+
+<h3>🎯 7. 藥物劑量–反應曲線分析</h3>
+<p>藥物在低劑量可能上調基因 A，高劑量轉為下調（U 型或鐘型曲線）。傳統劑量–效應分析用 Hill function fit，要先選模型；ξ(dose, gene) 對任何非線性形狀都敏感，可作為「篩選哪些基因需要進一步劑量曲線建模」的步驟。<strong>提案：</strong>整合進 Connectivity Map / LINCS L1000 pipeline。</p>
+
+<h3>🎯 8. Perturb-seq 效應分析</h3>
+<p>Perturb-seq 通常看「擾動 A 後 B 表現是否改變」。但有些擾動效應是「重塑表現變異度」而非「改變均值」——例如敲除某 chromatin remodeler 後，某基因表現分布變寬。<strong>提案：</strong>ξ(perturbation_label, gene) 對均值與變異度的改變都敏感，可作為「broader」的擾動效應偵測。</p>
+
+<h3>🎯 9. 細胞型別決定基因（fate-determining genes）</h3>
+<p>分化過程中，「決定終態」的基因在初期表現可能與終態 label 不單調相關（先升後降）。ξ(early_expression, final_celltype) 比 Pearson/Spearman 更能找到這類 fate-determining 基因。<strong>提案：</strong>與 RNA velocity / Waddington-OT 整合，找出真實的 fate gates。</p>
+
+<h3>🎯 10. 跨物種保守關係偵測</h3>
+<p>跨物種比較基因網路時，物種間的調控強度可能變但「結構」（依賴形式）保留。用 ξ 量「人 vs 鼠」中同源基因對的依賴一致性，比 Pearson 更穩健於物種間 scale 差異。<strong>提案：</strong>跨物種 GRN 保守模塊分析。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Find non-linear marker genes missed by classical DE</h3>
+<p>Seurat::FindMarkers (Wilcoxon) assumes a shift between groups. But some markers are bimodal in one cluster, unimodal in others — Wilcoxon misses such distribution-shape differences. <strong>Proposal:</strong> use ξ(cluster_label, gene_expression) to find genes with strong functional dependence on group label, complementing standard DE.</p>
+
+<h3>🎯 2. Detect oscillatory genes along pseudotime</h3>
+<p>Cell-cycle, circadian, inflammatory cycle genes are sinusoidal along pseudotime → Pearson ≈ 0 (cancels). ξ catches them. <strong>Proposal:</strong> replace or complement tradeSeq/Monocle's GAM-based oscillator detection, especially on the circular trajectories from Ch 8.</p>
+
+<h3>🎯 3. Threshold-dependent L–R detection</h3>
+<p>CellChat/CellPhoneDB use expression products. But many L–R interactions are threshold-type (receptor activates only above some ligand level). ξ on "ligand → downstream signaling gene" is more sensitive than mean × mean. <strong>Proposal:</strong> ξ-based L–R pipeline, integrated with CellChat as downstream validation.</p>
+
+<h3>🎯 4. Loosely-coupled multi-omics correspondences</h3>
+<p>For paired RNA + ATAC, chromatin accessibility and expression often have "on/off" relationships (peak open ⇒ expression may or may not rise). Pearson misses this; ξ(ATAC peak, gene expression) catches it. <strong>Proposal:</strong> replace/complement linear link detection in Cicero, ArchR.</p>
+
+<h3>🎯 5. Non-linear spatial patterns</h3>
+<p>SpatialDE assumes a Gaussian Process kernel; ξ(spatial_x, gene) and ξ(spatial_y, gene) directly detect "structured but non-Gaussian" genes (e.g. multi-focal hotspots). <strong>Proposal:</strong> a new SVG detection pipeline well-suited to Stereo-seq's high resolution.</p>
+
+<h3>🎯 6. scLLM embedding evaluation</h3>
+<p>scGPT/Geneformer latents have different "semantics" per dimension. ξ(latent_dim_i, gene_j) quantifies the dependence of each latent on specific genes — finds non-linearly encoded dimensions better than Pearson. <strong>Proposal:</strong> scLLM interpretability tool.</p>
+
+<h3>🎯 7. Drug dose–response analysis</h3>
+<p>A drug may upregulate gene A at low dose, downregulate at high dose (U- or bell-shaped). Classical analysis fits Hill functions, requiring model selection upfront. ξ(dose, gene) is sensitive to any non-linear shape — good first-pass screen. <strong>Proposal:</strong> integrate into Connectivity Map / LINCS L1000 pipelines.</p>
+
+<h3>🎯 8. Perturb-seq effect analysis</h3>
+<p>Perturb-seq usually asks "after perturbing A, did B's expression change?" But some effects reshape variance, not mean (e.g. knocking out a chromatin remodeler widens a gene's distribution). ξ(perturbation_label, gene) catches both kinds. <strong>Proposal:</strong> broader perturbation effect detector.</p>
+
+<h3>🎯 9. Fate-determining gene discovery</h3>
+<p>During differentiation, fate-determining genes may have non-monotonic relationships with terminal labels (rise then fall). ξ(early_expression, final_celltype) finds them better than Pearson/Spearman. <strong>Proposal:</strong> integrate with RNA velocity / Waddington-OT to find true fate gates.</p>
+
+<h3>🎯 10. Cross-species conserved relationships</h3>
+<p>Strength of regulation varies across species but the structure (dependence form) is conserved. ξ between homolog pairs in human vs mouse is more robust to scale differences than Pearson. <strong>Proposal:</strong> conserved module analysis in cross-species GRNs.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'r1')">R / XICOR</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py1')">Python / xicor</button>
+<button class="code-tab-btn" onclick="switchTab(this,'scratch')">From scratch</button>
+</div>
+
+<div class="code-tab-content active" id="r1"><pre><span class="comment"># install.packages("XICOR")</span>
+<span class="keyword">library</span>(XICOR)
+
+<span class="comment"># Simple usage</span>
+xicor(x, y)                       <span class="comment"># ξ(x → y)</span>
+xicor(y, x)                       <span class="comment"># ξ(y → x) — different!</span>
+
+<span class="comment"># With p-value</span>
+xicor(x, y, pvalue = <span class="keyword">TRUE</span>, ties = <span class="keyword">TRUE</span>)
+
+<span class="comment"># Pairwise for gene matrix (genes × cells)</span>
+gene_mat &lt;- <span class="func">t</span>(GetAssayData(seurat_obj, slot = <span class="str">"data"</span>))   <span class="comment"># cells × genes</span>
+xi_mat &lt;- <span class="func">apply</span>(gene_mat, <span class="num">2</span>, <span class="keyword">function</span>(tgt) {
+  <span class="func">apply</span>(gene_mat, <span class="num">2</span>, <span class="keyword">function</span>(tf) xicor(tf, tgt))
+})
+<span class="comment"># xi_mat[i,j] = ξ(gene_i → gene_j)</span></pre></div>
+
+<div class="code-tab-content" id="py1"><pre><span class="comment"># pip install xicor</span>
+<span class="keyword">from</span> xicor.xicor <span class="keyword">import</span> Xi
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+xi = Xi(x_array, y_array)
+print(xi.correlation)             <span class="comment"># ξ value</span>
+print(xi.pval_asymptotic(ties=<span class="keyword">False</span>, nperm=<span class="num">1000</span>))
+
+<span class="comment"># Pairwise on AnnData</span>
+<span class="keyword">import</span> anndata <span class="keyword">as</span> ad
+X = adata.X.toarray() <span class="keyword">if</span> hasattr(adata.X, <span class="str">"toarray"</span>) <span class="keyword">else</span> adata.X
+n_genes = X.shape[<span class="num">1</span>]
+xi_mat = np.zeros((n_genes, n_genes))
+<span class="keyword">for</span> i <span class="keyword">in</span> range(n_genes):
+    <span class="keyword">for</span> j <span class="keyword">in</span> range(n_genes):
+        <span class="keyword">if</span> i != j:
+            xi_mat[i, j] = Xi(X[:, i], X[:, j]).correlation</pre></div>
+
+<div class="code-tab-content" id="scratch"><pre><span class="comment"># Pure NumPy — for understanding</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">from</span> scipy.stats <span class="keyword">import</span> rankdata
+
+<span class="keyword">def</span> chatterjee_xi(x, y):
+    n = len(x)
+    <span class="comment"># 1. Sort by x; keep corresponding y</span>
+    order = np.argsort(x)
+    y_sorted = y[order]
+    <span class="comment"># 2. Compute ranks of y in sorted order</span>
+    r = rankdata(y_sorted, method=<span class="str">"average"</span>)
+    <span class="comment"># 3. Sum adjacent absolute differences</span>
+    s = np.sum(np.abs(np.diff(r)))
+    <span class="comment"># 4. Normalize</span>
+    xi = <span class="num">1</span> - <span class="num">3</span> * s / (n**<span class="num">2</span> - <span class="num">1</span>)
+    <span class="keyword">return</span> xi</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">下列關係，Pearson r 趨近 0 但 Chatterjee ξ 仍能偵測到的是？</p><p data-lang="en">For which relationship is Pearson r ≈ 0 but Chatterjee ξ still detects it?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Y = 2X + 3</span><span data-lang="en">A. Y = 2X + 3</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. Y = log(X)</span><span data-lang="en">B. Y = log(X)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Y = X² 在 X ∈ [−1, 1]</span><span data-lang="en">C. Y = X² on X ∈ [−1, 1]</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. Y 與 X 完全獨立</span><span data-lang="en">D. Y independent of X</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">關於 Chatterjee ξ 的「不對稱性」，下列敘述何者正確？</p><p data-lang="en">Which statement about ξ's asymmetry is correct?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. ξ(X,Y) 永遠等於 ξ(Y,X)，是個 bug</span><span data-lang="en">A. ξ(X,Y) = ξ(Y,X) always — it's a bug</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. ξ(X→Y) 和 ξ(Y→X) 通常不同，可用來推估方向</span><span data-lang="en">B. ξ(X→Y) ≠ ξ(Y→X) generally, useful for direction inference</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. ξ 只能在 X &gt; Y 時計算</span><span data-lang="en">C. ξ only computes when X &gt; Y</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不對稱性使其無法做假設檢定</span><span data-lang="en">D. Asymmetry prevents hypothesis testing</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Chatterjee ξ 的時間複雜度為何？</p><p data-lang="en">What is the time complexity of ξ?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. O(n log n)</span><span data-lang="en">A. O(n log n)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. O(n²)</span><span data-lang="en">B. O(n²)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. O(n³)</span><span data-lang="en">C. O(n³)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. O(2ⁿ)</span><span data-lang="en">D. O(2ⁿ)</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="index.html"><span class="nav-dir" data-zh="← 回首頁" data-en="← Home">← 回首頁</span><span class="nav-title" data-zh="進階方法演算法" data-en="Advanced Methods">進階方法演算法</span></a>
+<a href="hsic-dcor.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 2：HSIC 與 dCor" data-en="Ch 2: HSIC &amp; dCor">Ch 2：HSIC 與 dCor</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: ξ vs Pearson vs Spearman =====
+function rank(arr){const sorted=[...arr].map((v,i)=>({v,i})).sort((a,b)=>a.v-b.v);const r=new Array(arr.length);sorted.forEach((o,k)=>r[o.i]=k+1);return r;}
+function pearson(x,y){const n=x.length;const mx=x.reduce((a,b)=>a+b,0)/n,my=y.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){const a=x[i]-mx,b=y[i]-my;num+=a*b;dx+=a*a;dy+=b*b;}return num/Math.sqrt(dx*dy);}
+function spearman(x,y){return pearson(rank(x),rank(y));}
+function chatterjee(x,y){const n=x.length;const idx=x.map((v,i)=>i).sort((a,b)=>x[a]-x[b]);const ysort=idx.map(i=>y[i]);const r=rank(ysort);let s=0;for(let i=0;i<n-1;i++)s+=Math.abs(r[i+1]-r[i]);return 1-3*s/(n*n-1);}
+
+function genData(type,noise){const n=200,x=[],y=[];for(let i=0;i<n;i++){const xi=(i/(n-1))*2-1;let yi;switch(type){case'linear':yi=xi;break;case'monotone':yi=Math.sign(xi)*Math.pow(Math.abs(xi),0.6);break;case'quadratic':yi=xi*xi;break;case'sine':yi=Math.sin(xi*Math.PI*2);break;case'step':yi=xi<0?-0.5:0.5;break;case'noise':yi=0;break;}x.push(xi+(Math.random()-0.5)*0.05);y.push(yi+(Math.random()-0.5)*noise*2);}return{x,y};}
+
+const scatterChart=new Chart(document.getElementById('scatterChart'),{type:'scatter',data:{datasets:[{data:[],backgroundColor:'rgba(26,107,90,0.55)',pointRadius:3,pointHoverRadius:5}]},options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'X'}},y:{title:{display:true,text:'Y'}}}}});
+
+function update(){
+  const type=document.getElementById('relType').value;
+  const noise=+document.getElementById('sliderNoise').value;
+  document.getElementById('valNoise').textContent=noise.toFixed(2);
+  const {x,y}=genData(type,noise);
+  scatterChart.data.datasets[0].data=x.map((xv,i)=>({x:xv,y:y[i]}));
+  scatterChart.update('none');
+  const p=pearson(x,y),sp=spearman(x,y),xi=chatterjee(x,y);
+  document.getElementById('rPearson').textContent=p.toFixed(3);
+  document.getElementById('rSpearman').textContent=sp.toFixed(3);
+  document.getElementById('rChatterjee').textContent=xi.toFixed(3);
+  const L=I18n.get();
+  const msgs={
+    linear:{zh:'線性關係 — 三者都應該偵測得到，數值都很高。',en:'Linear — all three detect it; values all high.'},
+    monotone:{zh:'單調非線性 — Spearman 與 ξ 表現好，Pearson 因非線性會被低估。',en:'Monotone non-linear — Spearman and ξ shine; Pearson underestimates due to non-linearity.'},
+    quadratic:{zh:'二次關係 — Pearson 與 Spearman ≈ 0（看不到對稱），但 ξ 仍能捕捉到強訊號！',en:'Quadratic — Pearson and Spearman ≈ 0 (symmetric, monotone-blind), but ξ still detects the strong dependency!'},
+    sine:{zh:'正弦波 — Pearson 與 Spearman 接近 0，ξ 依然能捕捉到（細胞週期基因的典型樣態）。',en:'Sine — Pearson and Spearman ≈ 0; ξ still detects (typical of cell-cycle genes).'},
+    step:{zh:'階梯函數 — 三者都能偵測，ξ 略勝。',en:'Step — all three detect; ξ slightly higher.'},
+    noise:{zh:'純噪音 — 三者都應該接近 0（沒有真實關係）。',en:'Pure noise — all three should be ≈ 0 (no real dependency).'}
+  };
+  document.getElementById('interpret').innerHTML=msgs[type][L];
+}
+document.getElementById('relType').addEventListener('change',update);
+document.getElementById('sliderNoise').addEventListener('input',update);
+document.addEventListener('langchange',update);
+update();
+
+window._QF={zh:{
+  q1_y:'答對！Y = X² 在對稱區間時 Pearson = 0，但 ξ 能看到強函數依賴。',
+  q1_n:'答案是 C。Y = X² 在 [−1,1] 對稱時 Pearson ≈ 0，但 ξ 能偵測。',
+  q2_y:'答對！ξ 的不對稱性是其特色之一，可用來推估調控方向。',
+  q2_n:'答案是 B。ξ(X→Y) 通常不等於 ξ(Y→X)。',
+  q3_y:'答對！O(n log n)，和排序同等複雜度。',
+  q3_n:'答案是 A。主要成本來自排序，因此 O(n log n)。'
+},en:{
+  q1_y:'Correct! For symmetric Y = X², Pearson = 0 but ξ detects the strong functional dependency.',
+  q1_n:'Answer is C. For symmetric Y = X² on [−1,1], Pearson ≈ 0 but ξ detects it.',
+  q2_y:'Correct! Asymmetry is a key feature, useful for inferring regulatory direction.',
+  q2_n:'Answer is B. ξ(X→Y) generally ≠ ξ(Y→X).',
+  q3_y:'Correct! O(n log n), dominated by sorting.',
+  q3_n:'Answer is A. Sorting dominates, hence O(n log n).'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

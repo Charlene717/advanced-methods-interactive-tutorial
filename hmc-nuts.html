@@ -1,0 +1,602 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Hamiltonian MC / NUTS — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html" class="active">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 41 / 50</div><h1 data-zh="Hamiltonian MC / NUTS" data-en="Hamiltonian Monte Carlo / NUTS">Hamiltonian MC / NUTS</h1>
+<p class="subtitle" data-lang="zh">物理啟發的 MCMC：把 posterior 視為位能、引入「動量」變數，用 Hamiltonian 動力學沿等能曲線移動——比 Random Walk Metropolis 快幾個數量級。NUTS (Hoffman & Gelman 2014) 自動調整 step size 與 trajectory 長度，是 Stan / PyMC / NumPyro 的核心引擎。</p>
+<p class="subtitle" data-lang="en">A physics-inspired MCMC: treat the posterior as a potential, introduce momentum, follow Hamiltonian dynamics along constant-energy contours — orders of magnitude faster than Random Walk Metropolis. NUTS (Hoffman & Gelman 2014) auto-tunes step size and trajectory length, and is the engine of Stan / PyMC / NumPyro.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 Random Walk 到 Hamiltonian 動力學" data-en="From Random Walk to Hamiltonian Dynamics">從 Random Walk 到 Hamiltonian 動力學</h2>
+<div data-lang="zh">
+<p><strong>Random Walk Metropolis (RWM) 的問題：</strong>每步隨機 perturb θ；高維時大多數方向都「走錯」，需要極小 step size、極多步才能 mix。對 d 維 posterior，<strong>autocorrelation time ∝ d</strong>——維度詛咒。</p>
+<p><strong>HMC 的物理直覺 (Neal 2011)：</strong>把要採樣的 posterior 看作位能：</p>
+<p style="text-align:center;font-family:Georgia,serif;">U(θ) = − log p(θ | D)</p>
+<p>引入輔助動量變數 p ~ N(0, M)（M 稱為 mass matrix）。定義 Hamiltonian：</p>
+<p style="text-align:center;font-family:Georgia,serif;">H(θ, p) = U(θ) + ½ p<sup>T</sup> M<sup>−1</sup> p</p>
+<p>聯合分布 exp(−H(θ, p)) = p(θ|D) · N(p|0, M)，其中 θ 邊際就是目標 posterior。</p>
+<p><strong>核心想法：</strong>用物理動力學「跑」一段時間（leapfrog integrator 解 Hamilton 方程），然後 Metropolis accept/reject——軌跡可以走得很遠（幾十、上百步），卻仍然停留在高機率區域，因為 H 沿動力學保持（近似）守恆。</p>
+<p><strong>為何快？</strong>HMC 沿 posterior 的等高線「滑行」——避免 RWM 的「卡在局部 ridge」現象。<strong>autocorrelation time ∝ d<sup>1/4</sup></strong>（Neal 2011），對高維非常友善。</p>
+</div>
+<div data-lang="en">
+<p><strong>The Random Walk Metropolis (RWM) problem:</strong> each step randomly perturbs θ; in high dimensions most directions are "wrong", so step size shrinks and mixing slows. For a d-dim posterior, <strong>autocorrelation time ∝ d</strong> — curse of dimensionality.</p>
+<p><strong>HMC physics intuition (Neal 2011):</strong> treat the posterior as a potential:</p>
+<p style="text-align:center;font-family:Georgia,serif;">U(θ) = − log p(θ | D)</p>
+<p>Introduce auxiliary momentum p ~ N(0, M) (M = mass matrix). Define the Hamiltonian:</p>
+<p style="text-align:center;font-family:Georgia,serif;">H(θ, p) = U(θ) + ½ p<sup>T</sup> M<sup>−1</sup> p</p>
+<p>The joint distribution exp(−H(θ, p)) = p(θ|D) · N(p|0, M); marginalising p leaves the target posterior.</p>
+<p><strong>The trick:</strong> simulate Hamiltonian dynamics for a while (leapfrog integrator), then Metropolis accept/reject — trajectories can travel far (tens to hundreds of steps) while staying in high-probability regions because H is (nearly) conserved along the dynamics.</p>
+<p><strong>Why it's fast:</strong> HMC "skates" along posterior contours, avoiding RWM's "stuck on a ridge". <strong>Autocorrelation time ∝ d<sup>1/4</sup></strong> (Neal 2011) — much friendlier to high dimensions.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="高效混合" data-en="Efficient mixing">高效混合</h4><p data-lang="zh">對 d 維 posterior 的 autocorrelation 為 O(d<sup>1/4</sup>)，比 RWM 的 O(d) 好數量級。</p><p data-lang="en">Autocorrelation scales O(d<sup>1/4</sup>) vs RWM's O(d) — orders of magnitude better in high dim.</p></div>
+  <div class="card"><div class="card-icon">🎯</div><h4 data-zh="梯度引導" data-en="Gradient-guided">梯度引導</h4><p data-lang="zh">HMC 用 ∇log p 引導 proposal——直奔高密度區域，不是亂走。</p><p data-lang="en">HMC uses ∇log p to guide proposals — flying toward high-density regions, not flailing.</p></div>
+  <div class="card"><div class="card-icon">🧭</div><h4 data-zh="NUTS 自動調參" data-en="NUTS auto-tuning">NUTS 自動調參</h4><p data-lang="zh">自動決定 trajectory 長度（U-turn 偵測），免去人工調參，使 HMC 真正實用化。</p><p data-lang="en">Auto-tunes trajectory length via U-turn detection — no manual tuning, making HMC actually usable.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="Leapfrog、HMC step 與 NUTS" data-en="Leapfrog, HMC step, and NUTS">Leapfrog、HMC step 與 NUTS</h2>
+<div data-lang="zh">
+<p><strong>① Leapfrog Integrator：</strong>Hamilton 方程 dθ/dt = ∂H/∂p = M<sup>−1</sup>p，dp/dt = −∂H/∂θ = −∇U。Leapfrog 是 <strong>symplectic</strong> 數值積分（保持相空間體積、可逆），step size ε：</p>
+<ul>
+<li>p ← p − (ε/2) ∇U(θ)</li>
+<li>θ ← θ + ε M<sup>−1</sup> p</li>
+<li>p ← p − (ε/2) ∇U(θ)</li>
+</ul>
+<p>跑 L 步（總時間 T = ε·L）。symplectic 性質讓 H 漂移極小，accept rate 高。</p>
+
+<p><strong>② HMC step (Neal 2011)：</strong>給定當前 θ：</p>
+<ol>
+<li>抽 p ~ N(0, M)。</li>
+<li>跑 L 步 leapfrog 從 (θ, p) 得 (θ', p')。</li>
+<li>Metropolis accept：min(1, exp(H(θ, p) − H(θ', p')))。</li>
+<li>接受時 θ ← θ'，否則 θ 不變。</li>
+</ol>
+<p>關鍵超參：ε（step size）、L（trajectory length）、M（mass matrix）。<strong>調得好 → 90%+ accept、長距離 mixing</strong>；調不好 → divergent transitions / 卡住。</p>
+
+<p><strong>③ NUTS (Hoffman & Gelman 2014, JMLR)：</strong>自動決定 L——往前/往後雙向 doubling 樹，直到偵測到 U-turn（軌跡開始彎回）。</p>
+<ul>
+<li>從 (θ, p) 雙向 leapfrog，建構 trajectory tree（每次 doubling 樹深度）。</li>
+<li>偵測「U-turn」：(θ' − θ) · p' &lt; 0 表示軌跡開始反折，停止擴張。</li>
+<li>從整棵樹按 Metropolis 比例隨機選一點作新 θ。</li>
+<li><strong>還搭配 dual averaging</strong> 自動調 step size ε，使 target acceptance ≈ 0.8。</li>
+</ul>
+<p>NUTS 讓 HMC <strong>零調參、零選擇 L</strong>——這是 Stan / PyMC / NumPyro 成功的關鍵。</p>
+
+<p><strong>④ Riemannian HMC (Girolami & Calderhead 2011, JRSS-B)：</strong>用 Fisher 資訊矩陣作位置依賴 mass matrix M(θ)，讓 HMC 在「彎曲」的 posterior（如 hierarchical model）上更穩。代價是每步 O(d³) Cholesky 分解。</p>
+
+<p><strong>⑤ 處理離散變數：</strong>HMC 天然只適用連續變數。離散變數用 marginalize（如 latent class 模型）、Gibbs-within-HMC、或 continuous relaxation（Gumbel-softmax）。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Leapfrog Integrator:</strong> Hamilton's equations dθ/dt = ∂H/∂p = M<sup>−1</sup>p, dp/dt = −∇U. Leapfrog is a <strong>symplectic</strong> integrator (volume-preserving, reversible) with step size ε:</p>
+<ul>
+<li>p ← p − (ε/2) ∇U(θ)</li>
+<li>θ ← θ + ε M<sup>−1</sup> p</li>
+<li>p ← p − (ε/2) ∇U(θ)</li>
+</ul>
+<p>Run L steps (total time T = εL). Symplecticity keeps drift in H minimal — high acceptance rate.</p>
+
+<p><strong>② HMC step (Neal 2011):</strong> given current θ:</p>
+<ol>
+<li>Draw p ~ N(0, M).</li>
+<li>Run L leapfrog steps from (θ, p) to (θ', p').</li>
+<li>Metropolis accept: min(1, exp(H(θ, p) − H(θ', p'))).</li>
+<li>If accepted, θ ← θ'; else keep θ.</li>
+</ol>
+<p>Hyperparams: ε (step size), L (trajectory length), M (mass matrix). <strong>Tuned well → 90%+ acceptance, long-range mixing</strong>; tuned poorly → divergences / stuck.</p>
+
+<p><strong>③ NUTS (Hoffman & Gelman 2014, JMLR):</strong> auto-chooses L — doubles the trajectory bidirectionally until a U-turn is detected.</p>
+<ul>
+<li>From (θ, p), leapfrog both directions, building a tree (each doubling depth).</li>
+<li>U-turn detection: (θ' − θ) · p' &lt; 0 means the trajectory is bending back; stop.</li>
+<li>Randomly choose a new θ from the tree weighted by Metropolis criterion.</li>
+<li><strong>Dual averaging</strong> auto-tunes ε to target ~0.8 acceptance.</li>
+</ul>
+<p>NUTS makes HMC <strong>zero-tuning, zero-L-choice</strong> — the key to Stan / PyMC / NumPyro's success.</p>
+
+<p><strong>④ Riemannian HMC (Girolami & Calderhead 2011, JRSS-B):</strong> use position-dependent mass M(θ) = Fisher information — much more robust on funnel/hierarchical posteriors. Cost: O(d³) Cholesky per step.</p>
+
+<p><strong>⑤ Discrete variables:</strong> HMC handles continuous variables natively. For discrete: marginalise (latent class models), Gibbs-within-HMC, or continuous relaxation (Gumbel-softmax).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Divergent transitions 是什麼？</strong>當 ε 太大或 posterior 太彎曲時，leapfrog 數值積分爆炸——H 突然劇增。NUTS 標記這些 trajectory 為「divergent」，且 sampling 結果不可信。<strong>對策：</strong>減小 ε（或讓 NUTS 自動），改用 non-centered reparameterization（對 hierarchical model 必備），或用 Riemannian HMC。</div>
+<div data-lang="en"><strong>What are divergent transitions?</strong> When ε is too large or posterior too curved, leapfrog integration explodes — H spikes. NUTS marks these "divergent"; their samples are unreliable. <strong>Fixes:</strong> reduce ε (or let NUTS adapt), use non-centered reparameterization (a must for hierarchical models), or Riemannian HMC.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="HMC vs Random Walk Metropolis on 2D Posterior" data-en="HMC vs Random Walk Metropolis on 2D Posterior">HMC vs Random Walk Metropolis on 2D Posterior</h2>
+<div data-lang="zh"><p>下方視覺化在「相關性極強的 2D Gaussian (ρ = 0.95)」這個經典難採樣分布上的 chain 路徑。RWM 因為每步只能小幅移動、且大多走「短軸方向」會被拒絕，路徑短而蜿蜒；HMC 用梯度引導，沿著長軸高效採樣，路徑直且長距離覆蓋。調 step size 與步數觀察兩者差異。</p></div>
+<div data-lang="en"><p>This visualises chain traces on a highly correlated 2D Gaussian (ρ = 0.95) — the classic hard target. RWM takes tiny steps mostly rejected along the short axis, traces meander; HMC uses gradients to skate along the long axis, traces are straight and cover wide ground. Tune step size and length to compare.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="樣本數" data-en="Number of samples">樣本數 <span id="vN">120</span></label><input type="range" id="sN" min="30" max="400" value="120" step="10"></div>
+<div class="slider-group"><label data-zh="相關係數 ρ" data-en="Correlation ρ">相關係數 ρ <span id="vR">0.95</span></label><input type="range" id="sR" min="0.0" max="0.98" value="0.95" step="0.01"></div>
+<div class="slider-group"><label data-zh="RWM step σ" data-en="RWM step σ">RWM step σ <span id="vS">0.30</span></label><input type="range" id="sS" min="0.05" max="1.5" value="0.30" step="0.01"></div>
+<div class="slider-group"><label data-zh="HMC leapfrog 步數 L" data-en="HMC leapfrog steps L">HMC L <span id="vL">15</span></label><input type="range" id="sL" min="3" max="40" value="15" step="1"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnRedraw" class="toggle-btn"><span data-zh="重新採樣" data-en="Re-run">重新採樣</span></button>
+</div>
+<svg id="hmcSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="hmcInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="HMC / NUTS 在生物統計與生物資訊" data-en="HMC / NUTS in Biostatistics and Bioinformatics">HMC / NUTS 在生物統計與生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Stan / PyMC / NumPyro" data-en="Stan / PyMC / NumPyro">Stan / PyMC / NumPyro 通用 Bayesian</h4>
+<p data-lang="zh">Stan (Carpenter 2017, JSS)、PyMC、NumPyro 都以 NUTS 為預設 sampler。用於 single-cell normalization、batch correction、GWAS、survival analysis、Bayesian variant calling 等。<strong>scVI</strong> 雖以 VI 為主但有 HMC 版本做精確推斷對比。</p>
+<p data-lang="en">Stan (Carpenter 2017, JSS), PyMC, NumPyro all default to NUTS. Used in single-cell normalization, batch correction, GWAS, survival analysis, Bayesian variant calling. <strong>scVI</strong> is primarily VI but has HMC variants for exact-inference comparisons.</p></div>
+
+<div class="card"><h4 data-zh="BayesSpace spatial domain" data-en="BayesSpace spatial domain">BayesSpace</h4>
+<p data-lang="zh">Zhao et al. (2021, Nat Biotech) 的 BayesSpace 用 MCMC 在 spatial transcriptomics 上做 sub-spot resolution 與 domain segmentation。Bayesian hidden Markov random field 用 Gibbs + Metropolis，整合 HMC 於連續參數估計。</p>
+<p data-lang="en">Zhao et al. (2021, Nat Biotech) BayesSpace performs sub-spot resolution and domain segmentation on spatial transcriptomics. Bayesian hidden MRF uses Gibbs + Metropolis with HMC for continuous parameters.</p></div>
+
+<div class="card"><h4 data-zh="BEAST2 — 分子系統發育" data-en="BEAST2 — molecular phylogenetics">BEAST2</h4>
+<p data-lang="zh">BEAST2 (Bouckaert 2019, PLOS Comp Biol) 是分子系統發育的標準 Bayesian 軟體——HMC 對連續參數（分子鐘速率、tree height）、Metropolis-Hastings 對離散 tree topology。用於 SARS-CoV-2 演化、古 DNA、species 分歧時間估計。</p>
+<p data-lang="en">BEAST2 (Bouckaert 2019, PLOS Comp Biol) is the standard Bayesian phylogenetics tool — HMC for continuous params (clock rate, tree height), MH for discrete tree topology. Used in SARS-CoV-2 evolution, ancient DNA, species divergence dating.</p></div>
+
+<div class="card"><h4 data-zh="LeafTrack / 系譜 Bayesian inference" data-en="LeafTrack / phylogenetic Bayesian">LeafTrack 系譜推斷</h4>
+<p data-lang="zh">用 HMC 對 cell lineage tree（如 CellTagging、Cas9 scarring）估計 lineage 參數與 cell-state transition——比 maximum likelihood 更穩健，能給出不確定性區間。</p>
+<p data-lang="en">HMC for cell lineage tree inference (CellTagging, Cas9 scarring) estimates lineage parameters and cell-state transitions — more robust than MLE, with uncertainty intervals.</p></div>
+
+<div class="card"><h4 data-zh="BUGS-style 多體學模型" data-en="BUGS-style multi-omics">BUGS-style 多體學</h4>
+<p data-lang="zh">傳統 BUGS / JAGS 用 Gibbs；現代生物統計多體學模型（如 MOFA Bayesian extension、Bayesian multi-omics factorization）改用 Stan + NUTS——梯度型 sampler 對 hierarchical 模型穩定性大幅提升。</p>
+<p data-lang="en">Classic BUGS/JAGS use Gibbs; modern Bayesian multi-omics models (Bayesian MOFA, Bayesian factorization) switch to Stan + NUTS — gradient-based samplers handle hierarchical models far better.</p></div>
+
+<div class="card"><h4 data-zh="DCA / SCM 的 Bayesian variant" data-en="Bayesian DCA / SCM">Bayesian DCA / SCM</h4>
+<p data-lang="zh">Direct coupling analysis、structural causal models 的 Bayesian 版本用 NUTS 推斷 latent coupling 與 causal effect 的後驗——對小樣本不確定性更可靠。</p>
+<p data-lang="en">Bayesian variants of Direct Coupling Analysis and Structural Causal Models use NUTS for posterior over latent couplings and causal effects — more reliable uncertainty under small samples.</p></div>
+
+<div class="card"><h4 data-zh="Variant calling with HMC" data-en="Variant calling with HMC">Bayesian variant calling</h4>
+<p data-lang="zh">DeepVariant 之外的 Bayesian 路線（如 Octopus, Strelka2 的 trio mode）用 MCMC 推斷 genotype likelihoods 的後驗——對 mosaic、somatic、low-VAF variant 特別有用。HMC 比 RWM 在多 QC metrics 共同推斷時 mix 更快。</p>
+<p data-lang="en">Beyond DeepVariant, Bayesian variant callers (Octopus, Strelka2 trio mode) use MCMC for genotype likelihood posteriors — especially valuable for mosaic, somatic, low-VAF variants. HMC mixes faster than RWM on joint QC inference.</p></div>
+
+<div class="card"><h4 data-zh="Mendelian Randomisation (Bayesian)" data-en="Bayesian Mendelian Randomisation">Bayesian MR</h4>
+<p data-lang="zh">MR-Egger、Bayesian MR (Berzuini 2018, Genetic Epi)、MR-BMA 等用 HMC/NUTS 推斷因果效應的後驗，<strong>內建 horizontal pleiotropy 校正</strong>，比 frequentist IVW 更穩。</p>
+<p data-lang="en">MR-Egger, Bayesian MR (Berzuini 2018, Genetic Epi), MR-BMA use HMC/NUTS for causal-effect posteriors with <strong>built-in horizontal pleiotropy correction</strong> — more robust than frequentist IVW.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="HMC / NUTS 進階主題" data-en="Advanced HMC / NUTS Topics">HMC / NUTS 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Symplectic integrators 為何重要</h3>
+<p>Leapfrog 是 second-order symplectic integrator——保持相空間體積、可逆。<strong>能量誤差 O(ε²)</strong> 隨積分時間有界（不會線性累積）。用 RK4 等非 symplectic integrator 會讓 H 漂移、accept rate 崩潰。Higher-order symplectic（如 4th-order Yoshida）在某些情況更佳但每步開銷更大。</p>
+
+<h3>② Mass matrix 調校的關鍵</h3>
+<p>M = posterior covariance 的反矩陣是「最佳」mass matrix——讓所有方向 mix 速度相當。NUTS 的 <strong>dense mass matrix adaptation</strong>（warm-up 期估計）對 highly correlated posterior 至關重要。實務：先用 diagonal mass，必要時切到 dense。</p>
+
+<h3>③ Non-centered reparameterization</h3>
+<p>Hierarchical model（如 random effects）有「neal's funnel」幾何——σ² 接近 0 時 θ_i 強相關於 σ²，HMC 很容易 divergent。<strong>解法：</strong>把 θ_i = μ + σ · z_i（z_i ~ N(0,1)）取代直接 θ_i ~ N(μ, σ²)。這把 funnel 拉直成 isotropic Gaussian。Stan 文件第一條建議。</p>
+
+<h3>④ NUTS 的內部運作</h3>
+<p>NUTS 的核心是 <strong>doubling 樹</strong>：從 (θ, p) 向前/向後（隨機選）leapfrog 跑 2<sup>j</sup> 步、檢查 U-turn 與 divergence、達上限或停止條件就停。然後從整棵樹按 Metropolis 比例隨機選一點。為何不偏 bias？因為 U-turn 條件 + 樹採樣方式設計成 <strong>detailed balance preserving</strong>（Hoffman & Gelman 2014 證明）。</p>
+
+<h3>⑤ R-hat 與 ESS 診斷</h3>
+<ul>
+<li><strong>R-hat (Gelman-Rubin)：</strong>多 chain 的方差比，R̂ &lt; 1.01 為收斂。</li>
+<li><strong>ESS (effective sample size)：</strong>考慮 autocorrelation 後的「有效」獨立樣本數，&gt; 400 per parameter 是常用門檻。</li>
+<li><strong>Divergence count：</strong>NUTS 出現 divergent transitions → posterior 不可信，必須處理（重 parameterize / 改先驗 / 減 ε）。</li>
+<li><strong>Tree depth saturation：</strong>NUTS 達到 max tree depth（預設 10）→ 軌跡可能不夠長，posterior 多模或極彎曲。</li>
+</ul>
+
+<h3>⑥ HMC 與 Langevin 動力學的關係</h3>
+<p>當 L = 1（只走一步）時 HMC 退化為 Metropolis-Adjusted Langevin Algorithm (MALA)。HMC 是 MALA 的「長軌跡」版——更好 mix 但每步更貴。SGLD、SG-HMC（stochastic gradient HMC, Chen 2014）是大資料版，用 minibatch 梯度估計取代 full ∇U。</p>
+
+<h3>⑦ 與 VI 的選擇</h3>
+<p>VI 快但只給點估計；HMC 慢但給精確後驗。<strong>實務經驗：</strong>探索期用 VI（pymc 的 ADVI、NumPyro 的 SVI）快速估計；最終 paper 用 NUTS 跑「完整版」。重要決策模型（藥物效應、臨床試驗）必須用 HMC。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Why symplectic integrators matter</h3>
+<p>Leapfrog is a second-order symplectic integrator — volume-preserving, reversible. <strong>Energy error O(ε²)</strong> stays bounded over time (no linear drift). Non-symplectic integrators (RK4) cause H drift and collapsing acceptance rates. Higher-order symplectic (Yoshida 4th-order) can be better, at higher per-step cost.</p>
+
+<h3>② Mass matrix tuning is critical</h3>
+<p>M = (posterior covariance)<sup>−1</sup> is the optimal mass matrix — equalises mixing across directions. NUTS's <strong>dense mass matrix adaptation</strong> during warm-up is essential for highly correlated posteriors. Practice: start with diagonal; upgrade to dense if needed.</p>
+
+<h3>③ Non-centered reparameterization</h3>
+<p>Hierarchical models (random effects) exhibit "Neal's funnel" — when σ → 0, θ_i is strongly tied to σ; HMC diverges easily. <strong>Fix:</strong> use θ_i = μ + σ · z_i with z_i ~ N(0,1) instead of θ_i ~ N(μ, σ²). Straightens the funnel into an isotropic Gaussian. Top Stan recommendation.</p>
+
+<h3>④ NUTS internals</h3>
+<p>NUTS's core: a <strong>doubling tree</strong> — leapfrog forward/backward (random direction) for 2<sup>j</sup> steps, check U-turn and divergence, stop on either or max depth. Then sample from the tree weighted by Metropolis criterion. Why unbiased? Because the U-turn criterion + tree sampling scheme are designed to preserve <strong>detailed balance</strong> (Hoffman & Gelman 2014).</p>
+
+<h3>⑤ R-hat and ESS diagnostics</h3>
+<ul>
+<li><strong>R-hat (Gelman-Rubin):</strong> multi-chain variance ratio; R̂ &lt; 1.01 = converged.</li>
+<li><strong>ESS (effective sample size):</strong> autocorrelation-adjusted "independent" samples; &gt; 400 per param is a common bar.</li>
+<li><strong>Divergence count:</strong> NUTS divergences → posterior unreliable; must fix (reparameterize / change prior / smaller ε).</li>
+<li><strong>Tree depth saturation:</strong> hits max depth (default 10) → trajectories may be too short; posterior multimodal or very curved.</li>
+</ul>
+
+<h3>⑥ Relation to Langevin dynamics</h3>
+<p>When L = 1 HMC degenerates to Metropolis-Adjusted Langevin (MALA). HMC is the "long trajectory" version — better mixing, more expensive per step. SGLD, SG-HMC (Chen 2014) are big-data variants using minibatch gradients instead of full ∇U.</p>
+
+<h3>⑦ vs Variational Inference</h3>
+<p>VI is fast but point-estimate; HMC is slow but exact. <strong>Workflow:</strong> exploration with VI (pymc's ADVI, NumPyro SVI) for fast estimates; final paper uses NUTS for the full posterior. Mission-critical (drug effect, clinical trials) → always HMC.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="HMC / NUTS 還能改良哪些任務？" data-en="What Else Could HMC / NUTS Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 單細胞 batch effect 不確定性</h3>
+<p>Harmony、scVI 給點估計 batch corrections；下游分析（如 DE）忽略 batch correction 的不確定性。<strong>提案：</strong>用 NUTS 推斷 batch correction 參數的完整後驗，propagate 到 DE p-value 校正。</p>
+
+<h3>🎯 2. 罕病 trio variant calling</h3>
+<p>Trio analysis（patient + 父 + 母）有複雜的遺傳模式（de novo, mosaic, compound het）。<strong>提案：</strong>Bayesian trio caller 用 NUTS 推斷 variant origin 後驗，給臨床醫師完整 likelihood 與不確定性，而非單一 yes/no。</p>
+
+<h3>🎯 3. Cell lineage tree 不確定性</h3>
+<p>CellTagging / Cas9 scarring 的 lineage tree 通常以 ML 估計，無不確定性。<strong>提案：</strong>Bayesian lineage tree，HMC 對 continuous（branch length, mutation rate）+ MH 對 tree topology，給出 tree posterior。</p>
+
+<h3>🎯 4. 多體學 joint posterior</h3>
+<p>多體學整合（如 MOFA、Seurat WNN）多是點估計或 VI。<strong>提案：</strong>Bayesian multi-omics with NUTS，給出 latent factor 的完整後驗，特別是 missingness 與 zero-inflation 下的不確定性。</p>
+
+<h3>🎯 5. Drug-target interaction Bayesian model</h3>
+<p>DTI prediction 目前主流 deep learning 給點估計。<strong>提案：</strong>Bayesian neural network + HMC 推斷 DTI posterior，給出 calibrated uncertainty——對藥物 repurposing 與 active learning 至關重要。</p>
+
+<h3>🎯 6. Spatial transcriptomics Bayesian deconvolution</h3>
+<p>Spot 是多 cell-type 混合；cell2location、CARD 給點估計。<strong>提案：</strong>NUTS 對 deconvolution 模型，給每個 spot 的 cell-type fraction posterior，能標出 spot 中是否有 rare cell type。</p>
+
+<h3>🎯 7. CRISPR screening 的 Bayesian effect size</h3>
+<p>MAGeCK / BAGEL 給 effect size 點估計；對 essentiality 邊界基因不可靠。<strong>提案：</strong>Bayesian screen analysis with NUTS，給每個 gene 的 essentiality posterior，特別有助 synthetic lethality 識別。</p>
+
+<h3>🎯 8. PK/PD Bayesian modeling</h3>
+<p>藥物 PK/PD 通常用 NONMEM (frequentist NLME)。<strong>提案：</strong>Stan/PyMC NUTS 做 hierarchical PK/PD，加入 between-subject variability、measurement error、prior knowledge——對 first-in-human dosing 有更穩健的不確定性傳遞。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Batch-correction uncertainty in single-cell</h3>
+<p>Harmony, scVI give point batch corrections; downstream DE ignores correction uncertainty. <strong>Proposal:</strong> NUTS over batch-correction parameters with full posterior; propagate into DE p-value calibration.</p>
+
+<h3>🎯 2. Rare-disease trio variant calling</h3>
+<p>Trio analysis (proband + father + mother) has complex inheritance patterns (de novo, mosaic, compound het). <strong>Proposal:</strong> Bayesian trio caller with NUTS — variant-origin posterior, full likelihood + uncertainty for clinicians, not a yes/no.</p>
+
+<h3>🎯 3. Cell lineage tree uncertainty</h3>
+<p>CellTagging / Cas9 scarring lineage trees are usually ML estimates, no uncertainty. <strong>Proposal:</strong> Bayesian lineage tree — HMC for continuous params (branch length, mutation rate) + MH for topology — full tree posterior.</p>
+
+<h3>🎯 4. Joint multi-omics posterior</h3>
+<p>Multi-omics integration (MOFA, Seurat WNN) usually point estimate or VI. <strong>Proposal:</strong> Bayesian multi-omics with NUTS — full latent factor posterior, especially under missingness and zero-inflation.</p>
+
+<h3>🎯 5. Bayesian drug-target interaction</h3>
+<p>DTI prediction is dominated by deep learning point estimates. <strong>Proposal:</strong> Bayesian NN + HMC for DTI posterior — calibrated uncertainty matters for drug repurposing and active learning.</p>
+
+<h3>🎯 6. Bayesian spatial deconvolution</h3>
+<p>Spots are cell-type mixtures; cell2location, CARD give point estimates. <strong>Proposal:</strong> NUTS-based deconvolution — per-spot cell-type fraction posteriors, flagging rare cell-type presence.</p>
+
+<h3>🎯 7. Bayesian CRISPR screen effect sizes</h3>
+<p>MAGeCK, BAGEL give point effect sizes; borderline essentials are unreliable. <strong>Proposal:</strong> Bayesian screen analysis with NUTS — per-gene essentiality posterior, especially useful for synthetic-lethal pairs.</p>
+
+<h3>🎯 8. Bayesian PK/PD modelling</h3>
+<p>Drug PK/PD is usually NONMEM (frequentist NLME). <strong>Proposal:</strong> Stan/PyMC NUTS for hierarchical PK/PD — between-subject variability, measurement error, prior knowledge — more robust uncertainty for first-in-human dosing.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'hmc1')">PyMC</button>
+<button class="code-tab-btn" onclick="switchTab(this,'hmc2')">NumPyro</button>
+<button class="code-tab-btn" onclick="switchTab(this,'hmc3')">CmdStanPy</button>
+<button class="code-tab-btn" onclick="switchTab(this,'hmc4')">From-scratch HMC</button>
+</div>
+
+<div class="code-tab-content active" id="hmc1"><pre><span class="comment"># pip install pymc</span>
+<span class="keyword">import</span> pymc <span class="keyword">as</span> pm
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">with</span> pm.Model() <span class="keyword">as</span> model:
+    <span class="comment"># Hierarchical model: cells in batches</span>
+    mu_global = pm.Normal(<span class="str">'mu_global'</span>, <span class="num">0</span>, <span class="num">5</span>)
+    sigma_b   = pm.HalfNormal(<span class="str">'sigma_b'</span>, <span class="num">2</span>)
+    <span class="comment"># Non-centered reparameterization (avoid funnel!)</span>
+    z_batch   = pm.Normal(<span class="str">'z_batch'</span>, <span class="num">0</span>, <span class="num">1</span>, shape=N_BATCH)
+    mu_batch  = pm.Deterministic(<span class="str">'mu_batch'</span>, mu_global + sigma_b * z_batch)
+    sigma     = pm.HalfNormal(<span class="str">'sigma'</span>, <span class="num">1</span>)
+    y         = pm.Normal(<span class="str">'y'</span>, mu_batch[batch_idx], sigma, observed=expr)
+
+    <span class="comment"># NUTS sampler (default)</span>
+    trace = pm.sample(<span class="num">2000</span>, tune=<span class="num">1000</span>, target_accept=<span class="num">0.9</span>,
+                      chains=<span class="num">4</span>, return_inferencedata=<span class="keyword">True</span>)
+
+<span class="comment"># Diagnostics</span>
+<span class="keyword">import</span> arviz <span class="keyword">as</span> az
+print(az.summary(trace, var_names=[<span class="str">'mu_global'</span>,<span class="str">'sigma_b'</span>]))
+az.plot_trace(trace)</pre></div>
+
+<div class="code-tab-content" id="hmc2"><pre><span class="comment"># pip install numpyro jax</span>
+<span class="keyword">import</span> numpyro
+<span class="keyword">import</span> numpyro.distributions <span class="keyword">as</span> dist
+<span class="keyword">from</span> numpyro.infer <span class="keyword">import</span> NUTS, MCMC
+<span class="keyword">import</span> jax.random <span class="keyword">as</span> random
+
+<span class="keyword">def</span> model(batch_idx, expr=<span class="keyword">None</span>):
+    mu_global = numpyro.sample(<span class="str">'mu_global'</span>, dist.Normal(<span class="num">0</span>, <span class="num">5</span>))
+    sigma_b   = numpyro.sample(<span class="str">'sigma_b'</span>, dist.HalfNormal(<span class="num">2</span>))
+    <span class="keyword">with</span> numpyro.plate(<span class="str">'batches'</span>, N_BATCH):
+        z = numpyro.sample(<span class="str">'z'</span>, dist.Normal(<span class="num">0</span>, <span class="num">1</span>))
+    mu_batch = mu_global + sigma_b * z
+    sigma    = numpyro.sample(<span class="str">'sigma'</span>, dist.HalfNormal(<span class="num">1</span>))
+    <span class="keyword">with</span> numpyro.plate(<span class="str">'obs'</span>, len(batch_idx)):
+        numpyro.sample(<span class="str">'y'</span>, dist.Normal(mu_batch[batch_idx], sigma), obs=expr)
+
+kernel = NUTS(model, target_accept_prob=<span class="num">0.9</span>)
+mcmc = MCMC(kernel, num_warmup=<span class="num">1000</span>, num_samples=<span class="num">2000</span>, num_chains=<span class="num">4</span>)
+mcmc.run(random.PRNGKey(<span class="num">0</span>), batch_idx, expr)
+mcmc.print_summary()</pre></div>
+
+<div class="code-tab-content" id="hmc3"><pre><span class="comment"># pip install cmdstanpy</span>
+<span class="comment"># model.stan:</span>
+<span class="comment"># data { int&lt;lower=0&gt; N; int&lt;lower=0&gt; K; vector[N] y;</span>
+<span class="comment">#        array[N] int&lt;lower=1,upper=K&gt; batch; }</span>
+<span class="comment"># parameters { real mu_global; real&lt;lower=0&gt; sigma_b;</span>
+<span class="comment">#              vector[K] z_batch; real&lt;lower=0&gt; sigma; }</span>
+<span class="comment"># transformed parameters { vector[K] mu_batch = mu_global + sigma_b * z_batch; }</span>
+<span class="comment"># model { mu_global ~ normal(0, 5); sigma_b ~ normal(0, 2);</span>
+<span class="comment">#         z_batch ~ normal(0, 1); sigma ~ normal(0, 1);</span>
+<span class="comment">#         y ~ normal(mu_batch[batch], sigma); }</span>
+
+<span class="keyword">from</span> cmdstanpy <span class="keyword">import</span> CmdStanModel
+model = CmdStanModel(stan_file=<span class="str">'model.stan'</span>)
+fit = model.sample(data=dict(N=N, K=K, y=y, batch=batch),
+                   chains=<span class="num">4</span>, iter_warmup=<span class="num">1000</span>, iter_sampling=<span class="num">2000</span>,
+                   adapt_delta=<span class="num">0.95</span>)
+print(fit.summary())
+print(fit.diagnose())     <span class="comment"># R-hat, ESS, divergences</span></pre></div>
+
+<div class="code-tab-content" id="hmc4"><pre><span class="comment"># Minimal HMC from scratch (didactic)</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> leapfrog(theta, p, grad_U, eps, L):
+    p = p - eps/<span class="num">2</span> * grad_U(theta)
+    <span class="keyword">for</span> _ <span class="keyword">in</span> range(L-<span class="num">1</span>):
+        theta = theta + eps * p
+        p     = p - eps * grad_U(theta)
+    theta = theta + eps * p
+    p     = p - eps/<span class="num">2</span> * grad_U(theta)
+    <span class="keyword">return</span> theta, -p   <span class="comment"># negate p for symmetry</span>
+
+<span class="keyword">def</span> hmc_step(theta, U, grad_U, eps=<span class="num">0.1</span>, L=<span class="num">20</span>):
+    p0 = np.random.randn(*theta.shape)
+    theta_new, p_new = leapfrog(theta, p0, grad_U, eps, L)
+    H_old = U(theta)       + <span class="num">0.5</span>*(p0**<span class="num">2</span>).sum()
+    H_new = U(theta_new)   + <span class="num">0.5</span>*(p_new**<span class="num">2</span>).sum()
+    <span class="keyword">if</span> np.log(np.random.rand()) &lt; H_old - H_new:
+        <span class="keyword">return</span> theta_new, <span class="keyword">True</span>
+    <span class="keyword">return</span> theta, <span class="keyword">False</span>
+
+<span class="comment"># Example: 2D correlated Gaussian</span>
+S = np.array([[<span class="num">1.0</span>, <span class="num">0.95</span>],[<span class="num">0.95</span>, <span class="num">1.0</span>]])
+Si = np.linalg.inv(S)
+U = <span class="keyword">lambda</span> th: <span class="num">0.5</span> * th @ Si @ th
+gU = <span class="keyword">lambda</span> th: Si @ th
+
+theta = np.zeros(<span class="num">2</span>); chain=[theta.copy()]
+<span class="keyword">for</span> _ <span class="keyword">in</span> range(<span class="num">5000</span>):
+    theta, acc = hmc_step(theta, U, gU, eps=<span class="num">0.18</span>, L=<span class="num">15</span>)
+    chain.append(theta.copy())</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">HMC 為何比 Random Walk Metropolis 在高維下混合更快？</p><p data-lang="en">Why does HMC mix faster than Random Walk Metropolis in high dimensions?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. HMC 不需要 Metropolis accept/reject</span><span data-lang="en">A. HMC needs no Metropolis accept/reject</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. HMC 的步長隨機選擇</span><span data-lang="en">B. HMC picks step sizes at random</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. HMC 用 ∇log p 引導 proposal，沿等能曲線「滑行」並可走長距離；autocorrelation 為 O(d^(1/4)) vs RWM 的 O(d)</span><span data-lang="en">C. HMC uses ∇log p to guide proposals, skating along energy contours over long distances; autocorrelation O(d^(1/4)) vs RWM's O(d)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. HMC 完全跳過 posterior，直接從 prior 採樣</span><span data-lang="en">D. HMC bypasses the posterior and samples from the prior</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">NUTS (No-U-Turn Sampler) 解決了 HMC 的什麼問題？</p><p data-lang="en">What problem does NUTS solve for HMC?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 完全去掉動量變數</span><span data-lang="en">A. Removes the momentum variable entirely</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 自動決定 trajectory 長度 L 與 step size ε——免去人工調參，讓 HMC 真正實用化</span><span data-lang="en">B. Auto-tunes trajectory length L and step size ε — eliminating manual tuning, making HMC practical</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 替代 leapfrog 為 Euler 積分</span><span data-lang="en">C. Replaces leapfrog with Euler integration</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 只用於離散變數</span><span data-lang="en">D. Only works for discrete variables</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">遇到 hierarchical model 出現大量 divergent transitions 時，最常見的修補手段是？</p><p data-lang="en">When a hierarchical model shows many divergent transitions, what is the most common fix?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 用 non-centered reparameterization（θ = μ + σ·z, z~N(0,1)）拉直 funnel 幾何</span><span data-lang="en">A. Non-centered reparameterization (θ = μ + σ·z, z~N(0,1)) to straighten the funnel</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 改用 Gradient Descent</span><span data-lang="en">B. Switch to gradient descent</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 完全刪除超參數</span><span data-lang="en">C. Delete all hyperparameters</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 把所有變數設為固定</span><span data-lang="en">D. Fix all variables to constants</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="gflownets.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 40：GFlowNets" data-en="Ch 40: GFlowNets">Ch 40：GFlowNets</span></a>
+<a href="knockoff.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 42：Knockoff" data-en="Ch 42: Knockoff">Ch 42：Knockoff</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: HMC vs RWM on correlated 2D Gaussian =====
+const HSVG=document.getElementById('hmcSvg');
+const Wh=600, Hh=360;
+
+// Standard Gaussian sample via Box-Muller
+function randn(){
+  let u=Math.random(),v=Math.random();
+  return Math.sqrt(-2*Math.log(Math.max(1e-9,u)))*Math.cos(2*Math.PI*v);
+}
+
+function buildInvCov(rho){
+  const det = 1 - rho*rho;
+  return [[1/det, -rho/det],[-rho/det, 1/det]];
+}
+function logp(theta, Sinv){
+  const x=theta[0], y=theta[1];
+  return -0.5*(Sinv[0][0]*x*x + 2*Sinv[0][1]*x*y + Sinv[1][1]*y*y);
+}
+function gradU(theta, Sinv){
+  // U = -logp => gradU = Sinv·theta
+  return [Sinv[0][0]*theta[0]+Sinv[0][1]*theta[1],
+          Sinv[1][0]*theta[0]+Sinv[1][1]*theta[1]];
+}
+
+function leapfrog(theta, p, Sinv, eps, L){
+  let th=[theta[0],theta[1]], pp=[p[0],p[1]];
+  let g=gradU(th,Sinv);
+  pp[0]-=0.5*eps*g[0]; pp[1]-=0.5*eps*g[1];
+  for(let i=0;i<L-1;i++){
+    th[0]+=eps*pp[0]; th[1]+=eps*pp[1];
+    g=gradU(th,Sinv);
+    pp[0]-=eps*g[0]; pp[1]-=eps*g[1];
+  }
+  th[0]+=eps*pp[0]; th[1]+=eps*pp[1];
+  g=gradU(th,Sinv);
+  pp[0]-=0.5*eps*g[0]; pp[1]-=0.5*eps*g[1];
+  return [th,pp];
+}
+
+function runRWM(N,sigma,Sinv){
+  let th=[0.0,0.0]; const chain=[[...th]]; let acc=0;
+  for(let i=0;i<N;i++){
+    const cand=[th[0]+sigma*randn(), th[1]+sigma*randn()];
+    const logA=logp(cand,Sinv)-logp(th,Sinv);
+    if(Math.log(Math.random())<logA){th=cand;acc++;}
+    chain.push([...th]);
+  }
+  return {chain, acc:acc/N};
+}
+function runHMC(N,L,Sinv){
+  let th=[0.0,0.0]; const chain=[[...th]]; let acc=0;
+  const eps=0.15;
+  for(let i=0;i<N;i++){
+    const p0=[randn(),randn()];
+    const [thN,pN]=leapfrog(th,p0,Sinv,eps,L);
+    const H_old = -logp(th,Sinv)  + 0.5*(p0[0]*p0[0]+p0[1]*p0[1]);
+    const H_new = -logp(thN,Sinv) + 0.5*(pN[0]*pN[0]+pN[1]*pN[1]);
+    if(Math.log(Math.random())<H_old-H_new){th=thN;acc++;}
+    chain.push([...th]);
+  }
+  return {chain, acc:acc/N};
+}
+
+// Coords mapping: theta-space [-4,4] -> svg
+function toScrX(x){return Wh*0.5 + x*30;}
+function toScrY(y){return Hh*0.55 - y*30;}
+
+// Draw posterior ellipse contour (one std)
+function drawEllipse(rho,col){
+  // For 2D Gaussian with cov [[1,rho],[rho,1]], the 1-sigma ellipse is computed via eigenvectors.
+  const a=1+rho, b=1-rho;         // eigenvalues of cov
+  const sa=Math.sqrt(a)*40, sb=Math.sqrt(b)*40;   // pixel scale (theta unit -> px)
+  // eigenvectors at 45 deg
+  const cx=toScrX(0), cy=toScrY(0);
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${sa}" ry="${sb}" fill="none" stroke="${col}" stroke-width="1.2" stroke-dasharray="4 3" transform="rotate(-45 ${cx} ${cy})"/>`;
+}
+
+function render(){
+  const N=+document.getElementById('sN').value;
+  const rho=+document.getElementById('sR').value;
+  const sigma=+document.getElementById('sS').value;
+  const L=+document.getElementById('sL').value;
+  document.getElementById('vN').textContent=N;
+  document.getElementById('vR').textContent=rho.toFixed(2);
+  document.getElementById('vS').textContent=sigma.toFixed(2);
+  document.getElementById('vL').textContent=L;
+
+  const Sinv=buildInvCov(rho);
+  const rwm=runRWM(N,sigma,Sinv);
+  const hmc=runHMC(N,L,Sinv);
+
+  let svg='';
+  // Grid
+  svg+=`<rect x="0" y="0" width="${Wh}" height="${Hh}" fill="#fafafa"/>`;
+  for(let i=-4;i<=4;i++){
+    svg+=`<line x1="${toScrX(i)}" y1="0" x2="${toScrX(i)}" y2="${Hh}" stroke="#eee" stroke-width="0.8"/>`;
+    svg+=`<line x1="0" y1="${toScrY(i)}" x2="${Wh}" y2="${toScrY(i)}" stroke="#eee" stroke-width="0.8"/>`;
+  }
+  svg+=`<line x1="0" y1="${toScrY(0)}" x2="${Wh}" y2="${toScrY(0)}" stroke="#ccc" stroke-width="1"/>`;
+  svg+=`<line x1="${toScrX(0)}" y1="0" x2="${toScrX(0)}" y2="${Hh}" stroke="#ccc" stroke-width="1"/>`;
+  // 1-sigma and 2-sigma contours
+  svg+=drawEllipse(rho,'#888');
+  // 2-sigma (scale up factor of 2)
+  const a=1+rho, b=1-rho;
+  const cx=toScrX(0), cy=toScrY(0);
+  svg+=`<ellipse cx="${cx}" cy="${cy}" rx="${2*Math.sqrt(a)*40}" ry="${2*Math.sqrt(b)*40}" fill="none" stroke="#bbb" stroke-width="1" stroke-dasharray="3 3" transform="rotate(-45 ${cx} ${cy})"/>`;
+
+  // RWM trace
+  let rwmPath="";
+  rwm.chain.forEach((pt,i)=>{rwmPath+=(i===0?"M ":"L ")+toScrX(pt[0])+","+toScrY(pt[1])+" ";});
+  svg+=`<path d="${rwmPath}" stroke="#c0392b" stroke-width="1.2" fill="none" opacity="0.85"/>`;
+  // RWM samples
+  rwm.chain.forEach(pt=>{
+    svg+=`<circle cx="${toScrX(pt[0])}" cy="${toScrY(pt[1])}" r="1.6" fill="#c0392b" opacity="0.6"/>`;
+  });
+  // HMC trace
+  let hmcPath="";
+  hmc.chain.forEach((pt,i)=>{hmcPath+=(i===0?"M ":"L ")+toScrX(pt[0])+","+toScrY(pt[1])+" ";});
+  svg+=`<path d="${hmcPath}" stroke="#2563a8" stroke-width="1.2" fill="none" opacity="0.85"/>`;
+  hmc.chain.forEach(pt=>{
+    svg+=`<circle cx="${toScrX(pt[0])}" cy="${toScrY(pt[1])}" r="1.6" fill="#2563a8" opacity="0.7"/>`;
+  });
+  // Labels
+  svg+=`<rect x="14" y="12" width="12" height="12" fill="#c0392b" rx="2"/><text x="32" y="22" font-size="11" fill="#5a4632">Random Walk Metropolis</text>`;
+  svg+=`<rect x="14" y="28" width="12" height="12" fill="#2563a8" rx="2"/><text x="32" y="38" font-size="11" fill="#5a4632">HMC (gradient guided)</text>`;
+  svg+=`<text x="${Wh-14}" y="22" text-anchor="end" font-size="11" fill="#888">target: 2D Gaussian, ρ=${rho.toFixed(2)}</text>`;
+  HSVG.innerHTML=svg;
+
+  // Compute coverage: chain-mean and last-point spread
+  function spread(chain){
+    let mx=0,my=0;chain.forEach(p=>{mx+=p[0];my+=p[1];});mx/=chain.length;my/=chain.length;
+    let sx=0,sy=0;chain.forEach(p=>{sx+=(p[0]-mx)**2;sy+=(p[1]-my)**2;});
+    return Math.sqrt((sx+sy)/chain.length);
+  }
+  const sR=spread(rwm.chain), sH=spread(hmc.chain);
+  const L_=I18n.get();
+  document.getElementById('hmcInfo').innerHTML=L_==='zh'?
+    `<strong>RWM</strong> ${N} 步：accept rate ≈ <strong>${(rwm.acc*100).toFixed(1)}%</strong>，chain spread ≈ <strong>${sR.toFixed(2)}</strong>。<br>
+    <strong>HMC</strong> ${N} 步（leapfrog L=${L}）：accept rate ≈ <strong>${(hmc.acc*100).toFixed(1)}%</strong>，chain spread ≈ <strong>${sH.toFixed(2)}</strong>。<br>
+    Spread 越接近真實 std≈1.4 越好。提高 ρ（相關性）：RWM spread 會下降（被卡在 narrow ridge），HMC 仍能覆蓋整個 posterior。這就是 HMC 在高維、強相關 posterior 上的核心優勢。`
+    :
+    `<strong>RWM</strong> ${N} steps: accept rate ≈ <strong>${(rwm.acc*100).toFixed(1)}%</strong>, chain spread ≈ <strong>${sR.toFixed(2)}</strong>.<br>
+    <strong>HMC</strong> ${N} steps (leapfrog L=${L}): accept rate ≈ <strong>${(hmc.acc*100).toFixed(1)}%</strong>, chain spread ≈ <strong>${sH.toFixed(2)}</strong>.<br>
+    Spread should approach the true std ≈ 1.4. Raise ρ (correlation): RWM spread shrinks (stuck on the narrow ridge); HMC still covers the full posterior. That's HMC's core win on high-dim, correlated posteriors.`;
+}
+
+document.getElementById('sN').addEventListener('input',render);
+document.getElementById('sR').addEventListener('input',render);
+document.getElementById('sS').addEventListener('input',render);
+document.getElementById('sL').addEventListener('input',render);
+document.getElementById('btnRedraw').addEventListener('click',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！HMC 用梯度沿等能曲線高效採樣，autocorrelation 隨維度只 O(d^1/4) 成長。',
+  q1_n:'答案是 C。HMC 借 Hamiltonian 動力學沿 posterior 等高線移動，比 RWM 的盲走快得多。',
+  q2_y:'答對！NUTS 自動決定軌跡長度 + dual averaging 自動調 step size，真正即插即用。',
+  q2_n:'答案是 B。NUTS 解決 HMC 最大痛點：手動調 L、ε。所以 Stan / PyMC / NumPyro 才能風靡。',
+  q3_y:'答對！Non-centered reparameterization 把 funnel 拉直，是 hierarchical model 的標配技巧。',
+  q3_n:'答案是 A。hierarchical model 的「Neal\'s funnel」幾何讓 HMC divergent；non-centered (θ = μ + σ·z) 是最有效的修補。'
+},en:{
+  q1_y:'Correct! HMC uses gradients to skate along energy contours; autocorrelation grows only as O(d^(1/4)).',
+  q1_n:'Answer is C. HMC follows Hamiltonian dynamics along posterior contours — much faster than RWM\'s blind walk.',
+  q2_y:'Correct! NUTS auto-determines trajectory length and uses dual averaging for step size — truly plug-and-play.',
+  q2_n:'Answer is B. NUTS solves HMC\'s biggest pain point: manual L and ε tuning. That\'s why Stan / PyMC / NumPyro took off.',
+  q3_y:'Correct! Non-centered reparameterization straightens the funnel — the standard fix for hierarchical models.',
+  q3_n:'Answer is A. The "Neal\'s funnel" geometry of hierarchical models causes HMC divergences; non-centered (θ = μ + σ·z) is the canonical fix.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

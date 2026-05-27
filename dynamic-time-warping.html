@@ -1,0 +1,554 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Dynamic Time Warping — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html" class="active">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 43 / 50</div><h1 data-zh="動態時間規整 (Dynamic Time Warping)" data-en="Dynamic Time Warping">動態時間規整 (Dynamic Time Warping)</h1>
+<p class="subtitle" data-lang="zh">比較兩條時間序列、但允許「時間軸局部伸縮」的經典演算法（Sakoe & Chiba 1978, IEEE）。從語音辨識起家，今天已是 cellAlign（單細胞 pseudotime 對齊）、ECG/EEG、microbiome 縱貫資料的標配。Soft-DTW (Cuturi 2017) 讓它可微，可直接訓 NN。</p>
+<p class="subtitle" data-lang="en">A classical algorithm (Sakoe & Chiba 1978, IEEE) that compares two time series allowing "local time-axis stretching". Originally for speech recognition, now ubiquitous in cellAlign (pseudotime alignment), ECG/EEG, longitudinal microbiome. Soft-DTW (Cuturi 2017) makes it differentiable and end-to-end trainable.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為什麼需要 DTW？" data-en="Why DTW?">為什麼需要 DTW？</h2>
+<div data-lang="zh">
+<p><strong>歐式距離的局限：</strong>兩條時間序列 x[1..N]、y[1..M] 的歐式距離要求 N = M 且「逐點對齊」。但實際上：</p>
+<ul>
+<li>同一首歌不同人哼唱——速度不一致</li>
+<li>同一通路活化於兩個樣本——時序略有偏移</li>
+<li>同一心跳——R 波位置會漂移</li>
+</ul>
+<p>歐式距離會誤判這些「形狀相同、時間略偏移」的訊號為「不同」。</p>
+<p><strong>DTW 的核心：</strong>允許 x 的時間軸 i 與 y 的時間軸 j 做「彈性對應」——以 monotone non-decreasing path (i₁, j₁) → (i₂, j₂) → ... 的方式對應兩條序列，使路徑上點對的距離總和最小。</p>
+<p><strong>遞推公式：</strong>定義 DP 矩陣 D ∈ ℝ^(N × M)，</p>
+<p style="text-align:center;font-family:Georgia,serif;">D(i, j) = d(x_i, y_j) + min{D(i-1, j), D(i, j-1), D(i-1, j-1)}</p>
+<p>其中 d(·, ·) 通常是 |x_i − y_j| 或 (x_i − y_j)²。最終 DTW(x, y) = D(N, M)。Backtracking 還原最佳對齊路徑。時間複雜度 O(NM)。</p>
+<p><strong>關鍵限制：</strong>路徑必須 (i) 從 (1,1) 到 (N, M)；(ii) 單調不下降（時間不能倒流）；(iii) 連續（不能跳格）。實務常加 <strong>Sakoe-Chiba band</strong>：|i − j| ≤ w 的對角帶約束，把複雜度降到 O(N·w)。</p>
+</div>
+<div data-lang="en">
+<p><strong>Euclidean's limitation:</strong> Euclidean distance between x[1..N], y[1..M] requires N = M and "pointwise alignment". In practice:</p>
+<ul>
+<li>Same song hummed by different people — different tempo</li>
+<li>Same pathway activated in two samples — slight time shift</li>
+<li>Same heartbeat — R-wave position drifts</li>
+</ul>
+<p>Euclidean misclassifies these "same shape, time-shifted" signals as "different".</p>
+<p><strong>DTW's core:</strong> allow a flexible time-axis correspondence — monotone non-decreasing path (i₁, j₁) → (i₂, j₂) → ... that pairs the two series, minimizing total pairwise distance along the path.</p>
+<p><strong>Recursion:</strong> DP matrix D ∈ ℝ^(N × M),</p>
+<p style="text-align:center;font-family:Georgia,serif;">D(i, j) = d(x_i, y_j) + min{D(i-1, j), D(i, j-1), D(i-1, j-1)}</p>
+<p>where d(·, ·) is |x_i − y_j| or (x_i − y_j)². Final DTW(x, y) = D(N, M). Backtracking recovers the optimal alignment. Time complexity O(NM).</p>
+<p><strong>Constraints:</strong> path must (i) go from (1,1) to (N, M); (ii) be monotone non-decreasing (time cannot reverse); (iii) be continuous. In practice add <strong>Sakoe-Chiba band</strong>: |i − j| ≤ w diagonal band, reducing complexity to O(N·w).</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⏱️</div><h4 data-zh="時間軸彈性" data-en="Time-axis elasticity">時間軸彈性</h4><p data-lang="zh">允許不同速度/節奏，捕捉「形狀相似」。</p><p data-lang="en">Handles different speeds/rhythms; captures "same shape".</p></div>
+  <div class="card"><div class="card-icon">📐</div><h4 data-zh="DP O(NM)" data-en="DP O(NM)">DP O(NM)</h4><p data-lang="zh">經典動態規劃；Sakoe-Chiba band 可降到 O(N·w)。</p><p data-lang="en">Classic DP; Sakoe-Chiba band reduces to O(N·w).</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="可微化" data-en="Differentiable">可微化</h4><p data-lang="zh">Soft-DTW（Cuturi 2017）用 soft-min 取代 min，可訓 NN。</p><p data-lang="en">Soft-DTW (Cuturi 2017) replaces min with soft-min — trainable in NNs.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從經典 DTW 到 Soft-DTW 與 FastDTW" data-en="From Classic DTW to Soft-DTW and FastDTW">從經典 DTW 到 Soft-DTW 與 FastDTW</h2>
+<div data-lang="zh">
+<p><strong>① 經典 DTW (Sakoe & Chiba 1978)：</strong>O(NM) DP，O(NM) 記憶體（也可 O(min(N,M)) 流式存）。Sakoe-Chiba band w 通常取 10-20% 的序列長度——既加速又防止「病態對齊」（如把整條 x 對到 y 的單點）。</p>
+<p><strong>② FastDTW (Salvador & Chan 2007)：</strong>多解析度近似——先在低解析度（粗化序列）做 DTW、再在原解析度沿 coarse path 周圍 refine。複雜度降至 O(N)，但只是近似最佳路徑。對「序列極長」有用，對「需要嚴格最佳」則不適合。</p>
+<p><strong>③ Soft-DTW (Cuturi & Blondel 2017, ICML)：</strong>把 hard min 換成 soft-min（log-sum-exp）：</p>
+<p style="text-align:center;font-family:Georgia,serif;">D_γ(i, j) = d(x_i, y_j) − γ · log(e^(−D(i-1,j)/γ) + e^(−D(i,j-1)/γ) + e^(−D(i-1,j-1)/γ))</p>
+<p>當 γ → 0 退化回原 DTW。優點：<strong>所有 entry 可微</strong>，可作為 loss 訓練 NN（如時序預測模型的「輸出與 ground truth 的軟對齊損失」）。在 PyTorch / JAX 中有完整實作（<code>soft-dtw-jax</code>、<code>pysdtw</code>）。</p>
+<p><strong>④ DBA — DTW Barycenter Averaging (Petitjean 2011)：</strong>給定一群時間序列，找一個「中心序列」使所有序列到它的 DTW 距離總和最小（類似 k-means 的 centroid）。是 DTW-clustering 的基礎，已用於 ECG cluster、cell trajectory 中心化。iDBA (Forestier 2017) 是其增量更新版。</p>
+<p><strong>⑤ Shape DTW (Zhao & Itti 2018)：</strong>對 x_i 與 y_j 不只比較單點，而是比較「local shape descriptor」（如 HOG-1D / 子序列）。對形狀相似但 absolute value 略偏的序列更穩健。</p>
+<p><strong>⑥ 其他變體：</strong></p>
+<ul>
+<li><strong>Derivative DTW (Keogh 2001)：</strong>對 dx/dt 序列做 DTW，避免「形狀相似但縱軸偏移」。</li>
+<li><strong>Weighted DTW：</strong>對對角步加 weight (1) 比水平/垂直步 (1+w) 大——鼓勵對角線、抑制「橫衝直撞」。</li>
+<li><strong>Itakura parallelogram：</strong>另一種替代 Sakoe-Chiba band 的形狀約束，限制更嚴。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p><strong>① Classic DTW (Sakoe & Chiba 1978):</strong> O(NM) DP, O(NM) memory (or O(min(N,M)) streaming). Sakoe-Chiba band w is typically 10-20% of sequence length — accelerates and prevents pathological alignments.</p>
+<p><strong>② FastDTW (Salvador & Chan 2007):</strong> multi-resolution approximation — DTW at low resolution, then refine around coarse path at original resolution. Complexity O(N), approximate. Good for very long sequences; not for strict optima.</p>
+<p><strong>③ Soft-DTW (Cuturi & Blondel 2017, ICML):</strong> replaces hard min with soft-min (log-sum-exp):</p>
+<p style="text-align:center;font-family:Georgia,serif;">D_γ(i, j) = d(x_i, y_j) − γ · log(e^(−D(i-1,j)/γ) + e^(−D(i,j-1)/γ) + e^(−D(i-1,j-1)/γ))</p>
+<p>γ → 0 recovers classic DTW. Benefit: <strong>differentiable everywhere</strong>, usable as NN loss (e.g. soft-aligned forecast loss). Implementations: <code>soft-dtw-jax</code>, <code>pysdtw</code>.</p>
+<p><strong>④ DBA — DTW Barycenter Averaging (Petitjean 2011):</strong> given a set of series, find a "central series" minimizing total DTW distance (like k-means centroid). Basis of DTW-clustering — used for ECG clustering, cell trajectory centroids. iDBA (Forestier 2017) is incremental.</p>
+<p><strong>⑤ Shape DTW (Zhao & Itti 2018):</strong> instead of pointwise comparison, compare "local shape descriptors" (HOG-1D / subsequences). More robust when shapes match but absolute values differ.</p>
+<p><strong>⑥ Other variants:</strong></p>
+<ul>
+<li><strong>Derivative DTW (Keogh 2001):</strong> DTW on dx/dt — avoids "same-shape, vertical-offset" issue.</li>
+<li><strong>Weighted DTW:</strong> diagonal step weight (1) less than horizontal/vertical (1+w) — encourages diagonal moves.</li>
+<li><strong>Itakura parallelogram:</strong> alternative shape constraint to Sakoe-Chiba band, more restrictive.</li>
+</ul>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>DTW vs. Optimal Transport：</strong>兩者都是「最小代價對應」，但 DTW 強制「monotone, continuous」（時間不能倒流、不能跳），而 OT 允許任意 mass transport。對單細胞 pseudotime alignment——若兩條軌跡分支結構相同，DTW 比 OT 更合適。若是 cross-population mass redistribution，OT 才對。</div>
+<div data-lang="en"><strong>DTW vs. Optimal Transport:</strong> both find minimum-cost correspondence, but DTW enforces "monotone, continuous" (time cannot reverse or skip), whereas OT allows arbitrary mass transport. For single-cell pseudotime alignment with matching branching, DTW is more appropriate. For cross-population mass redistribution, OT is better.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="兩條時間序列的 DTW 對齊路徑" data-en="DTW Alignment Path between Two Time Series">兩條時間序列的 DTW 對齊路徑</h2>
+<div data-lang="zh"><p>下圖顯示兩條合成時間序列（藍 / 橙），與其 DTW DP 累積成本矩陣（heatmap）上的最佳對齊路徑（白線）。<strong>調整時間偏移 φ、頻率比 ω、Sakoe-Chiba band 寬度 w</strong> 觀察 DTW 距離與路徑彎曲程度的變化。對比歐式距離（強制對角對齊）與 DTW 距離。</p></div>
+<div data-lang="en"><p>Below: two synthetic time series (blue / orange), with the optimal DTW alignment path (white line) overlaid on the cumulative DP cost heatmap. <strong>Adjust phase shift φ, frequency ratio ω, and Sakoe-Chiba band width w</strong> to see how DTW distance and path curvature change. Compare Euclidean distance (forced diagonal) vs. DTW.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="相位偏移 φ" data-en="Phase shift φ">相位偏移 φ <span id="vPhi">0.50</span></label><input type="range" id="sPhi" min="0" max="2" value="0.5" step="0.05"></div>
+<div class="slider-group"><label data-zh="頻率比 ω" data-en="Frequency ratio ω">頻率比 ω <span id="vOm">1.30</span></label><input type="range" id="sOm" min="0.7" max="1.8" value="1.3" step="0.05"></div>
+<div class="slider-group"><label data-zh="Sakoe-Chiba band w" data-en="Sakoe-Chiba band w">band w <span id="vW">20</span></label><input type="range" id="sW" min="3" max="50" value="20" step="1"></div>
+<svg id="dtwSvg" viewBox="0 0 700 400" style="width:100%;height:400px;background:#fafafa;border-radius:6px;"></svg>
+<div id="dtwInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 DTW？" data-en="When to use DTW?">什麼時候用 DTW？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>同類訊號、時間軸略偏</strong>——心跳對齊、語音、不同人 ECG。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>不同條件下的同 trajectory</strong>——cellAlign 對齊兩條件 scRNA-seq pseudotime。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>序列分類與聚類</strong>——配 DBA 或 k-medoid + DTW 距離做時間序列分群。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>序列分支或拓撲不一致；訊號需「絕對時間」（如 schedule, calendar event）；資料極長且嚴格最佳路徑必要。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Same signal type, slight time shift</strong> — heartbeat, speech, multi-subject ECG.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Same trajectory under different conditions</strong> — cellAlign aligning two-condition scRNA-seq pseudotime.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Sequence classification / clustering</strong> — with DBA or k-medoid + DTW distance.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Branching topology mismatch; absolute time required (schedule, calendar); very long sequences needing strict optimal path.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="DTW 在生物資訊與醫學的應用" data-en="DTW in Bioinformatics and Medicine">DTW 在生物資訊與醫學的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="cellAlign (Alpert 2018, Nat Methods)" data-en="cellAlign (Alpert 2018, Nat Methods)">cellAlign</h4>
+<p data-lang="zh">Alpert et al. (2018, Nature Methods) 用 DTW 對齊不同條件下的 scRNA-seq pseudotime——例如比較 WT 與 KO 的細胞分化軌跡。對齊後可逐 pseudotime 點做差異基因分析，發現「軌跡何時開始分歧」。已成單細胞跨條件比較的標配。</p>
+<p data-lang="en">Alpert et al. (2018, Nature Methods) align scRNA-seq pseudotimes across conditions with DTW — e.g. WT vs KO differentiation trajectories. After alignment, per-pseudotime DE analysis identifies "when trajectories diverge". Now standard for cross-condition single-cell comparison.</p></div>
+
+<div class="card"><h4 data-zh="ECG / 心律分析" data-en="ECG / cardiac analysis">ECG / 心律分析</h4>
+<p data-lang="zh">心跳之間有自然變異（HRV），DTW 對齊不同心跳的 P-QRS-T 波——比歐式距離更穩健地檢測 arrhythmia。在 PhysioNet challenge 多次被用作 baseline 或特徵工程基礎。也用於 ICU 連續心電監測的患者特徵聚類。</p>
+<p data-lang="en">Heartbeats vary naturally (HRV); DTW aligns P-QRS-T waves robustly — better than Euclidean for arrhythmia detection. Featured in many PhysioNet challenges as baseline / feature engineering. Also used in ICU continuous-monitoring patient clustering.</p></div>
+
+<div class="card"><h4 data-zh="Spike train alignment" data-en="Spike train alignment">Spike train alignment</h4>
+<p data-lang="zh">神經元 spike train 比較常用 Victor-Purpura metric 或 van Rossum distance，但 DTW 也可——對於相同 stimulus 下不同 trial 的 spike sequence，DTW 對齊揭示「神經元編碼的時序不變特徵」。已用於 hippocampus replay 分析。</p>
+<p data-lang="en">Spike train comparison often uses Victor-Purpura or van Rossum distance, but DTW works too — aligning spikes from different trials of the same stimulus reveals "temporally invariant neural coding". Used in hippocampus replay analysis.</p></div>
+
+<div class="card"><h4 data-zh="Mass spectrometry alignment" data-en="Mass spectrometry alignment">Mass spec retention-time alignment</h4>
+<p data-lang="zh">LC-MS 不同批次的 retention time 會漂移——DTW（或其變體 COW: correlation optimized warping）對齊 peak 位置，是 proteomics / metabolomics 預處理的核心步驟。對 plasma metabolite 大型 cohort 研究尤其關鍵。</p>
+<p data-lang="en">LC-MS retention times drift between batches — DTW (or COW: correlation optimized warping) aligns peak positions, a key proteomics / metabolomics preprocessing step. Crucial for plasma-metabolite large-cohort studies.</p></div>
+
+<div class="card"><h4 data-zh="Time-course RNA-seq" data-en="Time-course RNA-seq">時序 RNA-seq 比較</h4>
+<p data-lang="zh">兩個基因（或兩個條件下的同基因）的時序 expression profile 用 DTW 比較——可發現「跟隨關係」（gene A 先表達、gene B 延後表達 → DTW path 上偏對角）。用於 gene regulation 推論與 chrono-therapy 研究。</p>
+<p data-lang="en">DTW-comparing time-course expression of two genes (or one gene under two conditions) reveals "follower" relationships (gene A first, gene B delayed → off-diagonal DTW path). Used in gene regulation inference and chrono-therapy research.</p></div>
+
+<div class="card"><h4 data-zh="Circadian gene oscillation" data-en="Circadian gene oscillation">晝夜節律基因震盪</h4>
+<p data-lang="zh">不同組織的 circadian gene 震盪相位不同（肝臟比心臟快 4 小時等）。DTW 對齊揭示組織-組織相位差，用於「中樞時鐘 vs 周邊時鐘」研究（Hughes et al. 2009 Genome Research 的後續工作）。</p>
+<p data-lang="en">Circadian genes oscillate with tissue-specific phase shifts (liver 4h ahead of heart, etc.). DTW alignment reveals tissue-tissue phase differences for "central vs peripheral clock" research (Hughes et al. 2009 Genome Research follow-ups).</p></div>
+
+<div class="card"><h4 data-zh="Microbiome longitudinal" data-en="Microbiome longitudinal">Microbiome 縱貫資料</h4>
+<p data-lang="zh">飲食干預研究中，不同病人對相同飲食的微生物群響應時間不同——DTW 對齊 microbiome 時序，揭示「快響應者 vs 慢響應者」。被用於 IBS、IBD 介入研究與 personalized nutrition。</p>
+<p data-lang="en">In dietary intervention studies, patients respond on different timescales — DTW aligns microbiome time-series to identify "fast vs slow responders". Used in IBS, IBD intervention studies and personalized nutrition.</p></div>
+
+<div class="card"><h4 data-zh="DTW + Sliced-OT 整合" data-en="DTW + Sliced-OT">DTW + Sliced-OT integration</h4>
+<p data-lang="zh">2023-24 年數個工作把 DTW 與 sliced-Wasserstein 結合——對「時序 + 分布」的混合資料（如多細胞 single-cell 的 pseudotime alignment 同時要對齊細胞分布）。提供 cross-condition single-cell 動態比較的新工具。</p>
+<p data-lang="en">Several 2023-24 works combine DTW with sliced-Wasserstein for "time + distribution" data (e.g. simultaneously aligning pseudotime and cell distributions). Provides new tools for cross-condition single-cell dynamics.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="DTW 進階主題" data-en="Advanced DTW Topics">DTW 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① DTW 為何不是「距離」</h3>
+<p>DTW 不滿足三角不等式——DTW(x, z) 可能 &gt; DTW(x, y) + DTW(y, z)。所以嚴格說它是 dissimilarity 而非 metric。實務後果：用 DTW 距離做 k-means 不保證收斂（需用 k-medoid 或 DBA）。</p>
+
+<h3>② Soft-DTW 的微分可導</h3>
+<p>Cuturi & Blondel (2017) 證明 soft-min 版的 DP 對所有 entry 連續可微，梯度可用「reverse-mode DP」高效計算（O(NM)）。這讓 DTW 進入 NN 的 loss zoo——時序預測網路可直接用「soft-DTW(prediction, ground_truth)」做訓練。</p>
+
+<h3>③ DTW 與「subsequence」變體</h3>
+<p>UCR Suite (Rakthanmanon 2012, KDD) 提供 subsequence DTW — 在長序列中找與短 query 最相似的子段，配合 LB_Keogh lower bound 可在 trillion-point 資料庫中查詢。對基因組 motif scanning 也有應用。</p>
+
+<h3>④ Sakoe-Chiba band 的選擇</h3>
+<p>太緊（w → 0）退化為歐式距離；太鬆（w → N）失去意義（任何兩序列幾乎都「相似」）。實證 w = 10-20% 序列長度通常最佳；Itakura 平行四邊形是另一種選擇。對 scRNA-seq pseudotime alignment，cellAlign 建議 w = 20%。</p>
+
+<h3>⑤ DTW clustering</h3>
+<p>k-medoid + DTW：簡單但慢（每對序列都要算 DTW）；可用 LB_Keogh 預篩。<br>
+DBA + k-means：找 centroid 序列、把序列分到最近 centroid。Petitjean (2011, Pattern Recognition) 原版及 iDBA (Forestier 2017) 是主流選擇。<br>
+Spectral clustering：以 DTW 距離建 similarity matrix、做 spectral embedding。對 time-series database 的探索性分析有用。</p>
+
+<h3>⑥ 多變量 DTW（multivariate DTW）</h3>
+<p>對 d 維時間序列 x[i] ∈ ℝ^d，d(x_i, y_j) 改用 Euclidean / Mahalanobis 距離即可。但 multivariate DTW 對「不同維度有不同 dynamics」時容易失敗——可考慮 dimension-wise DTW + 聚合，或 SOM-DTW (Sakurai 2007)。</p>
+
+<h3>⑦ GPU / parallel DTW</h3>
+<p>DP 的 anti-diagonal 可平行化——cuDTW 在 GPU 上對大規模序列 corpus 加速 100x+。<code>tslearn</code> 的 CUDA 版本可實時處理百萬序列的 pairwise DTW。</p>
+
+<h3>⑧ 與 Edit distance 的關係</h3>
+<p>DTW ≈ continuous-valued 的 edit distance：editing operations 是 insert/delete/replace；DTW 的 horizontal/vertical/diagonal step 對應 insert/delete/match。對 categorical sequences 用 edit distance；對 continuous 用 DTW；對混合資料看具體 metric。</p>
+</div>
+
+<div data-lang="en">
+<h3>① DTW is not a metric</h3>
+<p>DTW violates the triangle inequality — DTW(x, z) may exceed DTW(x, y) + DTW(y, z). Strictly a dissimilarity, not a metric. Consequence: k-means with DTW doesn't guarantee convergence (use k-medoid or DBA).</p>
+
+<h3>② Soft-DTW differentiability</h3>
+<p>Cuturi & Blondel (2017) prove the soft-min DP is everywhere differentiable; gradients computable by reverse-mode DP in O(NM). Brings DTW into the NN loss zoo — time-series forecasting nets train end-to-end with "soft-DTW(prediction, ground_truth)".</p>
+
+<h3>③ DTW subsequence variants</h3>
+<p>UCR Suite (Rakthanmanon 2012, KDD) provides subsequence DTW — finds query best-match in long series with LB_Keogh lower bound, scaling to trillion-point databases. Applied to genome motif scanning too.</p>
+
+<h3>④ Choosing Sakoe-Chiba band w</h3>
+<p>Too tight (w → 0) degenerates to Euclidean; too loose (w → N) makes everything "similar". Empirically w = 10-20% of length is best; Itakura parallelogram is an alternative. For scRNA-seq pseudotime alignment, cellAlign suggests w = 20%.</p>
+
+<h3>⑤ DTW clustering</h3>
+<p>k-medoid + DTW: simple but slow (all-pairs); LB_Keogh pruning helps.<br>
+DBA + k-means: find centroid series, assign by nearest centroid. Petitjean (2011, Pattern Recognition) original, iDBA (Forestier 2017) — both standard.<br>
+Spectral clustering: similarity matrix from DTW + spectral embedding. Useful for time-series database exploration.</p>
+
+<h3>⑥ Multivariate DTW</h3>
+<p>For d-dim x[i] ∈ ℝ^d, use Euclidean / Mahalanobis in d(x_i, y_j). But multivariate DTW struggles when dimensions have different dynamics — consider dimension-wise DTW + aggregate, or SOM-DTW (Sakurai 2007).</p>
+
+<h3>⑦ GPU / parallel DTW</h3>
+<p>DP anti-diagonals parallelize — cuDTW gives 100x+ speedup on large corpora. <code>tslearn</code>'s CUDA variant handles million-series pairwise DTW in real time.</p>
+
+<h3>⑧ Relation to edit distance</h3>
+<p>DTW ≈ continuous-valued edit distance: edits are insert/delete/replace; DTW's horizontal/vertical/diagonal steps correspond to insert/delete/match. Use edit distance for categorical, DTW for continuous, ad-hoc metrics for mixed.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="DTW 還能改良哪些任務？" data-en="What Else Could DTW Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. cellAlign + branching trajectory</h3>
+<p>目前 cellAlign 假設兩 trajectory 是線性。<strong>提案：</strong>branching-DTW——允許在 branch 點分叉，對齊不同 branching topology 的 trajectories。可用於 hematopoiesis 的 cross-condition 比較。</p>
+
+<h3>🎯 2. Spatial DTW for spatial trajectories</h3>
+<p>對 spatial transcriptomics 的「沿空間軸的細胞變化」做 DTW 對齊——同一 tissue 不同 sample 的空間 gradient 對齊。<strong>提案：</strong>SpatialDTW with 2D 路徑限制。</p>
+
+<h3>🎯 3. Multi-omics longitudinal DTW</h3>
+<p>同一病人同時記錄 RNA / metabolome / microbiome 時序——多 modality 變化速度不同，需要 modality-specific DTW + 聯合對齊。<strong>提案：</strong>Multi-Modal DTW for personalized longitudinal medicine。</p>
+
+<h3>🎯 4. Soft-DTW VAE for time-series generation</h3>
+<p>用 Soft-DTW 當 VAE decoder loss，可生成「時序合理」的訊號（不只 pointwise 匹配）。<strong>提案：</strong>Soft-DTW VAE for ECG generation、單細胞 trajectory simulation。</p>
+
+<h3>🎯 5. DTW + Conformal prediction</h3>
+<p>對齊後做時序預測時，用 conformal prediction 給「未來軌跡」的 uncertainty band。<strong>提案：</strong>Conformal Soft-DTW Forecasting for ICU monitoring。</p>
+
+<h3>🎯 6. Causal DTW</h3>
+<p>找 X(t) leading Y(t) 的「時序因果方向」——DTW path 偏 X 之上 → Y 領先；偏 X 之下 → X 領先。<strong>提案：</strong>causal-DTW 用於 dyadic interaction (microbiome co-evolution、神經元 cross-correlation)。</p>
+
+<h3>🎯 7. DTW on graphs (Graph-DTW)</h3>
+<p>對「圖結構隨時間演化」（如 dynamic protein-protein interaction）做圖序列的 DTW——把 graph kernel 當作 d(x_i, y_j)。<strong>提案：</strong>Graph-DTW for dynamic biological networks。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. cellAlign with branching</h3>
+<p>cellAlign assumes linear trajectories. <strong>Proposal:</strong> branching-DTW — allow forks at branch points, align trajectories with different branching topology. Useful for hematopoiesis cross-condition comparison.</p>
+
+<h3>🎯 2. Spatial DTW for spatial trajectories</h3>
+<p>DTW on "cell change along spatial axis" in spatial transcriptomics — align spatial gradients across samples. <strong>Proposal:</strong> SpatialDTW with 2D path constraints.</p>
+
+<h3>🎯 3. Multi-omics longitudinal DTW</h3>
+<p>Same patient with RNA + metabolome + microbiome time-series — different modalities, different paces; need per-modality DTW + joint alignment. <strong>Proposal:</strong> Multi-Modal DTW for personalized longitudinal medicine.</p>
+
+<h3>🎯 4. Soft-DTW VAE for time-series generation</h3>
+<p>Use Soft-DTW as VAE decoder loss to generate "temporally plausible" signals (not just pointwise). <strong>Proposal:</strong> Soft-DTW VAE for ECG generation, single-cell trajectory simulation.</p>
+
+<h3>🎯 5. DTW + Conformal prediction</h3>
+<p>After alignment, use conformal prediction for "future trajectory" uncertainty bands. <strong>Proposal:</strong> Conformal Soft-DTW Forecasting for ICU monitoring.</p>
+
+<h3>🎯 6. Causal DTW</h3>
+<p>Find leading/lagging direction in X(t) ↔ Y(t) — path above diagonal → Y leads; below → X leads. <strong>Proposal:</strong> causal-DTW for dyadic interactions (microbiome co-evolution, neuronal cross-correlation).</p>
+
+<h3>🎯 7. Graph-DTW</h3>
+<p>DTW on "graph-evolving over time" (dynamic PPI) — use graph kernel as d(x_i, y_j). <strong>Proposal:</strong> Graph-DTW for dynamic biological networks.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / tslearn</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / Soft-DTW</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Pure Python DP</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / dtw</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install tslearn</span>
+<span class="keyword">from</span> tslearn.metrics <span class="keyword">import</span> dtw, dtw_path
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+t = np.linspace(<span class="num">0</span>, <span class="num">4</span>*np.pi, <span class="num">200</span>)
+x = np.sin(t)
+y = np.sin(<span class="num">1.3</span>*t + <span class="num">0.5</span>)             <span class="comment"># shifted & faster</span>
+
+d = dtw(x, y)                       <span class="comment"># DTW distance</span>
+path, d2 = dtw_path(x, y)           <span class="comment"># optimal alignment path</span>
+
+<span class="comment"># With Sakoe-Chiba band</span>
+<span class="keyword">from</span> tslearn.metrics <span class="keyword">import</span> dtw_path_from_metric
+path, _ = dtw_path_from_metric(x, y, metric=<span class="str">"euclidean"</span>,
+    sakoe_chiba_radius=<span class="num">20</span>)         <span class="comment"># band width</span>
+
+<span class="comment"># Clustering with DBA</span>
+<span class="keyword">from</span> tslearn.clustering <span class="keyword">import</span> TimeSeriesKMeans
+km = TimeSeriesKMeans(n_clusters=<span class="num">3</span>, metric=<span class="str">"dtw"</span>,
+    metric_params={<span class="str">"sakoe_chiba_radius"</span>: <span class="num">20</span>})
+labels = km.fit_predict(X_set)      <span class="comment"># X_set: (n_series, n_t)</span></pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># Soft-DTW (differentiable) — pysdtw or soft-dtw-jax</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> pysdtw <span class="keyword">import</span> SoftDTW
+
+sdtw = SoftDTW(use_cuda=<span class="keyword">False</span>, gamma=<span class="num">0.1</span>)
+x = torch.randn(<span class="num">8</span>, <span class="num">200</span>, <span class="num">1</span>, requires_grad=<span class="keyword">True</span>)
+y = torch.randn(<span class="num">8</span>, <span class="num">200</span>, <span class="num">1</span>)
+loss = sdtw(x, y).mean()
+loss.backward()                     <span class="comment"># gradients flow</span>
+
+<span class="comment"># Use as forecasting loss</span>
+<span class="keyword">class</span> Forecaster(torch.nn.Module):
+    <span class="keyword">def</span> __init__(self):
+        super().__init__()
+        self.rnn = torch.nn.LSTM(<span class="num">1</span>, <span class="num">64</span>, batch_first=<span class="keyword">True</span>)
+        self.head = torch.nn.Linear(<span class="num">64</span>, <span class="num">1</span>)
+    <span class="keyword">def</span> forward(self, x):
+        h, _ = self.rnn(x); <span class="keyword">return</span> self.head(h)
+
+model = Forecaster()
+pred = model(x_input)
+loss = sdtw(pred, y_target).mean() <span class="comment"># soft-temporal-aware loss</span></pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> dtw_simple(x, y, band=<span class="keyword">None</span>):
+    N, M = len(x), len(y)
+    D = np.full((N+<span class="num">1</span>, M+<span class="num">1</span>), np.inf)
+    D[<span class="num">0</span>, <span class="num">0</span>] = <span class="num">0</span>
+    <span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">1</span>, N+<span class="num">1</span>):
+        j0 = max(<span class="num">1</span>, i-band) <span class="keyword">if</span> band <span class="keyword">else</span> <span class="num">1</span>
+        j1 = min(M, i+band)+<span class="num">1</span> <span class="keyword">if</span> band <span class="keyword">else</span> M+<span class="num">1</span>
+        <span class="keyword">for</span> j <span class="keyword">in</span> range(j0, j1):
+            cost = abs(x[i-<span class="num">1</span>] - y[j-<span class="num">1</span>])
+            D[i, j] = cost + min(D[i-<span class="num">1</span>, j], D[i, j-<span class="num">1</span>], D[i-<span class="num">1</span>, j-<span class="num">1</span>])
+    <span class="keyword">return</span> D[N, M], D
+
+<span class="comment"># Backtracking</span>
+<span class="keyword">def</span> trace_path(D):
+    i, j = D.shape[<span class="num">0</span>]-<span class="num">1</span>, D.shape[<span class="num">1</span>]-<span class="num">1</span>
+    path = [(i, j)]
+    <span class="keyword">while</span> i &gt; <span class="num">1</span> <span class="keyword">or</span> j &gt; <span class="num">1</span>:
+        candidates = [(i-<span class="num">1</span>, j-<span class="num">1</span>), (i-<span class="num">1</span>, j), (i, j-<span class="num">1</span>)]
+        candidates = [(a,b) <span class="keyword">for</span> a,b <span class="keyword">in</span> candidates <span class="keyword">if</span> a&gt;<span class="num">0</span> <span class="keyword">and</span> b&gt;<span class="num">0</span>]
+        i, j = min(candidates, key=<span class="keyword">lambda</span> p: D[p])
+        path.append((i, j))
+    <span class="keyword">return</span> path[::-<span class="num">1</span>]</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages("dtw")</span>
+<span class="keyword">library</span>(dtw)
+
+t &lt;- seq(<span class="num">0</span>, <span class="num">4</span>*pi, length.out = <span class="num">200</span>)
+x &lt;- sin(t)
+y &lt;- sin(<span class="num">1.3</span>*t + <span class="num">0.5</span>)
+
+al &lt;- dtw(x, y, keep = <span class="keyword">TRUE</span>,
+          window.type = <span class="str">"sakoechiba"</span>,
+          window.size = <span class="num">20</span>)
+plot(al, type = <span class="str">"twoway"</span>)        <span class="comment"># side-by-side alignment</span>
+plot(al, type = <span class="str">"density"</span>)       <span class="comment"># DP cost heatmap + path</span>
+
+cat(<span class="str">"DTW distance:"</span>, al$distance, <span class="str">"\n"</span>)
+cat(<span class="str">"Normalized:"</span>, al$normalizedDistance, <span class="str">"\n"</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">DTW 的時間複雜度（不加 band）為何？</p><p data-lang="en">What is the (un-banded) time complexity of DTW?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. O(N + M)</span><span data-lang="en">A. O(N + M)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. O(NM)</span><span data-lang="en">B. O(NM)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. O(N log M)</span><span data-lang="en">C. O(N log M)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. O(N²M²)</span><span data-lang="en">D. O(N²M²)</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Soft-DTW (Cuturi 2017) 的主要動機？</p><p data-lang="en">Main motivation of Soft-DTW (Cuturi 2017)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 比經典 DTW 更快</span><span data-lang="en">A. Faster than classic DTW</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 變成嚴格的 metric</span><span data-lang="en">B. Becomes a strict metric</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 用 soft-min 取代 min，使 DTW 可微，可作為 NN loss</span><span data-lang="en">C. Soft-min replaces min so DTW is differentiable as NN loss</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 處理 multivariate sequences</span><span data-lang="en">D. Handles multivariate sequences</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Sakoe-Chiba band 的作用？</p><p data-lang="en">Role of the Sakoe-Chiba band?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 限制路徑在對角線 ±w 範圍，加速 O(NM) → O(N·w) 且防止病態對齊</span><span data-lang="en">A. Restricts path to diagonal ±w, accelerates O(NM) → O(N·w), avoids pathological alignment</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 把 DTW 變成 metric</span><span data-lang="en">B. Makes DTW a metric</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 訓練 NN</span><span data-lang="en">C. Trains NNs</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 處理 missing data</span><span data-lang="en">D. Handles missing data</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="knockoff.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 42：Knockoff Filter" data-en="Ch 42: Knockoff Filter">Ch 42：Knockoff Filter</span></a>
+<a href="survival-deepsurv.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 44：Survival + DeepSurv" data-en="Ch 44: Survival + DeepSurv">Ch 44：Survival + DeepSurv</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive DTW =====
+const N=60, M=60;
+const SVG=document.getElementById('dtwSvg');
+
+function dtwCompute(x, y, band){
+  const N=x.length, M=y.length;
+  const INF=1e18;
+  const D=Array.from({length:N+1},()=>new Array(M+1).fill(INF));
+  D[0][0]=0;
+  for(let i=1;i<=N;i++){
+    const j0=Math.max(1,i-band), j1=Math.min(M,i+band);
+    for(let j=j0;j<=j1;j++){
+      const cost=Math.abs(x[i-1]-y[j-1]);
+      D[i][j]=cost+Math.min(D[i-1][j],D[i][j-1],D[i-1][j-1]);
+    }
+  }
+  // backtrack
+  let i=N,j=M;const path=[[i,j]];
+  while(i>1||j>1){
+    const cands=[];
+    if(i>1&&j>1)cands.push([i-1,j-1,D[i-1][j-1]]);
+    if(i>1)cands.push([i-1,j,D[i-1][j]]);
+    if(j>1)cands.push([i,j-1,D[i][j-1]]);
+    cands.sort((a,b)=>a[2]-b[2]);
+    i=cands[0][0];j=cands[0][1];path.push([i,j]);
+  }
+  return {dist:D[N][M], D, path:path.reverse()};
+}
+
+function render(){
+  const phi=+document.getElementById('sPhi').value;
+  const om =+document.getElementById('sOm').value;
+  const w  =+document.getElementById('sW').value;
+  document.getElementById('vPhi').textContent=phi.toFixed(2);
+  document.getElementById('vOm').textContent=om.toFixed(2);
+  document.getElementById('vW').textContent=w;
+
+  // build sequences
+  const x=new Array(N).fill(0).map((_,i)=>Math.sin(2*Math.PI*i/N*1.5));
+  const y=new Array(M).fill(0).map((_,j)=>Math.sin(om*(2*Math.PI*j/M*1.5)+phi));
+
+  const r=dtwCompute(x,y,w);
+  const eucD=Math.sqrt(x.reduce((s,xi,i)=>s+(xi-y[i])**2,0));
+
+  // layout
+  // top: series x (overlay y); bottom-left: DP heatmap with path
+  const W=700,H=400;
+  const HM_X=40, HM_Y=170, HM_W=210, HM_H=210;
+  const SR_X=280, SR_Y=160, SR_W=380, SR_H=220;
+  let svg='';
+
+  // Heatmap
+  // compute global max for normalization (use log scale a bit for visibility)
+  let maxD=0;
+  for(let i=1;i<=N;i++)for(let j=1;j<=M;j++)if(r.D[i][j]<1e17&&r.D[i][j]>maxD)maxD=r.D[i][j];
+  const cellW=HM_W/N, cellH=HM_H/M;
+  for(let i=1;i<=N;i++){
+    for(let j=1;j<=M;j++){
+      const v=r.D[i][j];
+      if(v>1e17){
+        svg+=`<rect x="${HM_X+(i-1)*cellW}" y="${HM_Y+HM_H-j*cellH}" width="${cellW+0.5}" height="${cellH+0.5}" fill="#222"/>`;
+      }else{
+        const t=Math.min(1,v/maxD);
+        const r1=Math.round(245-180*t), g1=Math.round(220-100*t), b1=Math.round(150-50*t);
+        svg+=`<rect x="${HM_X+(i-1)*cellW}" y="${HM_Y+HM_H-j*cellH}" width="${cellW+0.5}" height="${cellH+0.5}" fill="rgb(${r1},${g1},${b1})"/>`;
+      }
+    }
+  }
+  // Path polyline (white on heatmap)
+  let pathStr='';
+  r.path.forEach((p,idx)=>{
+    const cx=HM_X+(p[0]-0.5)*cellW;
+    const cy=HM_Y+HM_H-(p[1]-0.5)*cellH;
+    pathStr+=(idx===0?`M ${cx},${cy}`:` L ${cx},${cy}`);
+  });
+  svg+=`<path d="${pathStr}" stroke="#fff" stroke-width="2.2" fill="none" stroke-linejoin="round"/>`;
+  // Diagonal reference
+  svg+=`<line x1="${HM_X}" y1="${HM_Y+HM_H}" x2="${HM_X+HM_W}" y2="${HM_Y}" stroke="#999" stroke-dasharray="3,3" stroke-width="1"/>`;
+  // Border
+  svg+=`<rect x="${HM_X}" y="${HM_Y}" width="${HM_W}" height="${HM_H}" fill="none" stroke="#444" stroke-width="1.2"/>`;
+  // Labels
+  svg+=`<text x="${HM_X+HM_W/2}" y="${HM_Y-8}" text-anchor="middle" font-size="11" fill="#444">DP cost (warm = high) + best path</text>`;
+  svg+=`<text x="${HM_X-6}" y="${HM_Y+HM_H+14}" text-anchor="end" font-size="10" fill="#666">i=1</text>`;
+  svg+=`<text x="${HM_X+HM_W+6}" y="${HM_Y+HM_H+14}" text-anchor="start" font-size="10" fill="#666">i=${N}</text>`;
+
+  // Two series on the right
+  // x is blue, y is orange
+  function seriesPath(arr,offsetX,offsetY,boxW,boxH){
+    const mn=Math.min(...arr),mx=Math.max(...arr);
+    let s='';
+    arr.forEach((v,i)=>{
+      const cx=offsetX+i*boxW/(arr.length-1);
+      const cy=offsetY+boxH-(v-mn)/(mx-mn)*boxH;
+      s+=(i===0?`M ${cx},${cy}`:` L ${cx},${cy}`);
+    });
+    return s;
+  }
+  svg+=`<rect x="${SR_X}" y="${SR_Y}" width="${SR_W}" height="${SR_H}" fill="#fff" stroke="#ddd" stroke-width="1"/>`;
+  svg+=`<path d="${seriesPath(x,SR_X+10,SR_Y+15,SR_W-20,SR_H/2-25)}" stroke="#2563a8" stroke-width="1.8" fill="none"/>`;
+  svg+=`<path d="${seriesPath(y,SR_X+10,SR_Y+SR_H/2+10,SR_W-20,SR_H/2-25)}" stroke="#d97706" stroke-width="1.8" fill="none"/>`;
+  svg+=`<text x="${SR_X+10}" y="${SR_Y+12}" font-size="10" fill="#2563a8">x (sin)</text>`;
+  svg+=`<text x="${SR_X+10}" y="${SR_Y+SR_H/2+8}" font-size="10" fill="#d97706">y (shifted, ω=${om.toFixed(2)}, φ=${phi.toFixed(2)})</text>`;
+
+  // DTW alignment lines between two series
+  // sample subset of path for clarity
+  const step=Math.max(1, Math.floor(r.path.length/30));
+  for(let k=0;k<r.path.length;k+=step){
+    const [pi,pj]=r.path[k];
+    const xc=SR_X+10+(pi-1)*(SR_W-20)/(N-1);
+    const mnx=Math.min(...x),mxx=Math.max(...x);
+    const xy=SR_Y+15+(SR_H/2-25)-(x[pi-1]-mnx)/(mxx-mnx)*(SR_H/2-25);
+    const yc=SR_X+10+(pj-1)*(SR_W-20)/(M-1);
+    const mny=Math.min(...y),mxy=Math.max(...y);
+    const yy=SR_Y+SR_H/2+10+(SR_H/2-25)-(y[pj-1]-mny)/(mxy-mny)*(SR_H/2-25);
+    svg+=`<line x1="${xc}" y1="${xy}" x2="${yc}" y2="${yy}" stroke="rgba(26,107,90,0.45)" stroke-width="0.7"/>`;
+  }
+
+  // Header text
+  svg+=`<text x="20" y="30" font-size="14" font-weight="600" fill="#222">DTW alignment</text>`;
+  svg+=`<text x="20" y="50" font-size="11" fill="#666">band w = ${w} | DTW distance = ${r.dist.toFixed(2)} | Euclidean = ${eucD.toFixed(2)}</text>`;
+  svg+=`<text x="20" y="68" font-size="11" fill="#666">Path length = ${r.path.length} cells (must hit ${N+M-1} ≤ k ≤ ${2*N-1})</text>`;
+
+  SVG.innerHTML=svg;
+
+  const L=(typeof I18n!=='undefined'&&I18n.get)?I18n.get():'zh';
+  document.getElementById('dtwInfo').innerHTML=L==='zh'?
+    `DTW 距離 = <strong>${r.dist.toFixed(2)}</strong>，歐式距離 = <strong>${eucD.toFixed(2)}</strong>。<br>當 φ 或 ω 變大時，歐式距離快速膨脹，但 DTW 因「時間軸彈性」仍保持小——這就是 DTW 對時間偏移的魯棒性。Band w 太小會強迫路徑沿對角，導致 DTW 距離回升；太大則無意義。`
+    :
+    `DTW distance = <strong>${r.dist.toFixed(2)}</strong>, Euclidean = <strong>${eucD.toFixed(2)}</strong>.<br>As φ or ω grow, Euclidean distance balloons but DTW stays low thanks to time-axis elasticity — that's DTW's robustness to time shift. Tiny w forces near-diagonal paths (DTW rises); too large loses meaning.`;
+}
+
+['sPhi','sOm','sW'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！DTW 是 N × M 的 DP，每格 O(1) 更新 → O(NM)。',
+  q1_n:'答案是 B。雙重迴圈每 cell O(1) → 總共 O(NM)。',
+  q2_y:'答對！Soft-DTW 把 min 換成 soft-min，整個 DP 可微，可作為 NN loss。',
+  q2_n:'答案是 C。Soft-DTW 的關鍵是「可微」，讓 DTW 進入深度學習 loss 工具箱。',
+  q3_y:'答對！band 把搜尋限制在對角 ±w，加速並避免病態對齊（如把整條 x 對到 y 單點）。',
+  q3_n:'答案是 A。Sakoe-Chiba band 同時加速（O(N·w)）並做 shape 約束。'
+},en:{
+  q1_y:'Correct! DTW is N × M DP with O(1) per cell → O(NM).',
+  q1_n:'Answer is B. Double loop with O(1) per cell → O(NM).',
+  q2_y:'Correct! Soft-DTW replaces min with soft-min, making the DP differentiable for NN loss.',
+  q2_n:'Answer is C. Key feature: differentiability — brings DTW into the deep-learning loss toolbox.',
+  q3_y:'Correct! Band restricts search to diagonal ±w, accelerating and avoiding pathological alignments.',
+  q3_n:'Answer is A. Sakoe-Chiba band both accelerates (O(N·w)) and enforces shape constraints.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

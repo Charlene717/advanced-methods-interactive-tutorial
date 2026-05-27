@@ -1,0 +1,551 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Hawkes & Point Processes — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html" class="active">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 29 / 38</div><h1 data-zh="Hawkes 過程與點過程" data-en="Hawkes & Point Processes">Hawkes 過程與點過程</h1>
+<p class="subtitle" data-lang="zh">事件不獨立、且過去事件激發未來——這是生物與社會系統最常見的時序性質。Hawkes (1971) 過程用「過去事件指數衰減的自激發 intensity」捕捉此現象。從神經元 spike train 到 cancer mutation timing、HIV evolution、CRISPR 變異熱點，Hawkes 是時序事件建模的核心工具，且已被神經網路化（Neural Hawkes, Transformer Hawkes）。</p>
+<p class="subtitle" data-lang="en">Events are not independent — past events excite future ones. This is the most common temporal property in biological and social systems. Hawkes (1971) processes capture this via "self-exciting intensity with exponentially decaying impact of past events". From neuronal spike trains to cancer mutation timing, HIV evolution, and CRISPR hotspots, Hawkes is a workhorse for event-time modeling — and is now neural (Neural Hawkes, Transformer Hawkes).</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="點過程：從 Poisson 到 Hawkes" data-en="Point Processes: From Poisson to Hawkes">點過程：從 Poisson 到 Hawkes</h2>
+<div data-lang="zh">
+<p><strong>點過程：</strong>時間軸上隨機出現的事件序列 {t_1 &lt; t_2 &lt; ... &lt; t_n}，由 <strong>intensity λ(t)</strong>（單位時間內事件出現的瞬時概率）描述：</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(事件 ∈ [t, t+dt) | 過去 ℋ_t) = λ(t | ℋ_t) dt</p>
+<p>ℋ_t 是 t 之前的事件歷史。若 λ 不依賴歷史 → memoryless。</p>
+
+<p><strong>Poisson process：</strong>λ(t) = μ（常數）。事件間隔 ~ Exp(μ)，獨立且 memoryless。最基本的 baseline。</p>
+
+<p><strong>非齊次 Poisson：</strong>λ(t) 隨時間變化但仍不看歷史。可建模 circadian 或 stimulus-driven 事件。</p>
+
+<p><strong>Hawkes process (Hawkes 1971, J. Roy. Stat. Soc.)：</strong>核心是「self-exciting」</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ(t) = μ + Σ_(t_i &lt; t) α · exp(−β (t − t_i))</p>
+<p>μ = 基線；每次事件 t_i 都讓 intensity 瞬間增加 α，然後以 β 速率指數衰減。<strong>過去事件激發未來事件</strong>——導致 burst（事件成簇）。</p>
+
+<p><strong>條件穩定性：</strong>當 α/β &lt; 1（branching ratio）時 Hawkes 平穩；否則 intensity 爆炸（如 emergency outbreaks 早期）。</p>
+
+<p><strong>Multivariate Hawkes：</strong>K 種 process，互相激發：</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ_k(t) = μ_k + Σ_l Σ_(t_i^l &lt; t) α_{k,l} exp(−β (t − t_i^l))</p>
+<p>α_{k,l} 是「process l 激發 process k 的強度」——可用於 cross-excitation 分析（e.g. 某神經元放電激發其他神經元）。</p>
+</div>
+<div data-lang="en">
+<p><strong>Point process:</strong> a random sequence {t_1 &lt; t_2 &lt; ... &lt; t_n} along time, described by an <strong>intensity λ(t)</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">P(event ∈ [t, t+dt) | history ℋ_t) = λ(t | ℋ_t) dt</p>
+<p>ℋ_t is event history before t. If λ does not depend on history → memoryless.</p>
+
+<p><strong>Poisson process:</strong> λ(t) = μ (constant). Inter-event times ~ Exp(μ), independent and memoryless. The basic baseline.</p>
+
+<p><strong>Inhomogeneous Poisson:</strong> λ(t) varies but is history-independent. Models circadian or stimulus-driven events.</p>
+
+<p><strong>Hawkes process (Hawkes 1971, J. Roy. Stat. Soc.):</strong> the key idea is self-exciting:</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ(t) = μ + Σ_(t_i &lt; t) α · exp(−β (t − t_i))</p>
+<p>μ = baseline; each event t_i raises intensity by α, decaying exponentially at rate β. <strong>Past events excite future ones</strong> → bursty event clusters.</p>
+
+<p><strong>Stationarity:</strong> for α/β &lt; 1 (branching ratio), Hawkes is stationary; otherwise intensity explodes (e.g., outbreak onset).</p>
+
+<p><strong>Multivariate Hawkes:</strong> K processes, mutually exciting:</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ_k(t) = μ_k + Σ_l Σ_(t_i^l &lt; t) α_{k,l} exp(−β (t − t_i^l))</p>
+<p>α_{k,l} = strength of process l exciting process k — used in cross-excitation analysis (e.g., one neuron's firing exciting others).</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="自激發" data-en="Self-exciting">自激發</h4><p data-lang="zh">過去事件抬高未來 intensity；事件天然成簇 (burst)，符合許多生物現象。</p><p data-lang="en">Past events raise future intensity; events naturally cluster — matches many biological phenomena.</p></div>
+  <div class="card"><div class="card-icon">🔁</div><h4 data-zh="可分解為 cascade" data-en="Cascade decomposition">可分解為 cascade</h4><p data-lang="zh">每個事件視為前一事件「後代」(immigrant + offspring) — 對應 branching process。</p><p data-lang="en">Each event is an "offspring" of an earlier one (immigrant + offspring) → branching process formulation.</p></div>
+  <div class="card"><div class="card-icon">🧠</div><h4 data-zh="多元互激發" data-en="Cross-exciting">多元互激發</h4><p data-lang="zh">Multivariate Hawkes 可推 cross-excitation 網路——例如哪個神經元觸發誰、哪個 mutation 觸發誰。</p><p data-lang="en">Multivariate Hawkes infers cross-excitation networks — e.g., which neuron triggers which, which mutation triggers which.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="MLE、Neural Hawkes、Transformer Hawkes" data-en="MLE, Neural Hawkes, Transformer Hawkes">MLE、Neural Hawkes、Transformer Hawkes</h2>
+<div data-lang="zh">
+<p><strong>① Log-likelihood：</strong>對觀測序列 {t_1, ..., t_n} 在 [0, T]：</p>
+<p style="text-align:center;font-family:Georgia,serif;">log L = Σ_i log λ(t_i) − ∫_0^T λ(s) ds</p>
+<p>前者是 event-time 處 intensity 的 log；後者是「沒有事件的期間 intensity 累積」penalty。對 exponential kernel 的 Hawkes，這個積分有 closed form recursion，可 O(n) 計算。</p>
+
+<p><strong>② MLE for parametric Hawkes：</strong>對 (μ, α, β) 做 gradient ascent。Ozaki (1979) 給出 closed-form recursive evaluation；現代 <code>tick</code> 套件用 Quasi-Newton + L1 reg。</p>
+
+<p><strong>③ Mark / Marked point process：</strong>每個事件帶 mark m_i ∈ ℳ（如 mutation 種類、neuron index、disease 嚴重度）。intensity 變</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ(t, m) = λ(t) · f(m | t)</p>
+<p>分成「何時發生」+「發生何種事件」兩部分，可分別建模。</p>
+
+<p><strong>④ Neural Hawkes (Mei & Eisner 2017, NeurIPS)：</strong>把 intensity 改成 continuous-time LSTM 的輸出</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ_k(t) = softplus(W_k^T h(t))</p>
+<p>其中 h(t) 是「在事件之間連續演化」的 hidden state（用 continuous-time LSTM 或 ODE）。<strong>無 exponential kernel 限制</strong>，可學任意 history dependence。</p>
+
+<p><strong>⑤ Transformer Hawkes (Zuo 2020, ICML)：</strong>用 self-attention 對事件序列建模，比 Neural Hawkes 更穩、更平行化。對長序列特別好。</p>
+
+<p><strong>⑥ Goodness-of-fit：時間轉換 (time-rescaling)。</strong> 對任意 (univariate) point process，若 model 對，則 Λ(t_i) = ∫_0^t_i λ(s)ds 後事件變成 unit-rate Poisson；可用 Kolmogorov-Smirnov test 驗證。</p>
+</div>
+<div data-lang="en">
+<p><strong>① Log-likelihood:</strong> for observations {t_1, ..., t_n} on [0, T]:</p>
+<p style="text-align:center;font-family:Georgia,serif;">log L = Σ_i log λ(t_i) − ∫_0^T λ(s) ds</p>
+<p>First term = log-intensity at event times; second = accumulated intensity penalty over event-free intervals. For exponential-kernel Hawkes, the integral has closed-form recursion in O(n).</p>
+
+<p><strong>② MLE for parametric Hawkes:</strong> gradient ascent on (μ, α, β). Ozaki (1979) provides closed-form recursive evaluation; modern <code>tick</code> uses Quasi-Newton + L1 reg.</p>
+
+<p><strong>③ Mark / Marked point process:</strong> each event carries mark m_i ∈ ℳ (mutation type, neuron index, disease severity). Intensity becomes</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ(t, m) = λ(t) · f(m | t)</p>
+<p>Splits "when does it occur" from "what type" — modeled separately.</p>
+
+<p><strong>④ Neural Hawkes (Mei & Eisner 2017, NeurIPS):</strong> replace intensity with continuous-time LSTM output:</p>
+<p style="text-align:center;font-family:Georgia,serif;">λ_k(t) = softplus(W_k^T h(t))</p>
+<p>h(t) evolves continuously between events (continuous-time LSTM or ODE). <strong>No exponential-kernel constraint</strong>; can learn arbitrary history dependence.</p>
+
+<p><strong>⑤ Transformer Hawkes (Zuo 2020, ICML):</strong> self-attention over the event sequence; more stable and parallel than Neural Hawkes; great for long sequences.</p>
+
+<p><strong>⑥ Goodness-of-fit: time-rescaling.</strong> For any univariate point process, if the model is correct, Λ(t_i) = ∫_0^t_i λ(s)ds gives a unit-rate Poisson; verify via Kolmogorov-Smirnov.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>歷史補充：</strong>Hawkes 過程最初應用於地震 aftershock 建模（Ogata 1988 在統計地震學的 ETAS 模型）。後來在金融市場（high-frequency trading order arrivals）大放異彩。生物醫學的 Hawkes 復興主要在 2010 年代後——neural spike train、somatic mutation timing、流行病擴散、社群網路訊息傳播都使用 Hawkes 變體。</div>
+<div data-lang="en"><strong>Historical note:</strong> Hawkes was first applied to earthquake aftershocks (Ogata 1988's ETAS model in statistical seismology). It exploded in finance for high-frequency trading order arrivals. Biomedical Hawkes revivals took off post-2010 — neural spike trains, somatic mutation timing, epidemic spread, and social-message propagation all use Hawkes variants.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Hawkes vs Poisson：自激發如何讓事件成簇" data-en="Hawkes vs Poisson: How Self-excitation Creates Bursts">Hawkes vs Poisson：自激發如何讓事件成簇</h2>
+<div data-lang="zh"><p>下方時間軸動畫顯示同樣的 baseline μ 下，<strong>Poisson</strong>（均勻散布）vs <strong>Hawkes</strong>（自激發 → 事件成簇）。<strong>α</strong> 控制每次事件的瞬間激發強度、<strong>β</strong> 控制衰減速率。<strong>觀察 intensity 曲線</strong>：每次事件造成「跳躍 + 衰減」。注意當 α/β 接近 1，事件會更集中爆發；α/β &gt; 1 時模擬會極度發散（已固定上限以保穩定）。</p></div>
+<div data-lang="en"><p>The animation below compares <strong>Poisson</strong> (uniform spread) vs <strong>Hawkes</strong> (self-exciting → clustered events) under the same baseline μ. <strong>α</strong> sets the instantaneous jump per event; <strong>β</strong> the decay rate. <strong>Observe the intensity curve</strong>: each event causes a "jump + decay". As α/β nears 1, bursts get stronger; for α/β &gt; 1 the simulation diverges (clipped here for stability).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="baseline μ" data-en="baseline μ">μ <span id="vMu">0.30</span></label><input type="range" id="sMu" min="0.05" max="1" value="0.3" step="0.01"></div>
+<div class="slider-group"><label data-zh="激發強度 α" data-en="jump α">α <span id="vAlpha">0.80</span></label><input type="range" id="sAlpha" min="0" max="2.5" value="0.8" step="0.05"></div>
+<div class="slider-group"><label data-zh="衰減速率 β" data-en="decay β">β <span id="vBeta">1.20</span></label><input type="range" id="sBeta" min="0.2" max="5" value="1.2" step="0.05"></div>
+<div style="display:flex;gap:8px;margin-bottom:10px;">
+  <button id="btnResim" class="toggle-btn">🔄 <span data-zh="重新模擬" data-en="Resimulate">重新模擬</span></button>
+</div>
+<svg id="hawSvg" viewBox="0 0 600 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="hawInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="何時用 Hawkes vs Poisson？" data-en="When to use Hawkes vs Poisson?">何時用 Hawkes vs Poisson？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>事件成簇明顯</strong>——例如 neural burst、相連 mutation、epidemic cluster：Hawkes 是 default。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>事件相互影響、要 infer 因果網路</strong>——multivariate Hawkes 可推 α_{k,l} 矩陣作為 functional connectivity。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>有複雜歷史依賴</strong>（非 exponential decay）——用 Neural Hawkes 或 Transformer Hawkes。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>事件真正獨立（如 Poisson 散射）；或事件密度極低（資料不足以擬合）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Clear event clustering</strong> — neural bursts, linked mutations, epidemic clusters: Hawkes is the default.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Events influence each other; want to infer a causal network</strong> — multivariate Hawkes recovers α_{k,l} as functional connectivity.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Complex history dependence</strong> (non-exponential decay) — use Neural Hawkes or Transformer Hawkes.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Truly independent events (Poisson); or extremely sparse data (insufficient to fit).</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Hawkes / 點過程在生物醫學" data-en="Hawkes / Point Processes in Biomedicine">Hawkes / 點過程在生物醫學</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="神經元 spike train" data-en="Neuronal spike train">神經元 spike train (Truccolo 2005)</h4>
+<p data-lang="zh">Truccolo et al. (2005, J. Neurophysiol.) 提出 generalized linear model (GLM) point process 框架建模 spike trains——同時納入 self-excitation, refractory, 與 cross-coupling。後續神經科學的 functional connectivity 分析多基於此。Pillow et al. (2008, Nature) 進一步建立 retinal ganglion cell network 模型。</p>
+<p data-lang="en">Truccolo et al. (2005, J. Neurophysiol.) introduced a GLM point-process framework for spike trains — capturing self-excitation, refractoriness, and cross-coupling. Foundation of much functional connectivity work. Pillow et al. (2008, Nature) modeled retinal ganglion cell networks similarly.</p></div>
+
+<div class="card"><h4 data-zh="癌症突變時序" data-en="Cancer mutation timing">癌症突變時序 (Greenman 2007)</h4>
+<p data-lang="zh">Greenman et al. (2007, Nature) 等先驅工作把 cancer somatic mutation 視為時序事件——某些 driver mutation 出現後激發後續 passenger 與 second hit。後續 Bolli et al. (2014, Nat. Comm.)、PCAWG (2020, Nature) 等大型分析用 Hawkes 變體追蹤 clonal evolution timing。</p>
+<p data-lang="en">Greenman et al. (2007, Nature) and follow-ups treated cancer somatic mutations as temporal events — driver mutations excite subsequent passenger / second-hit mutations. Bolli et al. (2014, Nat. Comm.) and PCAWG (2020, Nature) used Hawkes variants to track clonal evolution timing.</p></div>
+
+<div class="card"><h4 data-zh="HIV evolution timing" data-en="HIV evolution timing">HIV evolution timing</h4>
+<p data-lang="zh">HIV 在 host 內快速演化、escape mutation 對應免疫壓力衝擊。Hawkes 模型用來推 escape 與 CTL 攻擊事件的時序耦合。<code>tick</code> 套件常被用於免疫–病毒共演化資料的時序分析。</p>
+<p data-lang="en">HIV evolves rapidly within hosts; escape mutations correspond to immune pressure shocks. Hawkes models infer the timing coupling between escape and CTL attack events. The <code>tick</code> library is often used for immune-virus coevolution time-series.</p></div>
+
+<div class="card"><h4 data-zh="TCR repertoire dynamics" data-en="TCR repertoire dynamics">TCR repertoire dynamics</h4>
+<p data-lang="zh">T cell clonal expansion 是時序事件——某 clonotype 在某時刻爆發擴增。Hawkes 過程可建模「clone i 擴增激發 clone j 擴增」的 cross-excitation，揭示 immune coordination。應用於 COVID-19、癌症免疫追蹤。</p>
+<p data-lang="en">T-cell clonal expansion is a temporal event — clones burst at specific moments. Hawkes models cross-excitation "clone i expansion excites clone j" to reveal immune coordination. Applied to COVID-19 and cancer immune tracking.</p></div>
+
+<div class="card"><h4 data-zh="CRISPR 變異熱點" data-en="CRISPR mutation hotspots">CRISPR 變異熱點 / 微同調</h4>
+<p data-lang="zh">CRISPR-Cas 編輯後 DNA repair 在某些位置容易再次發生 indels；Hawkes 把這些「再次擾動」建模為自激發過程，可預測 indel hotspot。用於 base editing 與 prime editing 的 off-target risk 評估。</p>
+<p data-lang="en">After CRISPR-Cas editing, certain sites are prone to repeat indels; Hawkes models these as self-exciting events, predicting indel hotspots. Used in off-target risk assessment for base / prime editing.</p></div>
+
+<div class="card"><h4 data-zh="Chromothripsis 計時" data-en="Chromothripsis timing">Chromothripsis 與時序簇突變</h4>
+<p data-lang="zh">Chromothripsis 是「一次性多斷裂事件」，與漸進演化突變不同。Hawkes 可區分「強短期 burst」（chromothripsis）與「慢長期 trend」（漸進突變），透過 timing-of-mutation 與 multiplicity 分析（Stephens 2011, Cell）。</p>
+<p data-lang="en">Chromothripsis is a "single catastrophic event" distinct from gradual evolution. Hawkes distinguishes "strong short bursts" (chromothripsis) from "slow long trends" (gradual mutation) via timing and multiplicity analysis (Stephens 2011, Cell).</p></div>
+
+<div class="card"><h4 data-zh="Pharmacovigilance" data-en="Pharmacovigilance">藥物不良反應監測</h4>
+<p data-lang="zh">EHR 系統的 adverse event 報告呈現「藥物使用後激發後續事件」結構。Hawkes 模型用來偵測 drug-event signal（FDA AERS, Reps et al. 2014 等）——比 disproportionality methods 更動態。</p>
+<p data-lang="en">Adverse-event reports in EHRs exhibit "drug use excites subsequent events". Hawkes models detect drug-event signals (FDA AERS, Reps et al. 2014) — more dynamic than disproportionality methods.</p></div>
+
+<div class="card"><h4 data-zh="ECG / EEG burst 偵測" data-en="ECG / EEG burst detection">ECG / EEG burst 偵測</h4>
+<p data-lang="zh">心律不整、癲癇 burst 都是 self-exciting temporal events。Neural Hawkes 在 wearable monitoring data 上做 burst 偵測與分類，比 sliding-window threshold 更穩。</p>
+<p data-lang="en">Cardiac arrhythmia and epileptic bursts are self-exciting events. Neural Hawkes on wearable monitoring data detects and classifies bursts more robustly than sliding-window thresholds.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="Hawkes 進階主題" data-en="Advanced Hawkes Topics">Hawkes 進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Branching ratio 與 cluster size</h3>
+<p>α/β 是「每個事件預期激發的後代數量」。α/β = 0.5 時，每個事件平均產生 0.5 個直接後代、0.25 個孫代...級聯總大小為幾何級數 1/(1−α/β)。生物應用中，branching ratio 接近 1 對應「臨界 burst 狀態」——常見於 epileptic seizure、cytokine storm 等。</p>
+
+<h3>② Hawkes 與 epidemic SIR 的對應</h3>
+<p>Hawkes intensity μ + Σ α exp(−β·Δt) 與 SEIR 在 mean-field limit 下對應：α 對應 R₀、1/β 對應 infectious duration。<strong>Park et al. 2020 / Bertozzi 2020 (PNAS)</strong> 在 COVID-19 早期用 Hawkes 估算 R_t 並比 SEIR 更靈活地處理 onset noise。</p>
+
+<h3>③ Inference via EM</h3>
+<p>對 Hawkes，可用 latent "parent assignment"（每個事件被誰激發）做 EM：E-step 計算每個事件被歷史每個事件激發的後驗機率；M-step 重估 (μ, α, β)。<strong>Lewis & Mohler 2011</strong> 的 EM 演算法應用於 crime data，也適用於生物時序。</p>
+
+<h3>④ Non-parametric kernel</h3>
+<p>不必假設 exponential decay；可用 splines 或 kernel methods（Lewis 2011；Bacry 2014, Quant. Finance）非參數估計 trigger function φ(t)。對未知 dynamics 的生物事件更彈性。</p>
+
+<h3>⑤ Sparse multivariate Hawkes</h3>
+<p>K 個 process 時 α_{k,l} 是 K×K matrix。用 L1 / nuclear-norm 正則化（Bacry 2015）可推稀疏 / 低秩 cross-excitation network——對應生物學中「少數 master regulator」的假設。</p>
+
+<h3>⑥ Neural Hawkes 的優劣</h3>
+<p><strong>優：</strong>學任意 history dependence（非 exp decay）、自動處理 marks、可端對端 train。<strong>劣：</strong>缺乏 closed-form intensity 積分 → 需 Monte Carlo 估計 ∫λ dt；訓練資料需求高；參數可解釋性差。</p>
+
+<h3>⑦ Time-rescaling 與診斷</h3>
+<p>對 fit 完的 Hawkes 算 Λ(t_i)，序列應為 unit-rate Poisson；對 Λ(t_i) − Λ(t_{i−1}) 做 QQ-plot vs Exp(1)。<strong>偏離直線</strong> = misfit。對 multivariate, 同樣對每個 process 個別做。</p>
+
+<h3>⑧ 與 RNN / Transformer 序列模型的關係</h3>
+<p>標準 RNN 處理 fixed-step sequence；Hawkes 處理 irregularly-timed events。Neural Hawkes 用 continuous-time hidden state 把這兩者銜接。Transformer Hawkes 進一步把時間差編進 attention，可建模 long-range temporal dependency。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Branching ratio and cluster size</h3>
+<p>α/β = expected number of offspring per event. At α/β = 0.5, each event triggers 0.5 direct, 0.25 grandchild, ... total cluster size geometric series 1/(1 − α/β). In biology, near-1 branching ratio is the "critical bursting state" — seen in epileptic seizures, cytokine storms, etc.</p>
+
+<h3>② Hawkes vs. epidemic SIR</h3>
+<p>Hawkes intensity μ + Σ α exp(−β·Δt) matches SEIR in the mean-field limit: α ↔ R₀, 1/β ↔ infectious duration. <strong>Park et al. 2020 / Bertozzi 2020 (PNAS)</strong> used Hawkes for early-COVID R_t with more flexibility than SEIR around noisy onset.</p>
+
+<h3>③ Inference via EM</h3>
+<p>With latent "parent assignment" (which earlier event triggered the current), do EM: E-step computes posterior triggering probabilities; M-step re-estimates (μ, α, β). <strong>Lewis & Mohler 2011</strong>'s EM algorithm for crime data transfers cleanly to biological time series.</p>
+
+<h3>④ Non-parametric kernel</h3>
+<p>No need to assume exponential decay; use splines or kernels (Lewis 2011; Bacry 2014, Quant. Finance) for non-parametric trigger φ(t). More flexible for unknown biological dynamics.</p>
+
+<h3>⑤ Sparse multivariate Hawkes</h3>
+<p>For K processes, α_{k,l} is a K×K matrix. L1 / nuclear-norm regularization (Bacry 2015) yields sparse / low-rank cross-excitation networks — matching biology's "few master regulators".</p>
+
+<h3>⑥ Neural Hawkes pros and cons</h3>
+<p><strong>Pros:</strong> arbitrary history dependence (not just exp); native marks; end-to-end training. <strong>Cons:</strong> no closed-form ∫λ dt — needs Monte Carlo; data-hungry; less interpretable parameters.</p>
+
+<h3>⑦ Time-rescaling and diagnostics</h3>
+<p>For a fitted Hawkes, compute Λ(t_i); the rescaled times should be unit-rate Poisson; do a QQ-plot of Λ(t_i) − Λ(t_{i−1}) against Exp(1). <strong>Deviation</strong> = misfit. For multivariate, do this per process.</p>
+
+<h3>⑧ Relation to RNN / Transformer sequence models</h3>
+<p>Standard RNNs handle fixed-step sequences; Hawkes handles irregularly-timed events. Neural Hawkes bridges via continuous-time hidden state. Transformer Hawkes folds inter-event times into attention for long-range temporal dependencies.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="Hawkes 還能改良哪些任務？" data-en="What Else Could Hawkes Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 單細胞 in-vivo lineage timing</h3>
+<p>CellTagging 與 lineage barcode 已可記錄 lineage tree，但缺少「事件發生時序」。<strong>提案：</strong>multivariate Hawkes 對 lineage branching events 建模，推 fate decision cross-excitation。</p>
+
+<h3>🎯 2. cancer subclonal expansion 預測</h3>
+<p>結合 Hawkes + clonal copy-number timing。<strong>提案：</strong>Hawkes-aware MutTime — 不只給每個 mutation 一個 time point，而是給「此 mutation 引發後續多少 cascade」的解析。</p>
+
+<h3>🎯 3. 免疫 cytokine storm 預警</h3>
+<p>Cytokine network 是強自激發系統。<strong>提案：</strong>multivariate Neural Hawkes 對 longitudinal cytokine panel 建模，提前 24h 偵測 storm onset 對 sepsis / COVID-19 ICU 有實用價值。</p>
+
+<h3>🎯 4. EHR 多事件預測</h3>
+<p>住院、用藥、檢驗、轉院都是 events。<strong>提案：</strong>Transformer Hawkes 整合 EHR 全部時序，用於 readmission 預測與 adverse-event risk。比現有 RETAIN、Med-BERT 在 irregular timing 處理上更原生。</p>
+
+<h3>🎯 5. 神經電生理 spike sorting 後的 connectivity</h3>
+<p>大規模 Neuropixels 記錄上萬 neuron。<strong>提案：</strong>sparse multivariate Hawkes 重建 functional connectivity matrix，可揭露 microcircuit 動態，比 cross-correlation 更區分 direct vs indirect。</p>
+
+<h3>🎯 6. CRISPR screen 時序解析</h3>
+<p>Perturb-seq 多時間點測量，但目前少用 temporal model。<strong>提案：</strong>Hawkes 對 perturbation-response 事件建模，可推 「擾動何時開始造成 cascade」與 「哪些 perturbations 互相激發」。</p>
+
+<h3>🎯 7. Microbiome dynamics</h3>
+<p>菌群 bloom 是強自激發事件。<strong>提案：</strong>multivariate Hawkes 對 longitudinal 16S/metagenomics 建模 species-species excitation 網路；對 C. diff infection、IBD flare 預測有用。</p>
+
+<h3>🎯 8. 結合 RL 的處方推薦</h3>
+<p>每次處方 → 後續臨床事件。<strong>提案：</strong>Hawkes-aware RL，把 reward 與 policy 設計考慮「處方激發未來事件」的時序結構，避免短視 myopic decision。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Single-cell in vivo lineage timing</h3>
+<p>CellTagging / lineage barcodes capture lineage trees but lack "when did each branching happen". <strong>Proposal:</strong> multivariate Hawkes over lineage branching events to infer fate-decision cross-excitation.</p>
+
+<h3>🎯 2. Cancer subclonal expansion forecast</h3>
+<p>Combine Hawkes + clonal copy-number timing. <strong>Proposal:</strong> Hawkes-aware MutTime — not just per-mutation timing but "how much cascade did this mutation trigger".</p>
+
+<h3>🎯 3. Cytokine-storm early warning</h3>
+<p>Cytokine networks are strongly self-exciting. <strong>Proposal:</strong> multivariate Neural Hawkes over longitudinal cytokine panels to detect storm onset 24 h ahead — valuable for sepsis / COVID-19 ICU triage.</p>
+
+<h3>🎯 4. EHR multi-event prediction</h3>
+<p>Admissions, medications, labs, transfers are all events. <strong>Proposal:</strong> Transformer Hawkes ingesting full EHR timelines for readmission / adverse-event risk — more native at irregular timing than RETAIN / Med-BERT.</p>
+
+<h3>🎯 5. Functional connectivity from large-scale spike sorting</h3>
+<p>Neuropixels record tens of thousands of neurons. <strong>Proposal:</strong> sparse multivariate Hawkes for functional connectivity — better at separating direct vs indirect than cross-correlation.</p>
+
+<h3>🎯 6. Temporal CRISPR screens</h3>
+<p>Perturb-seq is increasingly time-resolved but rarely temporally modeled. <strong>Proposal:</strong> Hawkes for perturbation-response events to infer "when does the cascade start" and "which perturbations mutually excite".</p>
+
+<h3>🎯 7. Microbiome dynamics</h3>
+<p>Microbial blooms are strongly self-exciting. <strong>Proposal:</strong> multivariate Hawkes on longitudinal 16S/metagenomics to recover species-species excitation networks — useful for C. diff infection and IBD flare prediction.</p>
+
+<h3>🎯 8. RL with Hawkes-aware reward</h3>
+<p>Each prescription excites future events. <strong>Proposal:</strong> Hawkes-aware RL with rewards and policies modeling "prescription excites future events" — avoids myopic short-sighted recommendations.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'tick')">tick (Python)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'pyhawkes')">pyhawkes</button>
+<button class="code-tab-btn" onclick="switchTab(this,'nh')">Neural Hawkes (PyTorch)</button>
+</div>
+
+<div class="code-tab-content active" id="tick"><pre><span class="comment"># pip install tick</span>
+<span class="keyword">from</span> tick.hawkes <span class="keyword">import</span> SimuHawkesExpKernels, HawkesExpKern
+
+<span class="comment"># Simulate a 2D Hawkes with exponential kernel</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+adjacency = np.array([[<span class="num">0.4</span>, <span class="num">0.1</span>], [<span class="num">0.2</span>, <span class="num">0.5</span>]])     <span class="comment"># α_kl matrix</span>
+decays    = np.array([[<span class="num">1.0</span>, <span class="num">1.0</span>], [<span class="num">1.0</span>, <span class="num">1.0</span>]])     <span class="comment"># β</span>
+baseline  = np.array([<span class="num">0.05</span>, <span class="num">0.05</span>])                   <span class="comment"># μ</span>
+
+sim = SimuHawkesExpKernels(adjacency, decays, baseline=baseline,
+                            end_time=<span class="num">1000</span>, seed=<span class="num">42</span>, verbose=<span class="keyword">False</span>)
+sim.simulate()
+events = sim.timestamps          <span class="comment"># list of arrays per process</span>
+
+<span class="comment"># Estimate parameters from observed events</span>
+est = HawkesExpKern(decays=<span class="num">1.0</span>, penalty=<span class="str">'l1'</span>, C=<span class="num">100</span>)
+est.fit(events)
+print(<span class="str">"baseline"</span>, est.baseline)
+print(<span class="str">"adjacency"</span>, est.adjacency)</pre></div>
+
+<div class="code-tab-content" id="pyhawkes"><pre><span class="comment"># pip install pyhawkes</span>
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+<span class="keyword">import</span> pyhawkes.models <span class="keyword">as</span> hm
+
+K = <span class="num">4</span>                                  <span class="comment"># number of processes</span>
+dt_max = <span class="num">2.0</span>                            <span class="comment"># trigger horizon</span>
+model = hm.DiscreteTimeNetworkHawkesModelSpikeAndSlab(
+    K=K, dt=<span class="num">0.1</span>, dt_max=dt_max)
+
+<span class="comment"># observed events: list of (t, k) tuples discretized into spike matrix</span>
+S = np.random.rand(<span class="num">10000</span>, K) &lt; <span class="num">0.05</span>      <span class="comment"># demo</span>
+model.add_data(S.astype(int))
+<span class="comment"># Gibbs sampling for posterior</span>
+<span class="keyword">for</span> i <span class="keyword">in</span> range(<span class="num">200</span>):
+    model.resample_model()
+print(<span class="str">"posterior weights"</span>, model.weight_model.W)</pre></div>
+
+<div class="code-tab-content" id="nh"><pre><span class="comment"># Sketch: Neural Hawkes — Mei &amp; Eisner 2017 (NeurIPS)</span>
+<span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn
+
+<span class="keyword">class</span> NeuralHawkes(nn.Module):
+    <span class="keyword">def</span> __init__(self, K, h=<span class="num">64</span>):
+        super().__init__()
+        self.K = K
+        self.lstm = nn.LSTMCell(K+<span class="num">1</span>, h)         <span class="comment"># event-type one-hot + Δt</span>
+        self.W = nn.Linear(h, K)
+    <span class="keyword">def</span> intensity(self, h):
+        <span class="keyword">return</span> torch.nn.functional.softplus(self.W(h))
+    <span class="keyword">def</span> forward(self, events):
+        <span class="comment"># events: list of (Δt, k_type) tensors</span>
+        h = torch.zeros(<span class="num">1</span>, <span class="num">64</span>); c = torch.zeros(<span class="num">1</span>, <span class="num">64</span>)
+        log_lik = <span class="num">0.</span>
+        <span class="keyword">for</span> dt, k <span class="keyword">in</span> events:
+            <span class="comment"># Between-events: integrate intensity (Monte Carlo)</span>
+            t_samps = torch.linspace(<span class="num">0</span>, dt, <span class="num">10</span>)
+            lam_int = self.intensity(h).sum() * dt
+            <span class="comment"># At event: update LSTM</span>
+            one_hot = torch.zeros(<span class="num">1</span>, self.K+<span class="num">1</span>)
+            one_hot[<span class="num">0</span>, k] = <span class="num">1.0</span>; one_hot[<span class="num">0</span>, -<span class="num">1</span>] = dt
+            h, c = self.lstm(one_hot, (h, c))
+            log_lik += torch.log(self.intensity(h)[<span class="num">0</span>, k]+<span class="num">1e-8</span>) - lam_int
+        <span class="keyword">return</span> -log_lik          <span class="comment"># negative log-likelihood</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Hawkes 與 Poisson 過程最關鍵的差異是什麼？</p><p data-lang="en">What is the key difference between Hawkes and Poisson processes?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. Hawkes 不能模擬連續時間" data-en="A. Hawkes can't model continuous time">A. Hawkes 不能模擬連續時間</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. Hawkes 的 intensity 依賴歷史事件（self-exciting），事件成簇；Poisson memoryless" data-en="B. Hawkes intensity depends on past events (self-exciting), bursty clusters; Poisson is memoryless">B. Hawkes 的 intensity 依賴歷史事件（self-exciting），事件成簇；Poisson memoryless</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. Poisson 比 Hawkes 計算更難" data-en="C. Poisson is harder to compute than Hawkes">C. Poisson 比 Hawkes 計算更難</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 兩者完全相同" data-en="D. They are identical">D. 兩者完全相同</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">Hawkes 過程的 branching ratio α/β 含義是？</p><p data-lang="en">What does the branching ratio α/β mean for a Hawkes process?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 計算複雜度" data-en="A. Computational complexity">A. 計算複雜度</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 序列長度" data-en="B. Sequence length">B. 序列長度</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 每個事件預期激發的後代數量；α/β &lt; 1 平穩、≥ 1 發散" data-en="C. Expected number of offspring per event; α/β &lt; 1 stationary, ≥ 1 explodes">C. 每個事件預期激發的後代數量；α/β &lt; 1 平穩、≥ 1 發散</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 與 ratio 無關，僅命名" data-en="D. Just naming, has no meaning">D. 與 ratio 無關，僅命名</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Neural Hawkes (Mei & Eisner 2017) 相對於傳統 parametric Hawkes 的主要優勢？</p><p data-lang="en">What is Neural Hawkes (Mei & Eisner 2017)'s main advantage over parametric Hawkes?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-zh="A. 用 continuous-time LSTM/ODE 學任意 history dependence，不必假設 exponential decay" data-en="A. Continuous-time LSTM/ODE learns arbitrary history dependence — no exp-decay assumption">A. 用 continuous-time LSTM/ODE 學任意 history dependence，不必假設 exponential decay</span></div>
+<div class="quiz-opt" data-idx="1"><span data-zh="B. 不需要 GPU" data-en="B. No GPU needed">B. 不需要 GPU</span></div>
+<div class="quiz-opt" data-idx="2"><span data-zh="C. 比 parametric Hawkes 解釋性更高" data-en="C. More interpretable than parametric Hawkes">C. 比 parametric Hawkes 解釋性更高</span></div>
+<div class="quiz-opt" data-idx="3"><span data-zh="D. 沒有 baseline" data-en="D. No baseline">D. 沒有 baseline</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="energy-based-dca.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 28：EBM & DCA" data-en="Ch 28: EBM & DCA">Ch 28：EBM & DCA</span></a>
+<a href="reinforcement-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 30：Reinforcement Learning" data-en="Ch 30: Reinforcement Learning">Ch 30：Reinforcement Learning</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Hawkes vs Poisson simulation =====
+const HSVG=document.getElementById('hawSvg');
+const Wp=600, Hp=360;
+const T_END=20.0;     // simulate t in [0, T_END]
+let poissonEvents=[], hawkesEvents=[];
+
+function uniform(){return Math.random();}
+function expRand(rate){return -Math.log(1-uniform())/rate;}
+
+function simulatePoisson(mu){
+  const ev=[]; let t=0;
+  while(true){t+=expRand(mu); if(t>T_END)break; ev.push(t);}
+  return ev;
+}
+
+// Ogata's thinning algorithm for Hawkes with exp kernel
+function simulateHawkes(mu,alpha,beta){
+  const ev=[]; let t=0;
+  while(true){
+    // upper bound on intensity right after current t
+    const lam_star = mu + ev.reduce((s,ti)=>s + alpha*Math.exp(-beta*(t-ti)),0) + alpha;
+    if(lam_star<=0)break;
+    t += expRand(lam_star);
+    if(t>T_END)break;
+    const lam = mu + ev.reduce((s,ti)=>s + alpha*Math.exp(-beta*(t-ti)),0);
+    if(uniform()<lam/lam_star){
+      ev.push(t);
+      if(ev.length>3000)break; // safety
+    }
+  }
+  return ev;
+}
+
+function intensityAt(ev,t,mu,alpha,beta){
+  let l=mu;
+  for(let i=0;i<ev.length;i++){if(ev[i]<t)l+=alpha*Math.exp(-beta*(t-ev[i]));}
+  return l;
+}
+
+function resim(){
+  const mu=+document.getElementById('sMu').value;
+  const alpha=+document.getElementById('sAlpha').value;
+  const beta=+document.getElementById('sBeta').value;
+  poissonEvents=simulatePoisson(mu);
+  hawkesEvents=simulateHawkes(mu,alpha,beta);
+  render();
+}
+
+function render(){
+  const mu=+document.getElementById('sMu').value;
+  const alpha=+document.getElementById('sAlpha').value;
+  const beta=+document.getElementById('sBeta').value;
+  document.getElementById('vMu').textContent=mu.toFixed(2);
+  document.getElementById('vAlpha').textContent=alpha.toFixed(2);
+  document.getElementById('vBeta').textContent=beta.toFixed(2);
+
+  const margin=40, axisW=Wp-2*margin;
+  // Layout: two timelines + intensity curve
+  // Timeline 1 (Poisson) at y=80
+  // Intensity curve at y=170 (height 110, baseline at 280)
+  // Timeline 2 (Hawkes) below intensity at y=305
+  const yPois=80, yIntTop=170, yIntBot=280, yHawk=305;
+  let svg='';
+  // Title bands
+  svg+=`<text x="${margin}" y="40" font-size="13" font-weight="700" fill="#1a1a1a">Poisson (λ = μ const)</text>`;
+  svg+=`<text x="${margin}" y="155" font-size="13" font-weight="700" fill="#1a1a1a">Hawkes intensity λ(t)</text>`;
+  svg+=`<text x="${margin}" y="328" font-size="13" font-weight="700" fill="#c0392b">Hawkes events</text>`;
+  // Time axis baselines
+  svg+=`<line x1="${margin}" y1="${yPois}" x2="${Wp-margin}" y2="${yPois}" stroke="#888" stroke-width="1"/>`;
+  svg+=`<line x1="${margin}" y1="${yIntBot}" x2="${Wp-margin}" y2="${yIntBot}" stroke="#888" stroke-width="1"/>`;
+  svg+=`<line x1="${margin}" y1="${yHawk+15}" x2="${Wp-margin}" y2="${yHawk+15}" stroke="#888" stroke-width="1"/>`;
+  // X-axis ticks
+  for(let i=0;i<=4;i++){
+    const x=margin+axisW*i/4;
+    svg+=`<line x1="${x}" y1="${yHawk+12}" x2="${x}" y2="${yHawk+18}" stroke="#888"/>`;
+    svg+=`<text x="${x}" y="${yHawk+30}" text-anchor="middle" font-size="10" fill="#888">${(T_END*i/4).toFixed(0)}</text>`;
+  }
+
+  // Poisson events (gray dots)
+  poissonEvents.forEach(t=>{
+    const x=margin+axisW*t/T_END;
+    svg+=`<line x1="${x}" y1="${yPois-12}" x2="${x}" y2="${yPois+12}" stroke="#2563a8" stroke-width="1.6"/>`;
+  });
+
+  // Compute intensity curve for Hawkes
+  const NP=200;
+  const intensityVals=[];
+  let maxI=mu+0.001;
+  for(let k=0;k<=NP;k++){
+    const t=T_END*k/NP;
+    const l=intensityAt(hawkesEvents,t,mu,alpha,beta);
+    intensityVals.push(l);
+    if(l>maxI)maxI=l;
+  }
+  // Plot intensity
+  const ints=intensityVals.map((v,k)=>{
+    const x=margin+axisW*k/NP;
+    const y=yIntBot - (yIntBot-yIntTop)*Math.min(1,v/maxI);
+    return [x,y];
+  });
+  let path=`M ${ints[0][0]},${ints[0][1]}`;
+  for(let i=1;i<ints.length;i++)path+=` L ${ints[i][0]},${ints[i][1]}`;
+  svg+=`<path d="${path}" stroke="#c0392b" stroke-width="2" fill="none"/>`;
+  // baseline μ line
+  const yBase = yIntBot - (yIntBot-yIntTop)*Math.min(1,mu/maxI);
+  svg+=`<line x1="${margin}" y1="${yBase}" x2="${Wp-margin}" y2="${yBase}" stroke="#999" stroke-dasharray="3 3"/>`;
+  svg+=`<text x="${Wp-margin+4}" y="${yBase+4}" font-size="10" fill="#999">μ</text>`;
+  svg+=`<text x="${margin-30}" y="${yIntTop+12}" font-size="10" fill="#888">max=${maxI.toFixed(2)}</text>`;
+  svg+=`<text x="${margin-30}" y="${yIntBot-2}" font-size="10" fill="#888">0</text>`;
+
+  // Hawkes events ticks
+  hawkesEvents.forEach(t=>{
+    const x=margin+axisW*t/T_END;
+    svg+=`<line x1="${x}" y1="${yHawk}" x2="${x}" y2="${yHawk+12}" stroke="#c0392b" stroke-width="1.6"/>`;
+  });
+
+  HSVG.innerHTML=svg;
+
+  // Stats
+  const nP=poissonEvents.length, nH=hawkesEvents.length;
+  const branching=(alpha/(beta+1e-9)).toFixed(3);
+  const expected = mu*T_END/(1-Math.min(0.99,alpha/(beta+1e-9)));
+  const L=I18n.get();
+  document.getElementById('hawInfo').innerHTML=L==='zh'?
+    `事件數：Poisson = <strong>${nP}</strong>，Hawkes = <strong>${nH}</strong>（[0, ${T_END}]）。<br>Branching ratio α/β = <strong>${branching}</strong>${alpha/beta>=1?'<strong style="color:#c0392b"> ⚠ ≥1，過程發散</strong>':' (&lt;1, 平穩)'}。Hawkes 期望事件數 ≈ μT / (1 − α/β) ≈ <strong>${expected.toFixed(1)}</strong>。<br>觀察：每次事件造成 intensity 跳升 α 然後以 β 衰減；前一事件後越短時間內越容易再有事件——這就是 burst 的成因。`
+    :
+    `Event counts: Poisson = <strong>${nP}</strong>, Hawkes = <strong>${nH}</strong> (over [0, ${T_END}]).<br>Branching ratio α/β = <strong>${branching}</strong>${alpha/beta>=1?'<strong style="color:#c0392b"> ⚠ ≥1, process diverges</strong>':' (&lt;1, stationary)'}. Expected Hawkes count ≈ μT / (1 − α/β) ≈ <strong>${expected.toFixed(1)}</strong>.<br>Observation: each event jumps intensity by α then decays at rate β; shortly after an event, another is more likely — that's how bursts arise.`;
+}
+
+document.getElementById('btnResim').addEventListener('click',resim);
+['sMu','sAlpha','sBeta'].forEach(id=>{document.getElementById(id).addEventListener('input',()=>{resim();});});
+document.addEventListener('langchange',render);
+resim();
+
+window._QF={zh:{
+  q1_y:'答對！Hawkes self-exciting → bursts；Poisson 是 memoryless 的基線。',
+  q1_n:'答案是 B。Hawkes intensity = μ + 過去事件衰減累積；Poisson λ 不看歷史。',
+  q2_y:'答對！α/β 是 branching ratio，控制 cascade 規模與穩定性。',
+  q2_n:'答案是 C。α/β &lt; 1 平穩、cluster size = 1/(1−α/β)；≥ 1 發散。',
+  q3_y:'答對！Neural Hawkes 用 continuous-time hidden state 學任意 history kernel。',
+  q3_n:'答案是 A。Mei & Eisner 2017 的核心是用 continuous-time LSTM 表示 intensity，避開 exp kernel 限制。'
+},en:{
+  q1_y:'Correct! Hawkes self-excitation creates bursts; Poisson is the memoryless baseline.',
+  q1_n:'Answer is B. Hawkes intensity = μ + decaying past-event sum; Poisson λ ignores history.',
+  q2_y:'Correct! α/β is the branching ratio, controlling cascade size and stability.',
+  q2_n:'Answer is C. α/β &lt; 1 stationary, cluster size = 1/(1−α/β); ≥ 1 diverges.',
+  q3_y:'Correct! Neural Hawkes learns arbitrary history kernels via continuous-time hidden state.',
+  q3_n:'Answer is A. Mei & Eisner 2017 use continuous-time LSTM for intensity, removing the exp-kernel constraint.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>
