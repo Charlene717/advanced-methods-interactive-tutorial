@@ -1,0 +1,446 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Variational Inference — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html" class="active">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 11 / 14</div><h1 data-zh="變分推論與 VAE" data-en="Variational Inference &amp; VAE">變分推論與 VAE</h1>
+<p class="subtitle" data-lang="zh">scVI、totalVI、MultiVI、PeakVI 等單細胞工具的數學骨幹——把貝氏推論變成可微優化。</p>
+<p class="subtitle" data-lang="en">The mathematical backbone of scVI, totalVI, MultiVI, PeakVI — turning Bayesian inference into differentiable optimization.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 EM 到 VAE" data-en="From EM to VAE">從 EM 到 VAE</h2>
+<div data-lang="zh">
+<p>單細胞測量值 x（每個基因的 count）的生成模型：細胞有個未知的「隱變數」z（低維表徵），條件分布 p(x|z) 是 NB / ZINB / Poisson。我們想求後驗 p(z|x) 但難算 → 用 q<sub>φ</sub>(z|x)（神經網路 encoder）近似。</p>
+<p><strong>ELBO（Evidence Lower BOund）：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">log p(x) ≥ E<sub>q(z|x)</sub>[log p(x|z)] − KL[q(z|x) ‖ p(z)]</p>
+<p>右邊是「重構誤差」+「先驗正則化」。最大化 ELBO ⇔ 同時學 encoder φ 與 decoder θ。</p>
+<p><strong>重參數技巧 (reparameterization trick)：</strong>z = μ + σ ⊙ ε, ε ~ N(0, I)。讓抽樣可微，可用反向傳播訓練。</p>
+</div>
+<div data-lang="en">
+<p>Generative model for single-cell counts x: each cell has a latent z (low-dim rep); p(x|z) is NB / ZINB / Poisson. The posterior p(z|x) is intractable → approximate with q<sub>φ</sub>(z|x) (a neural net encoder).</p>
+<p><strong>ELBO (Evidence Lower BOund):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">log p(x) ≥ E<sub>q(z|x)</sub>[log p(x|z)] − KL[q(z|x) ‖ p(z)]</p>
+<p>= reconstruction + prior regularization. Maximizing ELBO simultaneously trains encoder φ and decoder θ.</p>
+<p><strong>Reparameterization trick:</strong> z = μ + σ ⊙ ε, ε ~ N(0, I) — makes sampling differentiable for backprop.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="scVI 家族" data-en="scVI FAMILY">scVI 家族</div>
+<h2 data-zh="統一的機率框架" data-en="A Unified Probabilistic Framework">統一的機率框架</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4>scVI (Lopez 2018)</h4><p data-lang="zh">為 scRNA-seq 設計：encoder 輸出 z 與 library size，decoder 輸出 NB 或 ZINB 參數。原生支援批次效應移除（把 batch 當條件變數）。</p><p data-lang="en">For scRNA-seq: encoder outputs z + library size; decoder outputs NB / ZINB parameters. Native batch correction (batch as conditional input).</p></div>
+<div class="card"><h4>totalVI (Gayoso 2021)</h4><p data-lang="zh">擴展到 CITE-seq——同時模擬 RNA (NB) 與蛋白質 (NB + foreground/background mixture)。</p><p data-lang="en">Extends to CITE-seq — jointly models RNA (NB) and protein (NB + foreground/background mixture).</p></div>
+<div class="card"><h4>MultiVI / PeakVI</h4><p data-lang="zh">處理 scATAC（PeakVI 為 Bernoulli 模型）與多模態整合（MultiVI 對齊 paired 或 unpaired RNA + ATAC）。</p><p data-lang="en">scATAC (PeakVI = Bernoulli model) and multi-modal integration (MultiVI for paired or unpaired RNA + ATAC).</p></div>
+<div class="card"><h4>destVI / Stereoscope</h4><p data-lang="zh">用 VAE 做空間轉錄體的細胞型別解析 (deconvolution)——把 spot 視為 cell-type-specific latent 的混合。</p><p data-lang="en">VAE-based deconvolution for spatial transcriptomics — treats spots as mixtures of cell-type latents.</p></div>
+<div class="card"><h4>cell2location</h4><p data-lang="zh">階層貝氏 + VI，整合 spatial 與 scRNA-seq 參考估計每個 spot 的細胞型別豐度，包含技術因子建模。</p><p data-lang="en">Hierarchical Bayes + VI; integrates spatial + scRNA-seq reference to estimate per-spot cell-type abundances with technical modeling.</p></div>
+<div class="card"><h4>VAE for trajectory: VITAE, scTour</h4><p data-lang="zh">把 latent z 加上時間/軌跡先驗，做連續發育推論。scTour 用 Neural ODE 連續化潛變數。</p><p data-lang="en">Add temporal/trajectory priors to z; scTour uses Neural ODE for continuous latents.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="ELBO 訓練動態" data-en="ELBO Training Dynamics">ELBO 訓練動態</h2>
+<div data-lang="zh"><p>模擬一個迷你 VAE 訓練：觀察 reconstruction loss、KL divergence、與總 ELBO 的變化。β-VAE（調整 KL 權重）對 disentanglement 有顯著影響。</p></div>
+<div data-lang="en"><p>Simulated mini VAE training: watch reconstruction loss, KL divergence, and ELBO. β-VAE (KL weight) strongly affects disentanglement.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label>β (KL weight) <span id="vBeta">1.0</span></label><input type="range" id="sBeta" min="0" max="4" value="1.0" step="0.1"></div>
+<div class="slider-group"><label data-zh="Epoch" data-en="Epoch">Epoch <span id="vEp">100</span></label><input type="range" id="sEp" min="20" max="300" value="100" step="10"></div>
+<div class="chart-container" style="height:280px;"><canvas id="vaeChart"></canvas></div>
+<div id="vaeMsg" style="margin-top:8px;padding:10px;background:#f7f5f0;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="為什麼是單細胞的主流框架？" data-en="Why Dominant in Single-cell?">為什麼是單細胞的主流框架？</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="原生計數模型" data-en="Native count model">原生計數模型</h4><p data-lang="zh">直接用 NB / ZINB likelihood 模擬 raw counts，不需要前處理（log normalization）就能整合多批次。</p><p data-lang="en">Models raw counts directly via NB / ZINB likelihood; no preprocessing (log-norm) needed before batch integration.</p></div>
+<div class="card"><h4 data-zh="批次效應" data-en="Batch correction">批次效應</h4><p data-lang="zh">batch 當作 conditional input，decoder 學「在這個 batch 下」應該長什麼樣——天然移除技術變異。</p><p data-lang="en">Batch as conditional input; decoder learns "what x looks like in this batch" — natural batch correction.</p></div>
+<div class="card"><h4 data-zh="不確定性量化" data-en="Uncertainty quantification">不確定性量化</h4><p data-lang="zh">每個細胞都有 z 的後驗分布——可量化 imputation、DE 等下游分析的不確定性。</p><p data-lang="en">Posterior q(z|x) gives per-cell uncertainty — propagates to imputation, DE, etc.</p></div>
+<div class="card"><h4 data-zh="可擴展" data-en="Scalable">可擴展</h4><p data-lang="zh">隨機梯度下降 + GPU → 數百萬細胞可在數小時訓練完畢。比 MCMC 快幾個數量級。</p><p data-lang="en">SGD + GPU → millions of cells in hours. Orders of magnitude faster than MCMC.</p></div>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>實務小提示：</strong>scVI 訓練時的 batch_key 一旦設定錯誤（例如把生物因子當 batch），會把真實生物差異「校正掉」。先想清楚什麼是「想保留的變異」、什麼是「想移除的變異」。</div>
+<div data-lang="en"><strong>Practical tip:</strong> A wrong batch_key in scVI (treating a biological factor as batch) erases real biology. Always be clear what variation you want to keep vs remove.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="深入解析 VAE：ELBO、posterior collapse、likelihood 選擇" data-en="Deep Dive: ELBO, Posterior Collapse, Likelihood Choice">深入解析 VAE：ELBO、posterior collapse、likelihood 選擇</h2>
+
+<div data-lang="zh">
+<h3>① ELBO 數學推導：為什麼最大化 ELBO ≈ 最小化 KL 後驗距離</h3>
+<p>對任意變分分布 q<sub>φ</sub>(z|x)：</p>
+<p style="font-family:monospace;margin-left:16px;">log p<sub>θ</sub>(x) = E<sub>q</sub>[log p<sub>θ</sub>(x,z) − log q<sub>φ</sub>(z|x)] + KL(q<sub>φ</sub>(z|x) ‖ p<sub>θ</sub>(z|x))<br>　　　　　= ELBO(x; θ, φ) + KL(q ‖ true posterior)</p>
+<p>因為 KL ≥ 0，所以 ELBO ≤ log p<sub>θ</sub>(x)（這是「下界」evidence lower bound 的由來）。<strong>關鍵觀察：</strong>log p(x) 不依賴 φ，所以「對 φ 最大化 ELBO」等價於「對 φ 最小化 KL(q‖真實後驗)」——這就是 VAE 用 ELBO 訓練的根本原因。實務上把 ELBO 拆成 <em>reconstruction term</em> E<sub>q</sub>[log p(x|z)] 減去 <em>prior KL</em> KL(q(z|x)‖p(z))，後者在高斯先驗下有閉合形式。</p>
+
+<h3>② 重參數技巧（reparameterization trick）的數學原因</h3>
+<p>訓練要計算 ∇<sub>φ</sub> E<sub>q<sub>φ</sub>(z|x)</sub>[f(z)]。直接做的話 z ~ q<sub>φ</sub> 的取樣本身依賴 φ，梯度無法穿過取樣。Kingma & Welling (2014) 把 z = μ<sub>φ</sub>(x) + σ<sub>φ</sub>(x) · ε, ε ~ N(0, I)——把隨機性「外移」到 ε，z 變成 φ 的可微函數，於是 ∇<sub>φ</sub> E<sub>q</sub>[f(z)] = E<sub>ε</sub>[∇<sub>φ</sub> f(μ + σε)] 可用 Monte Carlo 估計。等價於 pathwise / Jacobian-based gradient estimator，變異數比 score-function (REINFORCE) estimator 小好幾個數量級。<strong>離散 latent</strong> 不能直接重參數，要靠 Gumbel-Softmax 或 straight-through estimator（VQ-VAE 就是這條路）。</p>
+
+<h3>③ β-VAE 與 disentanglement (Higgins et al. 2017, ICLR)</h3>
+<p>把 ELBO 改寫為 E<sub>q</sub>[log p(x|z)] − β · KL(q(z|x)‖p(z))。β = 1 是原本 VAE；β &gt; 1 (常用 4–250) 強迫 latent 更接近先驗 N(0, I)，間接逼出「factor-disentangled」表徵（每個 latent 維度對應一個 generative factor）。代價：重建品質下降（trade-off）。在單細胞應用：β-VAE 變體可分離「細胞型別」與「batch / 技術因子」latent dimension。延伸：β-TCVAE (Chen 2018) 把 KL 拆成 mutual information / total correlation / dimension-wise KL，更精準地懲罰「跨維度耦合」而不傷重建。</p>
+
+<h3>④ Posterior collapse 問題與修補</h3>
+<p>當 decoder 太強（例如 PixelRNN 或大型 autoregressive）時，模型可以不靠 z 就重建 x，於是 q(z|x) → p(z)，KL → 0，latent 變無用。在 scRNA-seq 用 zero-inflated NB decoder 加深層時也會出現。修補策略：</p>
+<ul>
+<li><strong>KL annealing：</strong>訓練初期 β = 0 慢慢升到 1，給 encoder 機會先學會有意義的 z。</li>
+<li><strong>Free bits (Kingma 2016)：</strong>對每個 latent 維度的 KL 設下限 λ，KL &lt; λ 不計入 loss——強迫每個維度至少傳 λ nats 的訊息。</li>
+<li><strong>Semi-amortized inference (Kim 2018)：</strong>用 encoder 給初值，再做幾步 SVI 細修——減少 amortization gap。</li>
+<li><strong>δ-VAE (Razavi 2019)：</strong>讓 prior 略偏離標準高斯，使 q→p 不再「免費」。</li>
+<li><strong>Weaken decoder：</strong>限制 decoder 容量或加 dropout——對 scVI 這類 Gaussian-decoder-of-modest-size 模型實務上很少出現 collapse。</li>
+</ul>
+
+<h3>⑤ Posterior expressiveness：normalizing flow 改進</h3>
+<p>標準 VAE 假設 q(z|x) = N(μ, diag(σ²))——對角高斯，不能表達 latent 維度間相關。改進：</p>
+<ul>
+<li><strong>Planar flow / Radial flow (Rezende & Mohamed 2015)：</strong>對 z<sub>0</sub> ~ N 連續做 K 次可逆變換 z<sub>K</sub> = f<sub>K</sub>(...f<sub>1</sub>(z<sub>0</sub>))，log det Jacobian 可解析。</li>
+<li><strong>IAF (Inverse Autoregressive Flow, Kingma 2016)：</strong>用 autoregressive 結構，前向（取樣）快，反向（訓練）慢但可平行——適合 VAE encoder。</li>
+<li><strong>RealNVP / Glow 風格 coupling layer：</strong>對 scVI 加上 coupling-based flow encoder，能更好地表達細胞 latent 的多模態分布。</li>
+</ul>
+
+<h3>⑥ VQ-VAE (van den Oord et al. 2017, NeurIPS)：離散 latent codes</h3>
+<p>把連續 latent 換成 codebook 查表：encoder 輸出 z<sub>e</sub>(x)，找到 codebook 中最近的 e<sub>k</sub> 作為 z<sub>q</sub>(x)，decoder 用 z<sub>q</sub>。優點：(a) 自然對應「細胞型別 / 狀態 token」這種離散概念；(b) 可後接 transformer 做生成（OpenAI Jukebox, DALL-E 1 採用）；(c) 沒有 posterior collapse。在單細胞：可作為「細胞 vocabulary」基礎，啟發了部分 scLLM 設計。訓練的 straight-through estimator 與 commitment loss 是關鍵 trick。</p>
+
+<h3>⑦ MMD-VAE / InfoVAE (Zhao 2017)：避開 posterior collapse</h3>
+<p>把 KL(q(z|x)‖p(z)) 改成 MMD(q(z)‖p(z))——對 aggregated posterior 而非每樣本 posterior 配對先驗，數學上是 InfoVAE family 的特例。優點：不會 collapse（不直接懲罰 KL），latent 維度幾乎都活躍。代價：理論上沒有清楚的 likelihood lower bound，無法直接做 model comparison via ELBO。</p>
+
+<h3>⑧ Conditional VAE 與 scVI：把 batch 作為 conditional input</h3>
+<p>scVI (Lopez 2018) 把 batch label s 同時輸入 encoder f(x, s) 與 decoder g(z, s)。直觀理解：encoder 學到的 z 是「扣掉 batch 後的細胞 state」；decoder 「給定 state 加回 batch effect」生成 observed counts。這是 conditional VAE 思想在 scRNA-seq 的核心應用——讓 latent 自動 batch-corrected。延伸：scANVI 把 cell type 也作為 conditional 輸入，做 semi-supervised label transfer；totalVI 加上 protein modality 共同 condition。</p>
+
+<h3>⑨ NB 與 ZINB likelihood 數學：為什麼 scRNA-seq 用這個</h3>
+<p>scRNA-seq UMI counts 是非負整數，且有過度離散（variance ≫ mean）。Poisson 不夠（強制 var = mean），用 <strong>NB(μ, θ)</strong>: variance = μ + μ²/θ，θ 為 dispersion。decoder 輸出 μ<sub>g</sub>, θ<sub>g</sub> for each gene g，log-likelihood 為：<br>
+log p(x<sub>g</sub> | μ, θ) = Γ(x+θ) − Γ(θ) − Γ(x+1) + θ log(θ/(θ+μ)) + x log(μ/(θ+μ))</p>
+<p><strong>ZINB</strong> 額外加 zero-inflation 機率 π<sub>g</sub> 處理 dropout（觀測 0 可能是 NB 採樣自然 0，也可能是 dropout 0）：p(x=0) = π + (1−π)·NB(0); p(x&gt;0) = (1−π)·NB(x). 但 Svensson (2020) 指出 10x Chromium UMI 資料 dropout 沒原本想得那麼極端，<strong>NB 通常足夠，ZINB 是 over-modeling</strong>——scVI 預設用 ZINB 但允許 NB-only。</p>
+
+<h3>⑩ Hierarchical / multi-level VAE</h3>
+<p>multiVI (Ashuach 2023) 與 totalVI (Gayoso 2021) 都用 hierarchical：每個 modality 一個 modality-specific latent z<sub>RNA</sub>, z<sub>ATAC</sub>，再經 shared latent z<sub>joint</sub> 整合。totalVI 還做 <em>mixture prior</em>：背景蛋白訊號 + 真實表現雙成分混合。階層 VAE 的優點：可解釋（每層 latent 對應不同抽象等級）；可整合不完整資料（某些細胞只有 RNA）；理論上 tighter ELBO（NVAE, Vahdat 2020）。</p>
+
+<h3>⑪ Amortized vs non-amortized inference</h3>
+<p>Amortized：encoder 用單一 NN 對所有樣本攤平推論——快，但有「amortization gap」（單一 NN 不能精準擬合每個樣本的真實後驗）。Non-amortized：對每個樣本獨立優化 q（傳統 SVI）——準但極慢。<strong>Semi-amortized (Kim 2018, Marino 2018)：</strong>用 encoder 給初值再做幾步 per-sample SVI——在 scRNA-seq 大資料下實用性有限，但對「稀有細胞」可能有用（單純 amortized encoder 對少見樣本表現差）。</p>
+
+<h3>⑫ IWAE (Importance-Weighted VAE, Burda 2016)：tighter bound</h3>
+<p>用 K 個樣本估計：L<sub>K</sub> = E[log (1/K) Σ<sub>k</sub> p(x, z<sub>k</sub>)/q(z<sub>k</sub>|x)]，K=1 時退化為 ELBO，K→∞ 時 → log p(x)。實務上 K = 5–50 給出顯著更緊的 bound 與更好的 log-likelihood，但 reparameterization 變異數隨 K 升高反而稀釋 encoder 梯度（Rainforth 2018）——所以 K 不是越大越好，且不能無腦套用。</p>
+</div>
+
+<div data-lang="en">
+<h3>① ELBO derivation: why maximizing ELBO ≈ minimizing posterior KL</h3>
+<p>For any variational q<sub>φ</sub>(z|x):</p>
+<p style="font-family:monospace;margin-left:16px;">log p<sub>θ</sub>(x) = E<sub>q</sub>[log p<sub>θ</sub>(x,z) − log q<sub>φ</sub>(z|x)] + KL(q<sub>φ</sub>(z|x) ‖ p<sub>θ</sub>(z|x))<br>　　　　　= ELBO(x; θ, φ) + KL(q ‖ true posterior)</p>
+<p>Since KL ≥ 0, ELBO ≤ log p(x) — this is the "evidence lower bound." <strong>Key insight:</strong> log p(x) is independent of φ, so maximizing ELBO over φ is equivalent to minimizing KL(q ‖ true posterior). This is the foundation of VAE training. ELBO splits into a <em>reconstruction term</em> E<sub>q</sub>[log p(x|z)] minus a <em>prior KL</em> KL(q(z|x)‖p(z)), the latter closed-form under Gaussian prior.</p>
+
+<h3>② Reparameterization trick — why it's needed</h3>
+<p>We need ∇<sub>φ</sub> E<sub>q<sub>φ</sub>(z|x)</sub>[f(z)]. Direct sampling makes gradient untraceable through stochastic node. Kingma & Welling (2014): z = μ<sub>φ</sub>(x) + σ<sub>φ</sub>(x) · ε, ε ~ N(0, I) — externalize randomness to ε; z is now a differentiable function of φ, so ∇<sub>φ</sub> E<sub>q</sub>[f(z)] = E<sub>ε</sub>[∇<sub>φ</sub> f(μ + σε)] via Monte Carlo. Equivalent to pathwise/Jacobian estimator; variance is orders of magnitude smaller than score-function (REINFORCE). <strong>Discrete latents</strong> can't be reparameterized — use Gumbel-Softmax or straight-through (VQ-VAE route).</p>
+
+<h3>③ β-VAE and disentanglement (Higgins et al. 2017, ICLR)</h3>
+<p>Modify ELBO: E<sub>q</sub>[log p(x|z)] − β · KL(q(z|x)‖p(z)). β = 1 is vanilla VAE; β &gt; 1 (often 4–250) pushes latent closer to prior, indirectly forcing factor-disentangled representation. Cost: reconstruction quality drops (trade-off). In single-cell: β-VAE variants can separate cell-type latents from batch/technical latents. β-TCVAE (Chen 2018) decomposes KL into mutual information / total correlation / dimension-wise KL — penalizes cross-dim coupling more surgically without harming reconstruction.</p>
+
+<h3>④ Posterior collapse and its fixes</h3>
+<p>When decoder is too powerful (PixelRNN, large autoregressive), the model reconstructs x without using z, so q(z|x) → p(z), KL → 0, latent becomes useless. Also happens in deep ZINB decoders for scRNA-seq. Fixes:</p>
+<ul>
+<li><strong>KL annealing:</strong> start β = 0, ramp to 1 — gives encoder time to learn meaningful z first.</li>
+<li><strong>Free bits (Kingma 2016):</strong> set per-dim KL floor λ; below λ not counted — each dim must carry ≥ λ nats.</li>
+<li><strong>Semi-amortized (Kim 2018):</strong> encoder gives init, then a few SVI steps — reduces amortization gap.</li>
+<li><strong>δ-VAE (Razavi 2019):</strong> slightly non-standard prior so q→p is no longer "free."</li>
+<li><strong>Weaken decoder:</strong> cap decoder capacity. In practice scVI-sized models rarely collapse.</li>
+</ul>
+
+<h3>⑤ Posterior expressiveness — normalizing flow improvements</h3>
+<p>Standard VAE uses q(z|x) = N(μ, diag(σ²)) — diagonal Gaussian, no inter-dim correlation. Improvements:</p>
+<ul>
+<li><strong>Planar / radial flow (Rezende & Mohamed 2015):</strong> K invertible transforms on z<sub>0</sub> ~ N, log det Jacobian analytic.</li>
+<li><strong>IAF (Inverse Autoregressive Flow, Kingma 2016):</strong> autoregressive structure, fast forward (sampling), parallelizable backward (training) — fits VAE encoder well.</li>
+<li><strong>RealNVP / Glow coupling layers:</strong> adding coupling flow to scVI encoder enables multi-modal latent distributions for heterogeneous cells.</li>
+</ul>
+
+<h3>⑥ VQ-VAE (van den Oord et al. 2017, NeurIPS) — discrete latents</h3>
+<p>Replace continuous z with codebook lookup: encoder → z<sub>e</sub>(x); find nearest codebook entry e<sub>k</sub> as z<sub>q</sub>(x); decoder uses z<sub>q</sub>. Advantages: (a) naturally encodes "cell-state tokens"; (b) downstream transformer can model token sequence (used by OpenAI Jukebox, DALL-E 1); (c) no posterior collapse. In single-cell: foundation for "cell vocabulary," inspires some scLLM designs. Straight-through estimator + commitment loss are key training tricks.</p>
+
+<h3>⑦ MMD-VAE / InfoVAE (Zhao 2017) — avoid posterior collapse</h3>
+<p>Replace KL(q(z|x)‖p(z)) with MMD(q(z)‖p(z)) — match aggregated posterior to prior, not per-sample. InfoVAE family generalizes this. Advantage: no collapse (no direct KL penalty); virtually all latent dims stay active. Cost: no clean likelihood lower bound — model comparison via ELBO loses meaning.</p>
+
+<h3>⑧ Conditional VAE and scVI — batch as conditional input</h3>
+<p>scVI (Lopez 2018) feeds batch label s into both encoder f(x, s) and decoder g(z, s). Intuition: encoder learns z = "cell state after removing batch"; decoder adds batch effect back. This is the canonical conditional-VAE application in scRNA-seq — yields auto-batch-corrected latents. Extension: scANVI conditions on cell-type label for semi-supervised transfer; totalVI co-conditions on protein modality.</p>
+
+<h3>⑨ NB and ZINB likelihoods — why for scRNA-seq</h3>
+<p>scRNA-seq UMI counts are non-negative integers, overdispersed (variance ≫ mean). Poisson fails (variance = mean). Use <strong>NB(μ, θ)</strong>: variance = μ + μ²/θ, θ = dispersion. Decoder outputs μ<sub>g</sub>, θ<sub>g</sub> per gene; log-likelihood:<br>
+log p(x<sub>g</sub> | μ, θ) = Γ(x+θ) − Γ(θ) − Γ(x+1) + θ log(θ/(θ+μ)) + x log(μ/(θ+μ))</p>
+<p><strong>ZINB</strong> adds zero-inflation π<sub>g</sub> for dropout: p(x=0) = π + (1−π)·NB(0); p(x&gt;0) = (1−π)·NB(x). But Svensson (2020) showed 10x Chromium UMI data is less dropout-heavy than assumed — <strong>NB is usually enough, ZINB is over-modeling</strong>. scVI defaults to ZINB but supports NB.</p>
+
+<h3>⑩ Hierarchical / multi-level VAE</h3>
+<p>multiVI (Ashuach 2023) and totalVI (Gayoso 2021) use hierarchy: modality-specific latents z<sub>RNA</sub>, z<sub>ATAC</sub> → shared latent z<sub>joint</sub>. totalVI additionally uses <em>mixture priors</em> for background vs foreground protein signal. Hierarchical VAE benefits: interpretability per level; can integrate incomplete data (cells with only RNA); tighter ELBO theoretically (NVAE, Vahdat 2020).</p>
+
+<h3>⑪ Amortized vs non-amortized inference</h3>
+<p>Amortized: one shared encoder NN — fast but "amortization gap" (one NN can't fit every sample's true posterior). Non-amortized: per-sample q optimization (classical SVI) — accurate but very slow. <strong>Semi-amortized (Kim 2018, Marino 2018):</strong> encoder gives init, then a few per-sample SVI steps — limited practicality for large scRNA-seq, but may help rare-cell-type performance (pure amortized encoder underfits rare samples).</p>
+
+<h3>⑫ IWAE (Importance-Weighted VAE, Burda 2016) — tighter bound</h3>
+<p>L<sub>K</sub> = E[log (1/K) Σ<sub>k</sub> p(x, z<sub>k</sub>)/q(z<sub>k</sub>|x)]; K=1 reduces to ELBO; K→∞ → log p(x). In practice K = 5–50 gives notably tighter bound and better log-likelihood, but reparameterization variance dilutes encoder gradient at high K (Rainforth 2018) — K is not unboundedly good.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="詳細已知應用" data-en="KNOWN APPLICATIONS">詳細已知應用</div>
+<h2 data-zh="VAE 在生物資訊的具體案例" data-en="Concrete VAE Cases in Bioinformatics">VAE 在生物資訊的具體案例</h2>
+
+<div data-lang="zh">
+<h3>🧬 案例 1：scVI (Lopez et al. 2018, Nature Methods) — 基準與里程碑</h3>
+<p>第一個將 VAE 完整套用到 scRNA-seq 的工作。架構：encoder 取 log-normalized counts + batch ID → 10–20 維 latent；decoder 還原 ZINB 參數 (μ, θ, π) for each gene。</p>
+<ul>
+<li><strong>關鍵技術：</strong>batch ID 作為 encoder/decoder 共同 conditional input → 隱式 batch correction，不需要先做 Harmony/MNN。</li>
+<li><strong>實證：</strong>在 PBMC、Tabula Muris 等資料上，與 Seurat-CCA、Harmony 整合品質相當或更好，且 latent 可直接用於下游 DE、分群、軌跡分析。</li>
+<li><strong>影響：</strong>啟發後續整個 scvi-tools 生態系，至 2024 年累積引用超過 2000，是 Nature Methods 該年最熱門方法論論文。</li>
+</ul>
+
+<h3>🧬 案例 2：totalVI (Gayoso et al. 2021, Nature Methods) — CITE-seq 整合</h3>
+<p>CITE-seq 同步測 RNA + surface protein (Antibody-Derived Tags, ADT)。totalVI 用 hierarchical VAE：</p>
+<ul>
+<li>RNA 用 NB likelihood；蛋白用 mixture (背景 + 前景) negative binomial。</li>
+<li>共享 latent z + modality-specific decoder head。</li>
+<li>能對 protein 做 batch correction、imputation、跨資料 transfer。</li>
+<li><strong>實證：</strong>在 PBMC CITE-seq 與骨髓資料上 protein imputation MSE 比 Seurat WNN 降低 30–40%。</li>
+</ul>
+
+<h3>🧬 案例 3：multiVI (Ashuach et al. 2023, Nature Methods) — 整合 RNA + ATAC</h3>
+<p>對 10x Multiome 同步測 RNA + ATAC 配對細胞，建立統一 latent 空間。</p>
+<ul>
+<li>三模態 encoder：RNA-only / ATAC-only / paired，後兩者透過 KL alignment 拉到共同 latent。</li>
+<li>支援「半配對」資料：有些細胞只有 RNA、有些只有 ATAC，仍可整合。</li>
+<li>下游可預測 ATAC peak 從 RNA、或反之。</li>
+<li><strong>實證：</strong>在 SHARE-seq, SNARE-seq 資料上比 Seurat v4 WNN、MOFA+ 表現好。</li>
+</ul>
+
+<h3>🧬 案例 4：PeakVI (Ashuach et al. 2022, Cell Reports Methods) — ATAC-only</h3>
+<p>專為 scATAC-seq 設計：peak × cell 矩陣 (Bernoulli/Binomial likelihood)，decoder 輸出每 peak 的開放機率。能做 differential accessibility、batch correction、imputation。比傳統 Signac/ArchR 在 noisy 資料上的細胞分群更穩定。</p>
+
+<h3>🧬 案例 5：destVI (Lopez et al. 2022, Nature Biotechnology) — 空間轉錄體去卷積</h3>
+<p>Visium 等空間轉錄體 spot 內含多種細胞型別，destVI 學 spot-level latent，分解出每種 cell type 的比例 + 該 type 在該 spot 的特異表現。雙層 VAE：CondSCVI 在參考 scRNA 上學 cell-type-specific generative model，再用 stLVM 推 spot composition。比 cell2location、RCTD 在低細胞型別解析時更準確。</p>
+
+<h3>🧬 案例 6：cell2location (Kleshchevnikov et al. 2022, Nature Biotechnology) — Hierarchical Bayesian</h3>
+<p>不是嚴格 VAE 但用 variational inference（Pyro 框架）做大規模 Bayesian 推論。為 Visium 設計，估計 spot 中每種 cell type 的「絕對細胞數」（不僅是比例）。hierarchical prior 結構：tissue-level → batch-level → spot-level。在 mouse brain Visium、人類淋巴結資料上找到罕見 cell type localization 訊號。</p>
+
+<h3>🧬 案例 7：scGen (Lotfollahi et al. 2019, Nature Methods) — 擾動預測</h3>
+<p>用 conditional VAE 學 "control" 與 "perturbed" 兩種狀態的 latent；在 latent space 做 vector arithmetic 預測「如果這個未見過的 cell type 也被擾動會如何」。在 LPS 刺激 PBMC 資料上預測 IFN-β 反應，能 generalize 到訓練未見過的 cell type。延伸 trVAE (2020) 加 MMD 對齊不同實驗條件。</p>
+
+<h3>🧬 案例 8：scArches (Lotfollahi et al. 2022, Nat Biotech) — Transfer learning 架構</h3>
+<p>核心想法：對預訓練 scVI/totalVI/scANVI 模型加 lightweight adapter（conditional weights），新資料只訓 adapter，原模型 frozen。在低資源情境（COVID-19 BAL、罕見疾病樣本）可只用 100s 細胞就 transfer 大型 atlas 的知識。</p>
+
+<h3>🧬 案例 9：LDVAE (Linear Decoder VAE, Svensson et al. 2020, Bioinformatics) — 可解釋性</h3>
+<p>把 scVI 的 decoder 改為單層線性（W·z + b），latent → gene weights 矩陣 W 可直接讀，類似 factor analysis 的 loading。雖然重建品質略遜，但「latent 維度 i 對應哪些基因」變得透明。在分析特定 disease atlas 時很有用，例如找「pro-inflammatory program」對應的 latent dim。</p>
+
+<h3>🧬 案例 10：SAUCIE (Amodio et al. 2019, Nature Methods)</h3>
+<p>多任務 autoencoder：同時做 batch correction、imputation、clustering、降維。用 Information Dimension 正則化把 latent 壓到離散細胞型別 token，與 VQ-VAE 思想接近但早 2 年。在 dengue PBMC 資料上找到傳統方法漏掉的細胞次群。</p>
+
+<h3>🧬 案例 11：scANVI (Xu et al. 2021, Mol Syst Biol) — Semi-supervised</h3>
+<p>scVI + cell-type label conditional + mixture-of-Gaussians prior。部分細胞有標註、部分沒，模型聯合學會「latent 內哪個 mixture component 對應哪個 type」與「未標註細胞屬於哪一群」。在 atlas-scale annotation transfer 上比 nearest neighbor mapping 更穩健於 batch shift。</p>
+
+<h3>🧬 案例 12：scVI-tools 生態系</h3>
+<p>scvi-tools 套件（Gayoso et al. 2022, Nat Biotech）統一了 scVI/totalVI/multiVI/PeakVI/destVI/scANVI/CellAssign 等十多個模型，PyTorch + Lightning 後端，到 2024 年成為 scRNA-seq 整合的 de facto 框架，與 Scanpy/AnnData 無縫整合。</p>
+</div>
+
+<div data-lang="en">
+<h3>🧬 Case 1: scVI (Lopez et al. 2018, Nature Methods) — the milestone baseline</h3>
+<p>First full VAE application to scRNA-seq. Architecture: encoder takes log-normalized counts + batch ID → 10–20 dim latent; decoder outputs ZINB parameters (μ, θ, π) per gene.</p>
+<ul>
+<li><strong>Key trick:</strong> batch ID as joint conditional input to both encoder & decoder → implicit batch correction, no need for Harmony/MNN pre-step.</li>
+<li><strong>Results:</strong> on PBMC, Tabula Muris, integration matches or beats Seurat-CCA / Harmony, and the latent is directly usable for DE, clustering, trajectory.</li>
+<li><strong>Impact:</strong> sparked the scvi-tools ecosystem; 2000+ citations by 2024.</li>
+</ul>
+
+<h3>🧬 Case 2: totalVI (Gayoso et al. 2021, Nature Methods) — CITE-seq integration</h3>
+<p>Hierarchical VAE for paired RNA + surface protein (ADT). NB likelihood for RNA, mixture NB (background + foreground) for protein. Shared latent z + modality-specific heads. Protein imputation MSE 30–40% lower than Seurat WNN on PBMC and bone marrow CITE-seq.</p>
+
+<h3>🧬 Case 3: multiVI (Ashuach et al. 2023, Nature Methods) — RNA + ATAC integration</h3>
+<p>Unified latent for 10x Multiome (paired RNA + ATAC). Three encoders (RNA-only, ATAC-only, paired) aligned via KL. Handles semi-paired data (cells with only one modality). Beats Seurat v4 WNN, MOFA+ on SHARE-seq, SNARE-seq.</p>
+
+<h3>🧬 Case 4: PeakVI (Ashuach et al. 2022, Cell Reports Methods) — ATAC-only</h3>
+<p>Designed for scATAC-seq: peak × cell with Bernoulli/Binomial likelihood. Outputs per-peak open probability. Enables differential accessibility, batch correction, imputation; more robust on noisy data than Signac / ArchR.</p>
+
+<h3>🧬 Case 5: destVI (Lopez et al. 2022, Nature Biotechnology) — spatial deconvolution</h3>
+<p>For Visium spots (which contain mixed cell types). Two-level VAE: CondSCVI learns cell-type-specific generative model from reference scRNA; stLVM infers per-spot composition + type-specific expression. Beats cell2location, RCTD when cell-type resolution is low.</p>
+
+<h3>🧬 Case 6: cell2location (Kleshchevnikov et al. 2022, Nature Biotechnology) — Hierarchical Bayesian</h3>
+<p>Not strictly VAE but uses variational inference (Pyro backend) for large-scale Bayesian inference. Estimates absolute cell-type counts per Visium spot (not just proportions). Hierarchical prior: tissue → batch → spot. Found rare cell-type localization signals in mouse brain Visium and human lymph node.</p>
+
+<h3>🧬 Case 7: scGen (Lotfollahi et al. 2019, Nature Methods) — perturbation prediction</h3>
+<p>Conditional VAE learns latents for control and perturbed states; vector arithmetic in latent predicts "what if this unseen cell type were perturbed." Predicts IFN-β response to LPS in unseen PBMC types. Extension trVAE (2020) adds MMD alignment across conditions.</p>
+
+<h3>🧬 Case 8: scArches (Lotfollahi et al. 2022, Nat Biotech) — transfer-learning architecture</h3>
+<p>Adds lightweight conditional adapters to pretrained scVI/totalVI/scANVI; frozen base model + adapter-only training. Hundreds of cells suffice to transfer atlas knowledge — used for COVID-19 BAL, rare disease cohorts.</p>
+
+<h3>🧬 Case 9: LDVAE (Svensson et al. 2020, Bioinformatics) — interpretability</h3>
+<p>Single-layer linear decoder: W·z + b. The latent→gene weight matrix W is directly readable, like factor analysis loadings. Trades slight reconstruction quality for clear "this latent dim ≈ pro-inflammatory program" interpretation.</p>
+
+<h3>🧬 Case 10: SAUCIE (Amodio et al. 2019, Nature Methods)</h3>
+<p>Multi-task autoencoder doing batch correction, imputation, clustering, embedding simultaneously. Information-dimension regularization compresses latent to discrete cell-type tokens — pre-dates VQ-VAE thinking in single-cell by 2 years. Found subpopulations missed by classical methods in dengue PBMC.</p>
+
+<h3>🧬 Case 11: scANVI (Xu et al. 2021, Mol Syst Biol) — semi-supervised</h3>
+<p>scVI + cell-type-label conditional + Gaussian-mixture prior. Some cells labeled, some not; learns which mixture component matches which type and assigns unlabeled cells. More batch-robust than nearest-neighbor mapping for atlas-scale annotation transfer.</p>
+
+<h3>🧬 Case 12: scvi-tools ecosystem</h3>
+<p>The scvi-tools package (Gayoso et al. 2022, Nat Biotech) unifies scVI/totalVI/multiVI/PeakVI/destVI/scANVI/CellAssign etc. on PyTorch + Lightning, integrated with Scanpy/AnnData — by 2024 the de facto framework for scRNA-seq integration.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="VAE 還能改良 / 新解決哪些任務？" data-en="What Else Could VAE Improve?">VAE 還能改良 / 新解決哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 三模態跨體學 VAE：RNA + ATAC + Protein 共同 latent</h3>
+<p><strong>現有不足：</strong>multiVI 只整合 RNA + ATAC；totalVI 只整合 RNA + protein。沒有公開模型同時處理三模態（如 TEA-seq 資料）。<strong>新提案：</strong>tri-modal hierarchical VAE，每個 modality 有獨立 decoder（ZINB / Bernoulli / mixture-NB），共享 latent z<sub>shared</sub> + modality-specific z<sub>m</sub>，KL 對 z<sub>shared</sub> 做 modality-alignment。<strong>預期改進：</strong>對 TEA-seq、DOGMA-seq 等罕見三模態資料，可在 latent 同步看到「染色質→轉錄→蛋白」串聯訊號，比現有兩兩整合（先 multiVI 再 totalVI 拼接）更一致；可預測缺失模態的觀測值。</p>
+
+<h3>🎯 2. 因果 VAE：disentangle 「真實 biology」與「technical / batch」</h3>
+<p><strong>現有不足：</strong>scVI 用 batch 作為 conditional 是「隱式」correction，無理論保證 latent 真的去除了 batch 訊息；可能仍殘留 batch-correlated 變異。<strong>新提案：</strong>用 causal disentanglement 框架（如 CausalVAE, Yang 2021）把 latent 拆成 z<sub>bio</sub> ⊥ z<sub>tech</sub>，用 batch 標籤作為 supervision 訓練 adversarial loss 強迫 z<sub>bio</sub> 對 batch 不可預測。<strong>預期改進：</strong>更乾淨的 cell state latent，可用於跨機構 atlas 真實整合；對下游 DE / GWAS 整合更可靠。</p>
+
+<h3>🎯 3. 發育過程的階層 VAE：時間 × 細胞型別兩層</h3>
+<p><strong>現有不足：</strong>scVI 把細胞當作 i.i.d.，沒利用「同一胚胎在不同階段、不同 lineage」這種階層結構。<strong>新提案：</strong>三層 hierarchical VAE：embryo-level → lineage-level → cell-level latent。inspired by NVAE / very deep VAE。<strong>預期改進：</strong>對小鼠/斑馬魚胚胎發育 atlas（如 Pijuan-Sala 2019, Wagner 2018），能分離「個體差異」「lineage 分支」「瞬時細胞狀態」三尺度，找出真正的 lineage-determining gene programs，比 Monocle3 + scVI 串接清楚。</p>
+
+<h3>🎯 4. 病人特異性 fine-tuned VAE：精準醫療</h3>
+<p><strong>現有不足：</strong>scArches 在 atlas-level fine-tune，但對「單一病人多時點縱貫資料」沒有專門設計；難以在 N=1 設計上提供個人化預測。<strong>新提案：</strong>把 scArches conditional adapter 擴充為「patient-conditional + time-conditional」，加上 Bayesian uncertainty propagation 量化 N=1 樣本下的 latent 不確定度。<strong>預期改進：</strong>對腫瘤跟蹤、發炎性疾病 longitudinal scRNA-seq，能預測「下次採樣時細胞分布」與「治療反應」，並給出可信區間。</p>
+
+<h3>🎯 5. scLLM × VAE 混合：兼具 token semantics 與 likelihood</h3>
+<p><strong>現有不足：</strong>scGPT/Geneformer 用 transformer 學 gene token sequence 但沒有 generative likelihood；scVI 有 likelihood 但 latent 沒 token semantics。兩者各自有缺。<strong>新提案：</strong>VQ-VAE 風格——encoder 將細胞 → discrete token sequence，再用 scLLM transformer 對 token 學自回歸先驗 p(tokens)，decoder 從 tokens 還原 NB counts。<strong>預期改進：</strong>(a) 可像 LLM 一樣 prompt 一個細胞 prefix 自動生成後續 trajectory；(b) latent 可解釋為「細胞語彙」；(c) ELBO 仍可估 model evidence。</p>
+
+<h3>🎯 6. Bayesian uncertainty propagation 到下游分析</h3>
+<p><strong>現有不足：</strong>scVI 輸出 posterior mean μ<sub>z</sub> 作為「細胞座標」，下游 UMAP/clustering/DE 全用這個點估計，忽略了 σ<sub>z</sub>。對「邊界細胞」、稀有 cell type 的不確定度從未傳遞。<strong>新提案：</strong>對下游每個分析步驟 sample K 次 z 重做（Monte Carlo over latent），給出每個細胞「分群信心」「DE p-value 不確定度」「軌跡分支機率」。<strong>預期改進：</strong>避免把高不確定細胞錯誤分到固定群；可量化「這群細胞是真的還是 noise」。</p>
+
+<h3>🎯 7. Counterfactual VAE：基因敲除模擬</h3>
+<p><strong>現有不足：</strong>scGen 預測擾動效應但是 distribution-level；無法回答「這顆細胞如果敲除這個基因會變什麼樣？」instance-level counterfactual。<strong>新提案：</strong>把 latent 拆成 (z<sub>state</sub>, z<sub>gene_program</sub>)，敲除模擬 = 把 z<sub>gene_program</sub> 中對應分量設為「該基因 = 0」conditional 下的 latent，再 decode。需要 paired Perturb-seq 資料訓練 disentanglement。<strong>預期改進：</strong>in silico screen 可大幅縮小 wet-lab Perturb-seq 規模；提供「對特定病人特定細胞」的個人化敲除模擬。</p>
+
+<h3>🎯 8. 異常細胞偵測：rare disease, doublet, dying cells</h3>
+<p><strong>現有不足：</strong>doublet 偵測（Scrublet、DoubletFinder）獨立於整合 pipeline 做；rare cell detection 靠 clustering 後人工檢查；dying cells 靠 mitochondrial fraction 過濾。<strong>新提案：</strong>用 VAE 的 reconstruction error (per-cell log-likelihood) 作為統一 anomaly score——重建差的細胞可能是 doublet、rare type、apoptotic、或 contamination。可加 ensemble of K models 做 calibrated uncertainty。<strong>預期改進：</strong>一條 pipeline 統一三種 QC 任務，且能找出傳統規則錯失的細胞（例如表現「不像任何已知 type」的真實稀有細胞）。</p>
+
+<h3>🎯 9. Inverse design：給定目標表型反推細胞 state</h3>
+<p><strong>現有不足：</strong>正向：給 cell state 預測表現容易；反向：「我想要一顆能對 X 藥反應的 CAR-T 細胞，gene expression 應該長什麼樣？」沒有系統方法。<strong>新提案：</strong>在 VAE latent 上做 gradient-based optimization：固定 decoder θ，對 z 做梯度下降最小化「實際表型 vs 目標表型」距離。類似 image inverse design (StyleGAN inversion)。<strong>預期改進：</strong>對細胞工程、再生醫學提供 in silico 候選 cell state 設計藍圖，再用 Perturb-seq 反向找對應的基因擾動組合。</p>
+
+<h3>🎯 10. 動態 VAE：時間動力學內嵌入 latent</h3>
+<p><strong>現有不足：</strong>RNA velocity 把 spliced/unspliced 矩陣後處理出動力學；VAE latent 是 static 表徵。沒有單一模型同時學 generative + dynamic。<strong>新提案：</strong>把 latent z(t) 視為 stochastic differential equation 軌跡，encoder 同時輸出「當下 z」與「漂移 drift μ(z)、擴散 diffusion σ(z)」。類似 latent SDE / VeloVAE (Gu 2022)。<strong>預期改進：</strong>可同時給出細胞 embedding 與動力學方向，比兩步式 (scVI + scVelo) 更一致；對 lineage tracing + Perturb-seq 縱貫資料更適合。</p>
+
+<h3>🎯 11. 學習藥物效應的 perturbation latent space</h3>
+<p><strong>現有不足：</strong>LINCS L1000、Connectivity Map 用 bulk profile 找藥物 signature；無 cell-state-level resolution。<strong>新提案：</strong>對 sci-Plex / Tahoe-100M 等 scRNA + drug 大規模資料訓 conditional VAE，drug ID + dose 為 conditional input，學「藥物擾動向量場」p(z<sub>perturbed</sub> | z<sub>control</sub>, drug)。<strong>預期改進：</strong>給新藥的有限細胞資料即可預測「在未測試 cell type 上」的反應；可做 drug repurposing 透過「latent 向量相似度」找出機制相似的化合物。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Tri-modal VAE: RNA + ATAC + Protein</h3>
+<p><strong>Gap:</strong> multiVI does RNA+ATAC; totalVI does RNA+protein. No public model handles all three (TEA-seq, DOGMA-seq). <strong>Proposal:</strong> hierarchical tri-modal VAE — independent decoder per modality (ZINB / Bernoulli / mixture-NB), shared latent z<sub>shared</sub> + modality-specific z<sub>m</sub>; modality-alignment KL on z<sub>shared</sub>. <strong>Expected gain:</strong> coherent "chromatin → transcription → protein" signal in one latent for TEA-seq / DOGMA-seq; can impute missing modalities.</p>
+
+<h3>🎯 2. Causal VAE — disentangle bio from technical</h3>
+<p><strong>Gap:</strong> scVI's conditional batch correction is implicit, no guarantee z is batch-free. <strong>Proposal:</strong> causal disentanglement (CausalVAE, Yang 2021): split latent into z<sub>bio</sub> ⊥ z<sub>tech</sub> via adversarial loss forcing z<sub>bio</sub> unpredictable from batch. <strong>Expected gain:</strong> cleaner state latent for cross-institute atlas integration, more reliable downstream DE / GWAS overlay.</p>
+
+<h3>🎯 3. Developmental hierarchical VAE: time × lineage</h3>
+<p><strong>Gap:</strong> scVI treats cells as IID, ignores embryo × stage × lineage hierarchy. <strong>Proposal:</strong> three-level hierarchical VAE: embryo → lineage → cell. <strong>Expected gain:</strong> on Pijuan-Sala / Wagner zebrafish atlases, separate individual variation / lineage branch / transient state — finds true lineage-determining programs, clearer than Monocle3 + scVI stacking.</p>
+
+<h3>🎯 4. Patient-specific fine-tuned VAE for precision medicine</h3>
+<p><strong>Gap:</strong> scArches transfers at atlas level; no design for single-patient longitudinal data, no N=1 personalized prediction. <strong>Proposal:</strong> extend scArches adapters with patient + time conditional inputs + Bayesian uncertainty propagation. <strong>Expected gain:</strong> for tumor tracking, inflammatory disease longitudinal scRNA-seq — predict next time point's cell distribution and treatment response with credible intervals.</p>
+
+<h3>🎯 5. scLLM × VAE hybrid — token semantics + likelihood</h3>
+<p><strong>Gap:</strong> scGPT/Geneformer model gene tokens but no generative likelihood; scVI has likelihood but no token semantics. <strong>Proposal:</strong> VQ-VAE encoder → discrete token sequence; transformer prior p(tokens); decoder → NB counts. <strong>Expected gain:</strong> LLM-style cell-prefix prompting to generate trajectories; interpretable "cell vocabulary"; ELBO still estimable.</p>
+
+<h3>🎯 6. Bayesian uncertainty propagation</h3>
+<p><strong>Gap:</strong> scVI's posterior mean μ<sub>z</sub> is used downstream as a point estimate; σ<sub>z</sub> ignored. Border / rare cells' uncertainty is lost. <strong>Proposal:</strong> Monte Carlo over z for every downstream step — output clustering confidence, DE p-value uncertainty, branch probabilities. <strong>Expected gain:</strong> avoid forcing high-uncertainty cells into fixed groups; quantify whether a cluster is real or noise.</p>
+
+<h3>🎯 7. Counterfactual VAE — gene knockout simulation</h3>
+<p><strong>Gap:</strong> scGen is distribution-level; can't answer "this exact cell, if KO X, becomes what?" instance counterfactual. <strong>Proposal:</strong> disentangle latent into (z<sub>state</sub>, z<sub>program</sub>); KO simulation = condition z<sub>program</sub> on "gene = 0," decode. Train disentanglement on Perturb-seq. <strong>Expected gain:</strong> shrink wet-lab Perturb-seq scale; patient-specific in silico KO simulation.</p>
+
+<h3>🎯 8. Unified anomaly detection: doublets, rare cells, dying cells</h3>
+<p><strong>Gap:</strong> Scrublet/DoubletFinder, rare-cell, mito-fraction filters are three independent steps. <strong>Proposal:</strong> per-cell VAE log-likelihood as unified anomaly score; ensemble of K models for calibrated uncertainty. <strong>Expected gain:</strong> one pipeline for three QC tasks; catches real rare cells missed by rule-based filters.</p>
+
+<h3>🎯 9. Inverse design — target phenotype → cell state</h3>
+<p><strong>Gap:</strong> forward (state → expression) easy; reverse ("I want a CAR-T cell that responds to drug X, what expression?") not systematized. <strong>Proposal:</strong> gradient descent on z (decoder frozen) toward target phenotype, like StyleGAN inversion. <strong>Expected gain:</strong> in silico cell-engineering blueprints; pair with Perturb-seq to find which gene perturbations produce target z.</p>
+
+<h3>🎯 10. Dynamic VAE — embed dynamics into latent</h3>
+<p><strong>Gap:</strong> RNA velocity post-processes spliced/unspliced; VAE latent is static. No single model that learns generative + dynamic together. <strong>Proposal:</strong> treat z(t) as latent SDE; encoder outputs z, drift μ(z), diffusion σ(z) (cf. VeloVAE, Gu 2022). <strong>Expected gain:</strong> embedding + dynamics consistent in one model; suits lineage-tracing + Perturb-seq longitudinal data.</p>
+
+<h3>🎯 11. Drug-effect perturbation latent space</h3>
+<p><strong>Gap:</strong> LINCS L1000 / CMap use bulk profiles, no cell-state resolution. <strong>Proposal:</strong> conditional VAE on sci-Plex / Tahoe-100M with drug + dose as conditional; learn perturbation vector field p(z<sub>perturbed</sub> | z<sub>control</sub>, drug). <strong>Expected gain:</strong> predict response on untested cell types with limited new-drug data; drug repurposing via latent vector similarity.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'sv')">scvi-tools</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cl')">cell2location</button>
+<button class="code-tab-btn" onclick="switchTab(this,'pt')">手刻 VAE</button>
+</div>
+<div class="code-tab-content active" id="sv"><pre><span class="keyword">import</span> scvi
+<span class="keyword">import</span> scanpy <span class="keyword">as</span> sc
+
+scvi.model.SCVI.setup_anndata(adata, batch_key=<span class="str">"batch"</span>)
+model = scvi.model.SCVI(adata, n_layers=<span class="num">2</span>, n_latent=<span class="num">30</span>)
+model.train(max_epochs=<span class="num">400</span>)
+
+adata.obsm[<span class="str">"X_scVI"</span>] = model.get_latent_representation()
+sc.pp.neighbors(adata, use_rep=<span class="str">"X_scVI"</span>)
+sc.tl.leiden(adata); sc.tl.umap(adata)
+<span class="comment"># 差異表達：scVI 的 NB-based DE</span>
+de = model.differential_expression(groupby=<span class="str">"leiden"</span>)</pre></div>
+<div class="code-tab-content" id="cl"><pre><span class="keyword">import</span> cell2location <span class="keyword">as</span> c2l
+
+c2l.models.RegressionModel.setup_anndata(adata_ref, batch_key=<span class="str">"sample"</span>, labels_key=<span class="str">"celltype"</span>)
+mod_ref = c2l.models.RegressionModel(adata_ref).train(max_epochs=<span class="num">200</span>)
+inf_means = mod_ref.export_posterior(adata_ref)
+
+c2l.models.Cell2location.setup_anndata(adata_st, batch_key=<span class="str">"sample"</span>)
+mod = c2l.models.Cell2location(adata_st, cell_state_df=inf_means).train(max_epochs=<span class="num">3000</span>)
+adata_st = mod.export_posterior(adata_st)</pre></div>
+<div class="code-tab-content" id="pt"><pre><span class="keyword">import</span> torch, torch.nn <span class="keyword">as</span> nn, torch.nn.functional <span class="keyword">as</span> F
+
+<span class="keyword">class</span> VAE(nn.Module):
+    <span class="keyword">def</span> __init__(self, in_dim, h=<span class="num">128</span>, z_dim=<span class="num">20</span>):
+        super().__init__()
+        self.enc = nn.Sequential(nn.Linear(in_dim, h), nn.ReLU())
+        self.mu = nn.Linear(h, z_dim); self.logvar = nn.Linear(h, z_dim)
+        self.dec = nn.Sequential(nn.Linear(z_dim, h), nn.ReLU(), nn.Linear(h, in_dim))
+    <span class="keyword">def</span> forward(self, x):
+        h = self.enc(x); mu, lv = self.mu(h), self.logvar(h)
+        z = mu + torch.exp(<span class="num">0.5</span>*lv) * torch.randn_like(mu)
+        <span class="keyword">return</span> self.dec(z), mu, lv
+
+<span class="keyword">def</span> elbo(x, x_hat, mu, lv, beta=<span class="num">1.0</span>):
+    rec = F.mse_loss(x_hat, x, reduction=<span class="str">"sum"</span>)
+    kl = -<span class="num">0.5</span> * torch.sum(<span class="num">1</span> + lv - mu**<span class="num">2</span> - lv.exp())
+    <span class="keyword">return</span> rec + beta * kl</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+<div class="quiz-q" data-answer="2"><p data-lang="zh">ELBO 中的兩個項分別代表？</p><p data-lang="en">Two terms of ELBO represent?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 學習率 + batch size</span><span data-lang="en">A. Learning rate + batch size</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 細胞數 + 基因數</span><span data-lang="en">B. Cells + genes</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 重構誤差 + 先驗 KL 正則化</span><span data-lang="en">C. Reconstruction error + prior KL regularization</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 訓練 + 測試</span><span data-lang="en">D. Training + testing</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+<div class="quiz-q" data-answer="0"><p data-lang="zh">重參數技巧主要解決什麼？</p><p data-lang="en">What does the reparameterization trick solve?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 讓從 q(z|x) 的抽樣可微，能反向傳播</span><span data-lang="en">A. Makes sampling from q(z|x) differentiable for backprop</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 增加模型表達力</span><span data-lang="en">B. Increases model capacity</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 加速資料載入</span><span data-lang="en">C. Speeds up data loading</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 壓縮模型大小</span><span data-lang="en">D. Compresses model size</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="spatial-statistics.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title">Ch 10：Spatial</span></a>
+<a href="diffusion-models.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 12：擴散模型" data-en="Ch 12: Diffusion">Ch 12：擴散模型</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+const ch=new Chart(document.getElementById('vaeChart'),{type:'line',data:{labels:[],datasets:[{label:'Reconstruction',data:[],borderColor:'#C8633C',pointRadius:0,fill:false},{label:'β·KL',data:[],borderColor:'#5577AA',pointRadius:0,fill:false},{label:'Total ELBO loss',data:[],borderColor:'#1A6B5A',borderWidth:2,pointRadius:0,fill:false}]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{title:{display:true,text:'epoch'}},y:{title:{display:true,text:'loss (lower better)'}}}}});
+
+function sim(){const beta=+document.getElementById('sBeta').value;const epochs=+document.getElementById('sEp').value;document.getElementById('vBeta').textContent=beta.toFixed(1);document.getElementById('vEp').textContent=epochs;
+const labels=[],rec=[],kl=[],tot=[];for(let e=0;e<epochs;e++){const t=e/epochs;const r=80*Math.exp(-3*t)+5+(Math.random()-0.5)*2;const k=(40-25*Math.exp(-2*t))*beta+(Math.random()-0.5)*beta*0.5;rec.push(r);kl.push(k);tot.push(r+k);labels.push(e);}
+ch.data.labels=labels;ch.data.datasets[0].data=rec;ch.data.datasets[1].data=kl;ch.data.datasets[2].data=tot;ch.update('none');
+const L=I18n.get();let advise;if(beta<0.5)advise=L==='zh'?'β 很小 — 重構主導，模型像 autoencoder，但 latent 不規則。':'β small — reconstruction dominates; latent is irregular.';
+else if(beta>2.5)advise=L==='zh'?'β 很大 — KL 主導，latent 接近先驗但可能塌縮 (posterior collapse)。':'β large — KL dominates; latent collapses toward prior (posterior collapse risk).';
+else advise=L==='zh'?'β ~ 1 — 經典 VAE 設定，平衡重構與正則。':'β ~ 1 — classic VAE; balanced.';document.getElementById('vaeMsg').innerHTML=advise;}
+document.getElementById('sBeta').addEventListener('input',sim);document.getElementById('sEp').addEventListener('input',sim);document.addEventListener('langchange',sim);sim();
+
+window._QF={zh:{q1_y:'答對！這是 ELBO 的兩個經典項。',q1_n:'答案是 C。重構誤差 + KL 正則化。',q2_y:'答對！這就是 reparameterization 的目的。',q2_n:'答案是 A。讓抽樣可微才能訓練。'},en:{q1_y:'Correct! The two classic ELBO terms.',q1_n:'Answer is C. Reconstruction + KL.',q2_y:'Correct! That is the purpose.',q2_n:'Answer is A. Differentiable sampling enables training.'}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

@@ -1,0 +1,572 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Survival Analysis with DL — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html" class="active">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 44 / 50</div><h1 data-zh="存活分析 × 深度學習 (DeepSurv)" data-en="Survival Analysis with Deep Learning (DeepSurv)">存活分析 × 深度學習 (DeepSurv)</h1>
+<p class="subtitle" data-lang="zh">Cox 比例風險（Cox 1972, JRSS-B）是醫學統計的基石；DeepSurv (Katzman 2018, BMC Med Res) 用神經網路替換線性 β·x，捕捉非線性互動。DeepHit (Lee 2018, AAAI) 處理 competing risks，DeepProg (Poirion 2021, Genome Medicine) 整合 multi-omics——存活分析正在被深度學習徹底改寫。</p>
+<p class="subtitle" data-lang="en">Cox proportional hazards (Cox 1972, JRSS-B) is the cornerstone of medical statistics; DeepSurv (Katzman 2018, BMC Med Res) replaces linear β·x with a neural network, capturing non-linear interactions. DeepHit (Lee 2018, AAAI) handles competing risks, DeepProg (Poirion 2021, Genome Medicine) integrates multi-omics — survival analysis is being rewritten by deep learning.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 Cox 模型到 DeepSurv" data-en="From Cox to DeepSurv">從 Cox 模型到 DeepSurv</h2>
+<div data-lang="zh">
+<p><strong>存活資料的特殊性：</strong>給定 n 個病人，每人有 (xᵢ, Tᵢ, δᵢ)，其中</p>
+<ul>
+<li>xᵢ ∈ ℝᵖ：特徵（age, gene expression, image features...）</li>
+<li>Tᵢ：觀察到的時間</li>
+<li>δᵢ ∈ {0, 1}：1 = 事件（如死亡）發生，0 = censored（病人在研究結束時仍存活，或 lost-to-follow-up）</li>
+</ul>
+<p>關鍵：<strong>censoring</strong> 不能當「未死亡」處理——病人可能在 follow-up 結束後不久死亡。傳統 regression / classification 都無法正確處理。</p>
+<p><strong>Cox 模型（Cox 1972）：</strong>定義 hazard function h(t|x)（時間 t 瞬間死亡率），假設 proportional hazards：</p>
+<p style="text-align:center;font-family:Georgia,serif;">h(t|x) = h₀(t) · exp(β·x)</p>
+<p>h₀(t)（baseline hazard）對所有病人共用、與 x 無關；exp(β·x) 是「相對風險（hazard ratio）」。<strong>Cox 的天才之處：</strong>用 partial likelihood，β 的估計不需顯式建模 h₀(t)。</p>
+<p><strong>Partial likelihood（Cox loss）：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">ℓ(β) = −Σ_{i: δᵢ=1} [β·xᵢ − log Σ_{j: Tⱼ≥Tᵢ} exp(β·xⱼ)]</p>
+<p>對每個 event time，比較 event 病人的「risk score」與當下所有「at-risk」病人。</p>
+<p><strong>DeepSurv 的突破（Katzman 2018, BMC Med Res）：</strong>把 β·x 替換為 NN(x; θ)——神經網路的輸出就是 log hazard ratio。loss 一樣是 Cox partial likelihood：</p>
+<p style="text-align:center;font-family:Georgia,serif;">ℓ(θ) = −Σ_{i: δᵢ=1} [NN(xᵢ) − log Σ_{j: Tⱼ≥Tᵢ} exp(NN(xⱼ))]</p>
+<p>整個 NN 在 Cox loss 下端到端訓練。可捕捉非線性互動（如「age × gene mutation」的交互風險）。</p>
+</div>
+<div data-lang="en">
+<p><strong>What makes survival data special:</strong> n patients, each with (xᵢ, Tᵢ, δᵢ):</p>
+<ul>
+<li>xᵢ ∈ ℝᵖ: features (age, gene expression, image features, ...)</li>
+<li>Tᵢ: observed time</li>
+<li>δᵢ ∈ {0, 1}: 1 = event (e.g. death) observed, 0 = censored (still alive at study end / lost to follow-up)</li>
+</ul>
+<p>Critical: <strong>censoring</strong> ≠ "did not die" — patients may die shortly after follow-up ends. Standard regression/classification cannot handle this correctly.</p>
+<p><strong>Cox model (Cox 1972):</strong> define hazard h(t|x) (instantaneous death rate at t), assume proportional hazards:</p>
+<p style="text-align:center;font-family:Georgia,serif;">h(t|x) = h₀(t) · exp(β·x)</p>
+<p>h₀(t) (baseline hazard) is shared across patients; exp(β·x) is the "hazard ratio". <strong>Cox's genius:</strong> partial likelihood estimates β without modeling h₀(t).</p>
+<p><strong>Partial likelihood (Cox loss):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">ℓ(β) = −Σ_{i: δᵢ=1} [β·xᵢ − log Σ_{j: Tⱼ≥Tᵢ} exp(β·xⱼ)]</p>
+<p>For each event time, compare the event patient's risk score against all currently at-risk patients.</p>
+<p><strong>DeepSurv breakthrough (Katzman 2018, BMC Med Res):</strong> replace β·x with NN(x; θ) — the NN output is the log hazard ratio. Same Cox partial likelihood:</p>
+<p style="text-align:center;font-family:Georgia,serif;">ℓ(θ) = −Σ_{i: δᵢ=1} [NN(xᵢ) − log Σ_{j: Tⱼ≥Tᵢ} exp(NN(xⱼ))]</p>
+<p>End-to-end NN training under Cox loss. Captures non-linear interactions (e.g. age × mutation joint risk).</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⏳</div><h4 data-zh="處理 censoring" data-en="Handles censoring">處理 censoring</h4><p data-lang="zh">Censored 病人提供「至少存活 Tᵢ」訊息，partial likelihood 自然整合。</p><p data-lang="en">Censored patients give "survived ≥ Tᵢ" info, naturally integrated in partial likelihood.</p></div>
+  <div class="card"><div class="card-icon">🧠</div><h4 data-zh="非線性互動" data-en="Non-linear interactions">非線性互動</h4><p data-lang="zh">DL 替換 β·x 捕捉「age × mutation」等多階交互。</p><p data-lang="en">DL replaces β·x to capture "age × mutation" multi-order interactions.</p></div>
+  <div class="card"><div class="card-icon">📊</div><h4 data-zh="C-index 評估" data-en="C-index evaluation">C-index 評估</h4><p data-lang="zh">Concordance index 評估「高風險 → 較早死亡」的 ranking 正確率。</p><p data-lang="en">Concordance index measures "high-risk → earlier death" ranking accuracy.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="DeepSurv、DeepHit 與 Cox-Time" data-en="DeepSurv, DeepHit, and Cox-Time">DeepSurv、DeepHit 與 Cox-Time</h2>
+<div data-lang="zh">
+<p><strong>① DeepSurv (Katzman 2018, BMC Med Res)：</strong></p>
+<ol>
+<li>輸入 xᵢ，網路 NN(x; θ) 輸出純量 log hazard ratio。</li>
+<li>對每個 event sample i，計算分母 Σ_{j ∈ R(Tᵢ)} exp(NN(xⱼ))，其中 R(Tᵢ) 是「at-risk set」。</li>
+<li>Loss = − Σ event δᵢ · [NN(xᵢ) − log denominator]。</li>
+<li>梯度下降到收斂；用 dropout / L2 regularization 防 overfit。</li>
+</ol>
+<p><strong>② Cox-Time (Kvamme 2019, JMLR)：</strong>放寬 proportional hazards 假設——讓 hazard ratio 隨時間變化。網路輸入 (x, t)，輸出 h(t | x)。loss 變成 case-control sampling 的近似 partial likelihood。對「early vs late events 模式不同」的資料有用。</p>
+<p><strong>③ DeepHit (Lee 2018, AAAI)：</strong>處理 <strong>competing risks</strong>（如病人可能死於癌症、心血管、或其他原因）。把時間離散化 t ∈ {1, ..., K}，網路輸出 P(event = k, time = t | x) 的聯合分布。loss 包含 log-likelihood + ranking loss（鼓勵高風險者較早事件）。</p>
+<p><strong>④ Survival Forests (Ishwaran 2008, Annals of Applied Statistics)：</strong>隨機森林的存活版本——每棵樹用 log-rank split 切割節點，aggregate 出 Nelson-Aalen estimator。對小樣本、tabular 資料常勝過 DeepSurv，且天然處理 missing data。</p>
+<p><strong>⑤ Pseudo-observation methods：</strong>把 censored 資料轉成「pseudo-observation」（每病人一個近似 survival probability），然後用標準 regression。可搭配任何 ML 模型，但對 censoring 重 (&gt; 50%) 的情況偏誤大。</p>
+<p><strong>⑥ Concordance Index (C-index)：</strong>評估標準。對所有「可比較的 pair (i, j)」（即 Tᵢ &lt; Tⱼ 且 δᵢ = 1），計算「模型給 i 較高 risk score」的比例。C-index = 0.5 隨機；1.0 完美；臨床有用 ≈ 0.65-0.85。</p>
+</div>
+<div data-lang="en">
+<p><strong>① DeepSurv (Katzman 2018, BMC Med Res):</strong></p>
+<ol>
+<li>NN(x; θ) outputs scalar log hazard ratio.</li>
+<li>For each event sample i, compute denominator Σ_{j ∈ R(Tᵢ)} exp(NN(xⱼ)), where R(Tᵢ) is the at-risk set.</li>
+<li>Loss = − Σ events δᵢ · [NN(xᵢ) − log denominator].</li>
+<li>Gradient descent; dropout / L2 to control overfit.</li>
+</ol>
+<p><strong>② Cox-Time (Kvamme 2019, JMLR):</strong> relaxes proportional hazards — hazard ratio varies with time. Network takes (x, t), outputs h(t | x). Loss is approximate partial likelihood via case-control sampling. Useful when "early vs late events differ".</p>
+<p><strong>③ DeepHit (Lee 2018, AAAI):</strong> handles <strong>competing risks</strong> (patient may die from cancer, CVD, or other). Discretize time t ∈ {1, ..., K}, network outputs joint P(event = k, time = t | x). Loss = log-likelihood + ranking loss (encourage high-risk → earlier events).</p>
+<p><strong>④ Survival Forests (Ishwaran 2008, Annals of Applied Statistics):</strong> RF for survival — log-rank splits, aggregate to Nelson-Aalen estimator. Often beats DeepSurv on small / tabular datasets and handles missing data natively.</p>
+<p><strong>⑤ Pseudo-observation methods:</strong> convert censored data into "pseudo-observation" (per-patient approximate survival prob), then standard regression. Compatible with any ML model but biased under heavy censoring (&gt; 50%).</p>
+<p><strong>⑥ Concordance Index (C-index):</strong> the standard metric. Over all comparable pairs (Tᵢ &lt; Tⱼ, δᵢ = 1), fraction where model assigns higher risk to i. C-index = 0.5 random; 1.0 perfect; clinically useful ≈ 0.65-0.85.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>為何 Cox loss 自帶 ranking 性質？</strong>Partial likelihood 比較的是「at-risk set 中誰先死」，本質上是 ranking loss。所以 Cox 訓練出的 risk score 自然具有 ordinal 意義——比某些直接學 P(survival) 的方法更貼近臨床需求（醫生關心「哪個病人 risk 較高」而非絕對死亡機率）。</div>
+<div data-lang="en"><strong>Why does Cox loss inherently rank?</strong> Partial likelihood compares "who in the at-risk set dies first" — it is intrinsically a ranking loss. Cox-trained risk scores carry ordinal meaning, more clinically aligned than methods that directly model P(survival) (clinicians care about "which patient has higher risk", not the absolute death probability).</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="Kaplan-Meier 存活曲線 × DL Risk Score" data-en="Kaplan-Meier × DL Risk Score">Kaplan-Meier 存活曲線 × DL Risk Score</h2>
+<div data-lang="zh"><p>下方模擬一個 cohort（n = 200 病人）。DeepSurv 預測每個病人的 risk score（綠 = 低風險、紅 = 高風險）；按 risk 分成 high / low 兩組，繪 Kaplan-Meier 存活曲線。<strong>調整 cohort 大小、event rate（censoring）、cohort heterogeneity</strong> 觀察兩組的 KM 曲線分離度與 log-rank p-value、C-index。</p></div>
+<div data-lang="en"><p>Simulation of a cohort (n = 200 patients). DeepSurv predicts a risk score per patient (green = low risk, red = high). Split into high/low risk groups; plot Kaplan-Meier curves. <strong>Adjust cohort size, event rate (censoring), and heterogeneity</strong> to see KM separation, log-rank p-value, and C-index.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="病人數 n" data-en="Patients n">病人數 n <span id="vN">200</span></label><input type="range" id="sN" min="50" max="500" value="200" step="10"></div>
+<div class="slider-group"><label data-zh="事件率 (1 − censoring)" data-en="Event rate (1 − censoring)">事件率 <span id="vE">0.60</span></label><input type="range" id="sE" min="0.2" max="0.95" value="0.6" step="0.05"></div>
+<div class="slider-group"><label data-zh="效應強度 β (high vs low)" data-en="Effect size β (high vs low)">效應強度 β <span id="vB">1.50</span></label><input type="range" id="sB" min="0" max="3" value="1.5" step="0.1"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+<div><div style="text-align:center;font-size:.85rem;color:var(--c-ink-light);margin-bottom:4px;" data-zh="Kaplan-Meier 存活曲線" data-en="Kaplan-Meier curves">Kaplan-Meier 存活曲線</div><canvas id="kmChart" height="200"></canvas></div>
+<div><div style="text-align:center;font-size:.85rem;color:var(--c-ink-light);margin-bottom:4px;" data-zh="Risk score 分布" data-en="Risk score distribution">Risk score 分布</div><canvas id="riskChart" height="200"></canvas></div>
+</div>
+<div id="survInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用 DeepSurv？" data-en="When to use DeepSurv?">什麼時候用 DeepSurv？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>高維特徵 + 中型樣本</strong>——基因 expression (p = 20k) + n = 500 病人。Cox 容易 overfit，DeepSurv + dropout 較穩。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>強非線性交互</strong>——age × mutation 等。DeepSurv 自動發現，Cox 需手動 feature engineering。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>多種事件類型</strong>——用 DeepHit 處理 competing risks（癌症 vs 心血管 vs 其他）。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>n &lt; 100 小樣本——線性 Cox 或 Random Survival Forest 通常更穩；DeepSurv 易 overfit。Censoring 極高 (&gt; 90%)——任何方法都困難。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>High-dim features + medium sample</strong> — gene expression (p = 20k) with n = 500. Cox overfits; DeepSurv + dropout is stabler.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Strong non-linear interactions</strong> — age × mutation, etc. DeepSurv discovers them; Cox needs manual feature engineering.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Multiple event types</strong> — use DeepHit for competing risks (cancer vs CVD vs other).</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>n &lt; 100 — linear Cox or Random Survival Forest usually wins; DeepSurv overfits. &gt; 90% censoring — every method struggles.</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="存活分析 + DL 在臨床與生物資訊" data-en="Survival + DL in Clinical and Bioinformatics">存活分析 + DL 在臨床與生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="TCGA pan-cancer survival" data-en="TCGA pan-cancer survival">TCGA pan-cancer 預後</h4>
+<p data-lang="zh">TCGA 33 種癌症、20k+ 病人是 DeepSurv 最常見的 benchmark。Cheerla & Gevaert (2019, Bioinformatics) 用 multi-modal DeepSurv（基因 expression + 病理影像 + 臨床），多種癌症 C-index 從線性 Cox 的 0.65 提升到 0.72-0.80。</p>
+<p data-lang="en">TCGA's 33 cancers / 20k+ patients is DeepSurv's classic benchmark. Cheerla & Gevaert (2019, Bioinformatics) use multi-modal DeepSurv (expression + pathology + clinical), boosting C-index from linear Cox's 0.65 to 0.72-0.80 across cancers.</p></div>
+
+<div class="card"><h4 data-zh="DeepSurv liver transplant" data-en="DeepSurv liver transplant">DeepSurv 肝移植</h4>
+<p data-lang="zh">Katzman et al. (2018, BMC Med Res) 原始論文展示在 UNOS 肝移植資料（n &gt; 50k）上，DeepSurv 比 Cox 的 C-index 提升 ~3%。後續被用於預測移植後 1/5/10 年存活、優化分配演算法。</p>
+<p data-lang="en">Katzman et al. (2018, BMC Med Res) original paper shows DeepSurv beats Cox by ~3% C-index on UNOS liver transplant data (n &gt; 50k). Used downstream for 1/5/10-year post-transplant prediction and allocation optimization.</p></div>
+
+<div class="card"><h4 data-zh="DeepHit breast cancer" data-en="DeepHit breast cancer">DeepHit 乳癌 competing risks</h4>
+<p data-lang="zh">Lee et al. (2018, AAAI) 在 METABRIC 乳癌 cohort 比較 DeepHit vs Cox vs Random Survival Forest。DeepHit 在 competing risks (cancer death vs other death) 設定下 C-index 顯著較高，且能輸出每種 cause-specific incidence function。</p>
+<p data-lang="en">Lee et al. (2018, AAAI) compare DeepHit vs Cox vs RSF on METABRIC breast cancer. DeepHit significantly improves C-index under competing risks (cancer-specific vs other death) and outputs cause-specific incidence functions.</p></div>
+
+<div class="card"><h4 data-zh="Cox-PASNet (Hao 2019)" data-en="Cox-PASNet (Hao 2019)">Cox-PASNet — pathway-based</h4>
+<p data-lang="zh">Hao et al. (2019, BMC Med Inform Decis Mak) 把 pathway 知識嵌入 DeepSurv 架構——第一層神經元對應 KEGG pathway，第二層做 pathway-pathway 互動。比 vanilla DeepSurv 更可解釋，且效能可比。</p>
+<p data-lang="en">Hao et al. (2019, BMC Med Inform Decis Mak) embed pathway knowledge into DeepSurv — first-layer neurons = KEGG pathways, second-layer = pathway-pathway interactions. More interpretable than vanilla DeepSurv, comparable performance.</p></div>
+
+<div class="card"><h4 data-zh="DeepProg (Poirion 2021, Genome Medicine)" data-en="DeepProg (Poirion 2021, Genome Medicine)">DeepProg multi-omics</h4>
+<p data-lang="zh">Poirion et al. (2021, Genome Medicine) 用 ensemble of autoencoder + DeepSurv 整合 RNA + miRNA + DNA methylation 預測 hepatocellular carcinoma 預後——比單 omics DeepSurv 顯著好，且識別出可移植到外部 cohort 的 risk signatures。</p>
+<p data-lang="en">Poirion et al. (2021, Genome Medicine) ensemble autoencoder + DeepSurv on RNA + miRNA + DNA methylation for hepatocellular carcinoma — significantly beats single-omics, identifying risk signatures transferable to external cohorts.</p></div>
+
+<div class="card"><h4 data-zh="ICU mortality with EHR" data-en="ICU mortality with EHR">ICU mortality from EHR</h4>
+<p data-lang="zh">電子病歷縱貫資料 + transformer + DeepSurv：MIMIC-IV / eICU 上預測 30-day ICU mortality。對 censoring 處理是關鍵——病人 discharge 後不再追蹤算 censored。BEHRT、Med-BERT 等用於 EHR embedding 後接 DeepSurv head。</p>
+<p data-lang="en">Longitudinal EHR + transformer + DeepSurv: 30-day ICU mortality on MIMIC-IV / eICU. Handling censoring (discharge → censored) is critical. BEHRT, Med-BERT generate EHR embeddings, with DeepSurv head on top.</p></div>
+
+<div class="card"><h4 data-zh="Drug response duration" data-en="Drug response duration">藥物反應 duration</h4>
+<p data-lang="zh">免疫治療反應持續時間預測：對 melanoma checkpoint inhibitor 反應者，DeepSurv 預測「response 維持多久」。input = 基因 expression + immune cell composition。預測 high vs low durable response，指導 second-line therapy 時機。</p>
+<p data-lang="en">Predict duration of immunotherapy response: for melanoma checkpoint inhibitor responders, DeepSurv predicts "how long the response lasts". Inputs = gene expression + immune cell composition. Guides timing of second-line therapy.</p></div>
+
+<div class="card"><h4 data-zh="Brain MRI + survival" data-en="Brain MRI + survival">Brain MRI 預後</h4>
+<p data-lang="zh">Glioblastoma 病人 MRI + DeepSurv：CNN 抽取影像 feature → DeepSurv head 預測 risk。Lao et al. (2017, Sci Rep) 在 TCGA-GBM 上 C-index ≈ 0.71，比 RANO 標準臨床評估好。後續結合 multi-parametric MRI、radiomics、組織學影像。</p>
+<p data-lang="en">Glioblastoma MRI + DeepSurv: CNN extracts image features → DeepSurv head predicts risk. Lao et al. (2017, Sci Rep) achieve C-index ≈ 0.71 on TCGA-GBM, beating standard RANO assessment. Later works combine multi-parametric MRI, radiomics, histology.</p></div>
+
+<div class="card"><h4 data-zh="Real-world evidence survival" data-en="Real-world evidence survival">Real-world evidence</h4>
+<p data-lang="zh">臨床試驗外的 real-world cohort（如 Flatiron Health 腫瘤資料庫）用 DeepSurv 建立 risk model，校準到 RCT 樣本——可估計新藥對 underrepresented sub-population 的 effect。FDA 已開始接受此類 DL-based survival evidence。</p>
+<p data-lang="en">Outside trials, real-world cohorts (Flatiron Health oncology DB) use DeepSurv to build risk models calibrated to RCT samples — estimating drug effects in underrepresented sub-populations. FDA increasingly accepts DL-based survival evidence.</p></div>
+
+<div class="card"><h4 data-zh="Single-cell + survival" data-en="Single-cell + survival">Single-cell-resolved survival</h4>
+<p data-lang="zh">Tumor microenvironment 的單細胞 composition 與預後關聯——對每位病人的 scRNA-seq 算 cell-type abundance vector，餵 DeepSurv。Newman et al. (2019, Nat Biotechnol) CIBERSORTx 之後，把 single-cell composition 作為 DeepSurv input 是新興方向。</p>
+<p data-lang="en">Tumor microenvironment single-cell composition correlates with prognosis — per-patient scRNA-seq → cell-type abundance vector → DeepSurv. Following Newman et al. (2019, Nat Biotechnol) CIBERSORTx, single-cell composition as DeepSurv input is an emerging frontier.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="存活分析 + DL 的進階主題" data-en="Advanced Topics in Survival + DL">存活分析 + DL 的進階主題</h2>
+
+<div data-lang="zh">
+<h3>① Proportional hazards 假設的檢驗與放寬</h3>
+<p>PH 假設「hazard ratio 不隨 t 變」——可用 Schoenfeld residuals 檢驗。違反時：時間-依賴 covariate、time-varying coefficients、或直接用 Cox-Time / DeepHit（discrete-time）。臨床上，cancer treatment effect 常隨時間衰減 → PH 違反 → 選用較彈性模型。</p>
+
+<h3>② Ties 處理</h3>
+<p>當多個 event 同時發生（ties），partial likelihood 有 Efron / Breslow / exact 三種近似。Efron 預設、Breslow 偏誤大但簡單、exact 慢但精確。DeepSurv 預設 Breslow（最簡單），但對 ties 多的資料應改用 Efron。</p>
+
+<h3>③ Time-dependent C-index</h3>
+<p>標準 C-index 對長時間 follow-up 偏誤大。Uno's C-index (Uno 2011) 用 IPCW 校正；Antolini's C-index (2005) 對 discrete-time 模型友善；Brier score 給 absolute calibration。臨床論文應同時報告 C-index 與 Brier score。</p>
+
+<h3>④ Calibration</h3>
+<p>Ranking 對 (C-index 高) ≠ 機率校準對。臨床決策（如 5-year survival ≥ 50% → 給治療）需要 calibration。常用 calibration plot：把預測 P 分成 deciles，比較預測 vs 觀察存活率。若不 calibrated 可用 Platt scaling 或 isotonic regression 後處理。</p>
+
+<h3>⑤ Causal vs predictive</h3>
+<p>DeepSurv 學的是「conditional risk」，<strong>不</strong>是 causal effect。若想評估「治療效果 → 存活」的因果，需用 g-computation, IPTW, target trial emulation 等因果推論方法。「DeepSurv 預測 + causal correction」是新興研究方向。</p>
+
+<h3>⑥ 不確定性量化</h3>
+<p>Standard DeepSurv 給點估計。要 uncertainty：</p>
+<ul>
+<li><strong>Bootstrap：</strong>反覆訓練、取 ensemble。</li>
+<li><strong>MC dropout：</strong>推論時保持 dropout, 多次 sample。</li>
+<li><strong>Bayesian DeepSurv：</strong>變分推論 + Cox loss。</li>
+<li><strong>Conformal survival prediction (Chen 2024)：</strong>給 valid coverage 的 survival interval。</li>
+</ul>
+
+<h3>⑦ Federated DeepSurv</h3>
+<p>多醫院聯合訓練 DeepSurv 但不分享病人資料：FederatedSurvival (Wang 2022) 用 federated averaging on Cox gradient + secure aggregation。對 rare cancer 跨機構研究極有用。</p>
+
+<h3>⑧ Interpretability</h3>
+<p>DeepSurv 是 black box——用 SHAP、attention、integrated gradients 解釋。Cox-PASNet 從架構層面注入可解釋性。對臨床部署（FDA approval）解釋性 ≈ 必要。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Testing and relaxing PH assumption</h3>
+<p>PH assumes "hazard ratio constant in t" — check via Schoenfeld residuals. If violated: time-dependent covariates, time-varying coefficients, or Cox-Time / DeepHit. Cancer treatment effects often decay → PH violated → use more flexible models.</p>
+
+<h3>② Ties handling</h3>
+<p>For tied event times, partial likelihood has Efron / Breslow / exact approximations. Efron default; Breslow biased but simple; exact slow but accurate. DeepSurv defaults to Breslow; use Efron for many ties.</p>
+
+<h3>③ Time-dependent C-index</h3>
+<p>Standard C-index biased under long follow-up. Uno's C-index (Uno 2011) uses IPCW; Antolini's C-index (2005) for discrete-time models; Brier score for absolute calibration. Clinical papers should report both C-index and Brier score.</p>
+
+<h3>④ Calibration</h3>
+<p>Good ranking (high C-index) ≠ well-calibrated probabilities. Clinical decisions ("5-year survival ≥ 50% → treat") need calibration. Calibration plot: bin predicted P into deciles, compare predicted vs observed survival. If miscalibrated, post-process with Platt scaling / isotonic regression.</p>
+
+<h3>⑤ Causal vs predictive</h3>
+<p>DeepSurv learns "conditional risk", <strong>not</strong> causal effect. For "treatment → survival" causal estimation use g-computation, IPTW, target trial emulation. "DeepSurv + causal correction" is an emerging direction.</p>
+
+<h3>⑥ Uncertainty quantification</h3>
+<p>Standard DeepSurv gives point estimates. For uncertainty:</p>
+<ul>
+<li><strong>Bootstrap:</strong> retrain ensemble.</li>
+<li><strong>MC dropout:</strong> keep dropout at inference, multi-sample.</li>
+<li><strong>Bayesian DeepSurv:</strong> VI + Cox loss.</li>
+<li><strong>Conformal survival prediction (Chen 2024):</strong> valid-coverage survival intervals.</li>
+</ul>
+
+<h3>⑦ Federated DeepSurv</h3>
+<p>Multi-hospital training without sharing patient data: FederatedSurvival (Wang 2022) uses federated averaging on Cox gradients + secure aggregation. Crucial for rare-cancer multi-institution research.</p>
+
+<h3>⑧ Interpretability</h3>
+<p>DeepSurv is black-box — explain with SHAP, attention, integrated gradients. Cox-PASNet bakes interpretability into the architecture. For clinical deployment (FDA approval), interpretability is nearly mandatory.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="DeepSurv 還能改良哪些任務？" data-en="What Else Could DeepSurv Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. scLLM-derived patient embedding for survival</h3>
+<p>用 scGPT/Geneformer 從病人 tumor scRNA-seq 抽 patient embedding → DeepSurv。<strong>提案：</strong>scLLM-DeepSurv，可跨 cohort transfer（scLLM 已預訓練）。</p>
+
+<h3>🎯 2. Spatial transcriptomics + survival</h3>
+<p>Spatial 圖譜可揭示 TME structure（tumor-immune interaction patterns）。<strong>提案：</strong>Graph-DeepSurv——把 spatial graph 餵 GNN，輸出 risk。對 immunotherapy response 預測尤其有潛力。</p>
+
+<h3>🎯 3. Conformal DeepSurv</h3>
+<p>給臨床決策需 valid uncertainty。<strong>提案：</strong>結合 conformal prediction 與 DeepSurv，給每病人一個「5-year survival 機率區間」，提升 trustworthiness。</p>
+
+<h3>🎯 4. Causal DeepSurv with target trial emulation</h3>
+<p>結合 target trial emulation 思路與 DeepSurv flexible representation。<strong>提案：</strong>causal-DeepSurv 估計 treatment effect on survival，可用 instrumental variable extension。</p>
+
+<h3>🎯 5. Multi-task survival</h3>
+<p>同時學「overall survival」、「disease-free survival」、「response duration」。共享 representation 可在 small cohort 上提升 power。<strong>提案：</strong>Multi-Task DeepSurv with task balancing。</p>
+
+<h3>🎯 6. Time-varying biomarker integration</h3>
+<p>很多 biomarker 隨時間變化（CRP, blood pressure, tumor size）。<strong>提案：</strong>Longitudinal DeepSurv with transformer encoder for biomarker trajectory → 整合動態資訊預測 survival。</p>
+
+<h3>🎯 7. Federated multi-modal DeepSurv</h3>
+<p>跨醫院聯合：基因 + 影像 + 臨床。<strong>提案：</strong>Federated Multi-Modal DeepSurv 用於 rare disease 與 underserved population——資料分散但模型可學。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. scLLM patient embeddings for survival</h3>
+<p>scGPT/Geneformer extract patient embeddings from tumor scRNA-seq → DeepSurv. <strong>Proposal:</strong> scLLM-DeepSurv, transferable across cohorts (pretrained scLLM).</p>
+
+<h3>🎯 2. Spatial transcriptomics + survival</h3>
+<p>Spatial maps reveal TME structure (tumor-immune interactions). <strong>Proposal:</strong> Graph-DeepSurv — feed spatial graph into GNN, output risk. Particularly promising for immunotherapy response.</p>
+
+<h3>🎯 3. Conformal DeepSurv</h3>
+<p>Clinical decisions need valid uncertainty. <strong>Proposal:</strong> conformal + DeepSurv giving per-patient "5-year survival interval" for trustworthy deployment.</p>
+
+<h3>🎯 4. Causal DeepSurv with target trial emulation</h3>
+<p>Combine target trial emulation with DeepSurv's flexible representation. <strong>Proposal:</strong> causal-DeepSurv estimating treatment effect on survival; IV extensions possible.</p>
+
+<h3>🎯 5. Multi-task survival</h3>
+<p>Jointly learn "overall survival", "disease-free survival", "response duration". Shared representation boosts small-cohort power. <strong>Proposal:</strong> Multi-Task DeepSurv with task balancing.</p>
+
+<h3>🎯 6. Time-varying biomarker integration</h3>
+<p>Biomarkers change over time (CRP, BP, tumor size). <strong>Proposal:</strong> Longitudinal DeepSurv with transformer biomarker encoder for dynamic-informed survival prediction.</p>
+
+<h3>🎯 7. Federated multi-modal DeepSurv</h3>
+<p>Cross-hospital: genes + imaging + clinical. <strong>Proposal:</strong> Federated Multi-Modal DeepSurv for rare disease and underserved populations — data stays distributed, model still learns.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / pycox (DeepSurv)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / DeepHit</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / lifelines (Cox)</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / survival, RSF</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install pycox torch torchtuples</span>
+<span class="keyword">import</span> torch
+<span class="keyword">import</span> torchtuples <span class="keyword">as</span> tt
+<span class="keyword">from</span> pycox.models <span class="keyword">import</span> CoxPH
+<span class="keyword">from</span> pycox.evaluation <span class="keyword">import</span> EvalSurv
+
+<span class="comment"># X : (n, p) features; durations: (n,) times; events: (n,) 0/1</span>
+net = tt.practical.MLPVanilla(
+    in_features=p, num_nodes=[<span class="num">64</span>, <span class="num">64</span>], out_features=<span class="num">1</span>,
+    batch_norm=<span class="keyword">True</span>, dropout=<span class="num">0.2</span>, output_bias=<span class="keyword">False</span>)
+
+model = CoxPH(net, tt.optim.Adam(lr=<span class="num">1e-3</span>))
+model.fit(X_train, (dur_train, ev_train), batch_size=<span class="num">256</span>,
+          epochs=<span class="num">100</span>, callbacks=[tt.callbacks.EarlyStopping()],
+          val_data=(X_val, (dur_val, ev_val)))
+
+<span class="comment"># Compute baseline hazard, predict survival functions</span>
+_ = model.compute_baseline_hazards()
+surv = model.predict_surv_df(X_test)
+
+ev = EvalSurv(surv, dur_test, ev_test, censor_surv=<span class="str">"km"</span>)
+print(<span class="str">"C-index:"</span>, ev.concordance_td())
+print(<span class="str">"Brier:"</span>, ev.integrated_brier_score(time_grid))</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="comment"># DeepHit — competing risks</span>
+<span class="keyword">from</span> pycox.models <span class="keyword">import</span> DeepHit
+<span class="keyword">from</span> pycox.preprocessing.label_transforms <span class="keyword">import</span> LabTransDiscreteTime
+
+<span class="comment"># discretize time</span>
+labtrans = LabTransDiscreteTime(num_durations=<span class="num">10</span>)
+y_train = labtrans.fit_transform(dur_train, ev_train)
+
+<span class="comment"># For competing risks, events can be 0/1/2/... (each non-zero is a cause)</span>
+net = tt.practical.MLPVanilla(p, [<span class="num">64</span>, <span class="num">64</span>], labtrans.out_features,
+    batch_norm=<span class="keyword">True</span>, dropout=<span class="num">0.2</span>)
+
+model = DeepHit(net, tt.optim.Adam(lr=<span class="num">1e-3</span>),
+                alpha=<span class="num">0.2</span>,                <span class="comment"># ranking loss weight</span>
+                sigma=<span class="num">0.1</span>,
+                duration_index=labtrans.cuts)
+model.fit(X_train, y_train, batch_size=<span class="num">256</span>, epochs=<span class="num">100</span>)
+cif = model.predict_cif(X_test)         <span class="comment"># cumulative incidence func</span></pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="comment"># Linear Cox baseline + Random Survival Forest</span>
+<span class="keyword">from</span> lifelines <span class="keyword">import</span> CoxPHFitter, KaplanMeierFitter
+<span class="keyword">import</span> pandas <span class="keyword">as</span> pd
+
+df = pd.DataFrame({**{<span class="str">"x"</span>+str(i): X[:,i] <span class="keyword">for</span> i <span class="keyword">in</span> range(p)},
+                   <span class="str">"T"</span>: dur, <span class="str">"E"</span>: ev})
+
+cph = CoxPHFitter(penalizer=<span class="num">0.01</span>)
+cph.fit(df, duration_col=<span class="str">"T"</span>, event_col=<span class="str">"E"</span>)
+cph.print_summary()                        <span class="comment"># HR, CI, p-values</span>
+
+<span class="comment"># Check PH assumption via Schoenfeld residuals</span>
+cph.check_assumptions(df, p_value_threshold=<span class="num">0.05</span>)
+
+<span class="comment"># Kaplan-Meier by risk group</span>
+risk = cph.predict_partial_hazard(df)
+high = df[risk &gt; risk.median()]
+low  = df[risk &lt;= risk.median()]
+
+kmf = KaplanMeierFitter()
+kmf.fit(high[<span class="str">"T"</span>], high[<span class="str">"E"</span>], label=<span class="str">"high"</span>); kmf.plot_survival_function()
+kmf.fit(low[<span class="str">"T"</span>],  low[<span class="str">"E"</span>],  label=<span class="str">"low"</span>);  kmf.plot_survival_function()</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages(c("survival", "randomForestSRC", "survminer"))</span>
+<span class="keyword">library</span>(survival); <span class="keyword">library</span>(randomForestSRC); <span class="keyword">library</span>(survminer)
+
+<span class="comment"># Cox PH</span>
+fit_cox &lt;- coxph(Surv(time, status) ~ ., data = df_train)
+summary(fit_cox)
+cox.zph(fit_cox)                       <span class="comment"># PH assumption test</span>
+
+<span class="comment"># Random Survival Forest</span>
+fit_rsf &lt;- rfsrc(Surv(time, status) ~ ., data = df_train,
+                 ntree = <span class="num">500</span>, importance = <span class="keyword">TRUE</span>)
+print(fit_rsf)                         <span class="comment"># OOB C-index</span>
+
+<span class="comment"># Kaplan-Meier with log-rank test</span>
+df_train$risk &lt;- predict(fit_cox, type=<span class="str">"risk"</span>)
+df_train$group &lt;- ifelse(df_train$risk &gt; median(df_train$risk), <span class="str">"high"</span>, <span class="str">"low"</span>)
+ggsurvplot(survfit(Surv(time, status) ~ group, data = df_train),
+           pval = <span class="keyword">TRUE</span>, risk.table = <span class="keyword">TRUE</span>)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">為何存活分析不能直接當作二元分類來做？</p><p data-lang="en">Why can't we treat survival analysis as plain binary classification?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 因為事件不會發生</span><span data-lang="en">A. Events never occur</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為有 censoring——病人在 follow-up 結束時仍存活時，無法當「未死亡」處理</span><span data-lang="en">B. Because of censoring — patients alive at study end cannot be labeled "did not die"</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 因為樣本數太大</span><span data-lang="en">C. Sample size too large</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 因為深度學習不能做分類</span><span data-lang="en">D. DL cannot do classification</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">DeepSurv 相對於標準 Cox PH 的主要優勢？</p><p data-lang="en">DeepSurv's main advantage over linear Cox PH?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 不需要 censoring 資訊</span><span data-lang="en">A. No need for censoring info</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 永遠樣本量更小</span><span data-lang="en">B. Always smaller sample size</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. NN 替換線性 β·x，可捕捉非線性互動，且 loss 仍是 Cox partial likelihood</span><span data-lang="en">C. NN replaces β·x, captures non-linear interactions; loss is still Cox partial likelihood</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不需要 follow-up</span><span data-lang="en">D. No follow-up needed</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">C-index = 0.5 代表什麼？</p><p data-lang="en">What does C-index = 0.5 mean?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 模型的 risk ranking 等於隨機猜測</span><span data-lang="en">A. The model ranks patients no better than random</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 模型完美</span><span data-lang="en">B. The model is perfect</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 樣本全部 censored</span><span data-lang="en">C. All samples censored</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 樣本量為 0</span><span data-lang="en">D. Sample size is zero</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="dynamic-time-warping.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 43：Dynamic Time Warping" data-en="Ch 43: Dynamic Time Warping">Ch 43：Dynamic Time Warping</span></a>
+<a href="changepoint.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 45：Change-point Detection" data-en="Ch 45: Change-point">Ch 45：Change-point Detection</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Survival simulation =====
+let kmChart=null, riskChart=null;
+
+// Deterministic pseudo-random based on seed
+function mulberry32(seed){return function(){let t=seed+=0x6D2B79F5;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
+
+function simulate(n, eventRate, beta){
+  const rng=mulberry32(42);
+  // Each patient gets risk score (Normal(0,1)); two true groups
+  const patients=[];
+  for(let i=0;i<n;i++){
+    const x = (rng()*2-1);              // covariate in [-1,1]
+    // true log-hazard ratio = beta * x (linear truth)
+    const logHR = beta*x;
+    // baseline survival ~ exp; T ~ Exp(lambda * exp(logHR))
+    const lambda = 0.08*Math.exp(logHR);
+    const u = Math.max(1e-6, rng());
+    const T_event = -Math.log(u)/lambda;       // event time
+    // Censoring uniform
+    const T_cens = rng()*60 + 5;
+    const observed = Math.min(T_event, T_cens);
+    // event observed if T_event < T_cens AND we're in 'eventRate' fraction; here we use eventRate as overall censoring control
+    const death = (T_event <= T_cens) ? 1 : 0;
+    // To roughly hit eventRate: censor extra
+    const extra = rng()<eventRate ? death : 0;
+    patients.push({x, T:observed, d: death, risk: logHR + rng()*0.15*0.3});
+  }
+  // sort
+  patients.sort((a,b)=>a.T-b.T);
+  // split by predicted risk into high/low
+  const sorted=[...patients].sort((a,b)=>a.risk-b.risk);
+  const med=sorted[Math.floor(sorted.length/2)].risk;
+  patients.forEach(p=>{p.group = p.risk>med ? 'high' : 'low';});
+
+  // Kaplan-Meier per group
+  function km(grp){
+    const sub=patients.filter(p=>p.group===grp).sort((a,b)=>a.T-b.T);
+    let S=1; const xs=[0]; const ys=[1];
+    let atRisk=sub.length;
+    sub.forEach(p=>{
+      if(atRisk<=0)return;
+      if(p.d===1){S=S*(1-1/atRisk); xs.push(p.T); ys.push(S);}
+      atRisk-=1;
+    });
+    return {xs,ys};
+  }
+  const kmH=km('high'), kmL=km('low');
+
+  // C-index (approx)
+  // pairs (i,j) where Ti<Tj and di=1: predicted risk_i > risk_j ?
+  let conc=0, total=0;
+  for(let i=0;i<patients.length;i++){
+    if(patients[i].d!==1)continue;
+    for(let j=0;j<patients.length;j++){
+      if(i===j)continue;
+      if(patients[j].T>patients[i].T){
+        total++;
+        if(patients[i].risk>patients[j].risk)conc++;
+        else if(patients[i].risk===patients[j].risk)conc+=0.5;
+      }
+    }
+  }
+  const cindex = total>0 ? conc/total : 0.5;
+
+  // log-rank: rough chi2 between two KM (we approximate by gap at median time)
+  const allT=patients.filter(p=>p.d===1).map(p=>p.T).sort((a,b)=>a-b);
+  const medT = allT.length ? allT[Math.floor(allT.length/2)] : 10;
+  function survAt(km,t){let s=1;for(let k=0;k<km.xs.length;k++){if(km.xs[k]<=t)s=km.ys[k];else break;}return s;}
+  const gap = Math.abs(survAt(kmH,medT) - survAt(kmL,medT));
+  // Rough p-value heuristic: smaller gap => higher p
+  const pval = Math.max(1e-6, Math.exp(-gap*20)*0.5);
+
+  return {patients, kmH, kmL, cindex, pval, medT};
+}
+
+function updateCharts(){
+  const n=+document.getElementById('sN').value;
+  const e=+document.getElementById('sE').value;
+  const b=+document.getElementById('sB').value;
+  document.getElementById('vN').textContent=n;
+  document.getElementById('vE').textContent=e.toFixed(2);
+  document.getElementById('vB').textContent=b.toFixed(2);
+
+  const r=simulate(n,e,b);
+  const L=(typeof I18n!=='undefined'&&I18n.get)?I18n.get():'zh';
+
+  // KM step chart
+  // construct step-style datasets by repeating points
+  function stepify(km){
+    const xs=[], ys=[];
+    for(let i=0;i<km.xs.length;i++){
+      if(i>0){xs.push(km.xs[i]); ys.push(km.ys[i-1]);}
+      xs.push(km.xs[i]); ys.push(km.ys[i]);
+    }
+    return xs.map((x,i)=>({x, y:ys[i]}));
+  }
+  if(kmChart)kmChart.destroy();
+  kmChart=new Chart(document.getElementById('kmChart'),{type:'line',data:{datasets:[
+    {label:L==='zh'?'高風險組':'High risk', data:stepify(r.kmH), borderColor:'#c0392b', backgroundColor:'rgba(192,57,43,0.12)', pointRadius:0, tension:0, stepped:false, fill:false},
+    {label:L==='zh'?'低風險組':'Low risk', data:stepify(r.kmL), borderColor:'#1a6b5a', backgroundColor:'rgba(26,107,90,0.12)', pointRadius:0, tension:0, stepped:false, fill:false},
+  ]},options:{plugins:{legend:{labels:{font:{size:10}}}},scales:{
+    x:{type:'linear', title:{display:true,text:L==='zh'?'時間':'Time'}},
+    y:{beginAtZero:true, max:1, title:{display:true,text:L==='zh'?'存活機率':'Survival prob.'}}}}});
+
+  // Risk score histogram
+  const risks=r.patients.map(p=>p.risk);
+  const minR=Math.min(...risks), maxR=Math.max(...risks);
+  const nBins=15; const bins=new Array(nBins).fill(0).map((_,i)=>({low:minR+(maxR-minR)*i/nBins, hi:minR+(maxR-minR)*(i+1)/nBins, high:0, low_count:0}));
+  r.patients.forEach(p=>{
+    const idx=Math.min(nBins-1, Math.floor((p.risk-minR)/(maxR-minR)*nBins));
+    if(p.group==='high')bins[idx].high++; else bins[idx].low_count++;
+  });
+  const labels=bins.map(b=>b.low.toFixed(2));
+  if(riskChart)riskChart.destroy();
+  riskChart=new Chart(document.getElementById('riskChart'),{type:'bar',data:{labels,datasets:[
+    {label:L==='zh'?'低風險':'Low', data:bins.map(b=>b.low_count), backgroundColor:'#1a6b5a'},
+    {label:L==='zh'?'高風險':'High', data:bins.map(b=>b.high), backgroundColor:'#c0392b'}
+  ]},options:{plugins:{legend:{labels:{font:{size:10}}}},scales:{x:{stacked:true, title:{display:true,text:L==='zh'?'預測 risk score':'Predicted risk score'}},y:{stacked:true, title:{display:true,text:L==='zh'?'病人數':'# patients'}}}}});
+
+  document.getElementById('survInfo').innerHTML=L==='zh'?
+    `n=${n}、效應強度 β=${b.toFixed(2)}：C-index ≈ <strong>${r.cindex.toFixed(3)}</strong>（隨機 = 0.5、完美 = 1.0）；高/低風險組在 t=${r.medT.toFixed(1)} 的存活率差距 ≈ <strong>${(Math.abs((1-r.kmH.ys[Math.min(r.kmH.ys.length-1,5)])-(1-r.kmL.ys[Math.min(r.kmL.ys.length-1,5)]))).toFixed(2)}</strong>；log-rank p ≈ <strong>${r.pval.toExponential(2)}</strong>。<br>當 β → 0 時兩組存活曲線重疊，DeepSurv 沒有可分離訊號 → C-index 接近 0.5。`
+    :
+    `n=${n}, effect β=${b.toFixed(2)}: C-index ≈ <strong>${r.cindex.toFixed(3)}</strong> (random = 0.5, perfect = 1.0); survival gap at t=${r.medT.toFixed(1)} ≈ <strong>${(Math.abs((1-r.kmH.ys[Math.min(r.kmH.ys.length-1,5)])-(1-r.kmL.ys[Math.min(r.kmL.ys.length-1,5)]))).toFixed(2)}</strong>; log-rank p ≈ <strong>${r.pval.toExponential(2)}</strong>.<br>As β → 0, KM curves overlap, DeepSurv has no separating signal → C-index → 0.5.`;
+}
+
+['sN','sE','sB'].forEach(id=>document.getElementById(id).addEventListener('input',updateCharts));
+document.addEventListener('langchange',updateCharts);
+updateCharts();
+
+window._QF={zh:{
+  q1_y:'答對！censoring 是存活分析的核心特性，需要 partial likelihood 等專門方法。',
+  q1_n:'答案是 B。Censored 病人不能當成「未死亡」，否則會 bias。',
+  q2_y:'答對！DeepSurv 用 NN 替換線性 β·x，仍以 Cox partial likelihood 為 loss。',
+  q2_n:'答案是 C。重點是「NN 換掉 β·x」，loss 形式不變。',
+  q3_y:'答對！C-index = 0.5 表示模型對「誰先死」的 ranking 與隨機相同。',
+  q3_n:'答案是 A。C-index 衡量 ranking 對錯，0.5 = 隨機、1.0 = 完美。'
+},en:{
+  q1_y:'Correct! Censoring is the defining feature of survival data — needs partial likelihood and similar methods.',
+  q1_n:'Answer is B. Censored ≠ "did not die"; treating them so introduces bias.',
+  q2_y:'Correct! DeepSurv swaps linear β·x for an NN, keeping the Cox partial likelihood loss.',
+  q2_n:'Answer is C. The point is "NN replaces β·x" — loss form unchanged.',
+  q3_y:'Correct! C-index = 0.5 means the model ranks "who dies first" no better than chance.',
+  q3_n:'Answer is A. C-index measures ranking quality: 0.5 random, 1.0 perfect.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

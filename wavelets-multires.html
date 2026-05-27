@@ -1,0 +1,478 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Wavelets &amp; Multi-resolution — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html" class="active">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 34 / 38</div><h1 data-zh="小波與多解析度分析 (Wavelets &amp; Multi-resolution)" data-en="Wavelets &amp; Multi-resolution Analysis">小波與多解析度分析 (Wavelets &amp; Multi-resolution)</h1>
+<p class="subtitle" data-lang="zh">Fourier 變換能告訴你「有哪些頻率」，卻不告訴你「頻率發生在何時」。小波變換同時提供時間與頻率的局部化資訊——這是 Haar (1910)、Daubechies (1988)、Mallat (1989) 等人塑造的多解析度世界。從 EEG spike、ChIP-seq peak 到 circadian rhythm、CNV 偵測，小波是分析多尺度生醫信號最自然的工具。</p>
+<p class="subtitle" data-lang="en">Fourier transforms tell you which frequencies exist but not when. Wavelet transforms provide simultaneous time-frequency localization — the multi-resolution world built by Haar (1910), Daubechies (1988), Mallat (1989). From EEG spikes to ChIP-seq peaks, circadian rhythms to CNV detection, wavelets are the natural tool for multi-scale biomedical signals.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="為何 Fourier 不夠？" data-en="Why Fourier Is Not Enough">為何 Fourier 不夠？</h2>
+<div data-lang="zh">
+<p><strong>Fourier 的困境：</strong>把信號分解成「無限長正弦波」——你知道頻率，但失去了時間定位。對 EEG 中突然出現的 spike、ChIP-seq 中的 peak、calcium imaging 中的 burst——「事件何時發生」與「事件多寬」同樣重要。</p>
+<p><strong>小波的解方：</strong>用「短促、波狀、有局部支撐」的基函數 ψ(t) 來分析信號：</p>
+<p style="text-align:center;font-family:Georgia,serif;">W(a, b) = ∫ x(t) · (1/√a) · ψ((t − b)/a) dt</p>
+<p><code>a</code> 是 scale（伸縮——越小越高頻），<code>b</code> 是 translation（時間位置）。<strong>每個小波係數同時告訴你「何時」與「哪個尺度的事件」</strong>。這就叫 <strong>time-frequency localization</strong>。</p>
+<p><strong>Heisenberg 限制：</strong>無法同時無窮精確 localize time 與 frequency。Δt · Δω ≥ ½。小波選擇：高頻時 Δt 小（精確時間）、低頻時 Δω 小（精確頻率）——剛好配合「短促事件常高頻、緩慢趨勢常低頻」的物理直覺。</p>
+<p><strong>Mother wavelet：</strong>不同任務選不同 mother：</p>
+<ul>
+<li><strong>Haar (1910)：</strong>方波，最簡單，適合階梯狀信號（CNV、binary segmentation）。</li>
+<li><strong>Daubechies (db4, db8, Daubechies 1988)：</strong>正交、緊支撐、平滑——影像/壓縮黃金標準。</li>
+<li><strong>Morlet：</strong>複數 Gaussian × 正弦，最適合振盪信號分析（EEG, calcium imaging）。</li>
+<li><strong>Mexican hat (DoG 二階導數)：</strong>對稱、適合 spot / peak 偵測。</li>
+</ul>
+</div>
+<div data-lang="en">
+<p><strong>The Fourier problem:</strong> decomposes a signal into infinite-length sinusoids — you get frequencies but lose time. For EEG spikes, ChIP-seq peaks, calcium bursts — both <em>when</em> and <em>how wide</em> matter.</p>
+<p><strong>The wavelet solution:</strong> analyze with short, wavy, locally-supported basis ψ(t):</p>
+<p style="text-align:center;font-family:Georgia,serif;">W(a, b) = ∫ x(t) · (1/√a) · ψ((t − b)/a) dt</p>
+<p><code>a</code> = scale (smaller → higher frequency); <code>b</code> = translation. <strong>Each coefficient tells you when and at which scale.</strong> This is <strong>time-frequency localization</strong>.</p>
+<p><strong>Heisenberg limit:</strong> cannot simultaneously have infinite resolution in time and frequency — Δt · Δω ≥ ½. Wavelets trade off: small Δt at high frequency (precise time), small Δω at low frequency (precise frequency) — matching the physical reality that fast events are high-frequency and slow trends are low-frequency.</p>
+<p><strong>Mother wavelets:</strong> choose by task:</p>
+<ul>
+<li><strong>Haar (1910):</strong> step function, simplest, great for step-like signals (CNV, binary segmentation).</li>
+<li><strong>Daubechies (db4, db8, Daubechies 1988):</strong> orthogonal, compactly supported, smooth — gold standard for image/compression.</li>
+<li><strong>Morlet:</strong> complex Gaussian × sinusoid — best for oscillations (EEG, calcium imaging).</li>
+<li><strong>Mexican hat (DoG, 2nd derivative):</strong> symmetric, ideal for spot / peak detection.</li>
+</ul>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">⏱️</div><h4 data-zh="時頻定位" data-en="Time-freq localization">時頻定位</h4><p data-lang="zh">同時告訴你「何時」與「哪個尺度」——Fourier 做不到。</p><p data-lang="en">Tells you both when and at which scale — Fourier can't.</p></div>
+  <div class="card"><div class="card-icon">📏</div><h4 data-zh="多解析度" data-en="Multi-resolution">多解析度</h4><p data-lang="zh">由粗到細的階層分解，自然對應「不同尺度的事件」。</p><p data-lang="en">Coarse-to-fine hierarchical decomposition matches multi-scale events.</p></div>
+  <div class="card"><div class="card-icon">⚡</div><h4 data-zh="O(n) 快" data-en="O(n) fast">O(n) 快</h4><p data-lang="zh">Mallat pyramid algorithm 比 FFT 的 O(n log n) 還快。</p><p data-lang="en">Mallat's pyramid algorithm is faster than FFT's O(n log n).</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="從 CWT 到 DWT、wavelet packet、去噪" data-en="From CWT to DWT, Wavelet Packets, Denoising">從 CWT 到 DWT、wavelet packet、去噪</h2>
+<div data-lang="zh">
+<p><strong>① CWT (Continuous Wavelet Transform)：</strong>連續 (a, b) 雙參數，掃描所有 scale 與 translation。冗餘但可視化清楚——常用於 EEG、生物節律 scalogram。計算 O(N · S)，S = scale 數。</p>
+<p><strong>② DWT (Discrete Wavelet Transform)：</strong>取 dyadic scale a = 2^j、translation b = k · 2^j。配合 Mallat (1989) 提出的 <strong>multi-resolution analysis (MRA)</strong>：</p>
+<p style="text-align:center;font-family:Georgia,serif;">V_0 ⊃ V_1 ⊃ V_2 ⊃ ...   每層 V_j = V_{j+1} ⊕ W_{j+1}</p>
+<p>V_j 為 scaling space（粗略近似 a_j）、W_j 為 wavelet space（細節 d_j）。<strong>Pyramid algorithm：</strong>用低通 h 與高通 g 濾波器 + downsample 2，迭代分解，O(N)。</p>
+<p style="text-align:center;font-family:Georgia,serif;">a_{j+1} = (h * a_j) ↓ 2,  d_{j+1} = (g * a_j) ↓ 2</p>
+<p>反向重建：插零 + 共軛濾波 + 相加，達到完美重建 (perfect reconstruction, PR)。</p>
+<p><strong>③ Wavelet packet decomposition (Coifman &amp; Wickerhauser 1992)：</strong>標準 DWT 只繼續分解 a_j（低頻）；wavelet packet 對 a_j 與 d_j 都繼續分解，提供更細的時頻 tile。可用 best-basis algorithm 在 packet tree 中選最稀疏表示。</p>
+<p><strong>④ Wavelet shrinkage denoising (Donoho &amp; Johnstone 1994, Biometrika)：</strong>三步驟——(1) 信號 DWT，(2) 對小波係數做 soft / hard threshold（小於 λ 設零），(3) 反 DWT。原理：信號能量集中於少數大係數，雜訊均勻分散於所有係數；threshold 殺雜訊保信號。Universal threshold λ = σ √(2 log N)。</p>
+<p><strong>⑤ Empirical wavelet transform (Gilles 2013, IEEE TSP)：</strong>自適應地把頻譜切成 N 個band，再對每 band 設計 wavelet。對非穩態信號（如非典型 EEG）比固定 wavelet 更好。</p>
+</div>
+<div data-lang="en">
+<p><strong>① CWT (Continuous Wavelet Transform):</strong> continuous (a, b), scans all scales and translations. Redundant but visualizable — EEG and biological rhythm scalograms. Cost O(N · S).</p>
+<p><strong>② DWT (Discrete Wavelet Transform):</strong> dyadic scales a = 2^j, translations b = k · 2^j. Combined with Mallat's (1989) <strong>multi-resolution analysis (MRA)</strong>:</p>
+<p style="text-align:center;font-family:Georgia,serif;">V_0 ⊃ V_1 ⊃ V_2 ⊃ ...   each V_j = V_{j+1} ⊕ W_{j+1}</p>
+<p>V_j = scaling space (coarse a_j); W_j = wavelet space (detail d_j). <strong>Pyramid algorithm:</strong> alternate low-pass h and high-pass g filters with downsample-by-2, iterate; O(N).</p>
+<p style="text-align:center;font-family:Georgia,serif;">a_{j+1} = (h * a_j) ↓ 2,  d_{j+1} = (g * a_j) ↓ 2</p>
+<p>Inverse: upsample + conjugate filters + sum — achieves perfect reconstruction (PR).</p>
+<p><strong>③ Wavelet packet decomposition (Coifman &amp; Wickerhauser 1992):</strong> standard DWT only splits a_j (low freq); packets split both a_j and d_j, giving finer time-frequency tiling. Best-basis algorithm picks the sparsest packet tree.</p>
+<p><strong>④ Wavelet shrinkage denoising (Donoho &amp; Johnstone 1994, Biometrika):</strong> (1) DWT the signal, (2) soft/hard-threshold the coefficients (set those below λ to zero), (3) inverse DWT. Signal energy concentrates in few large coefficients; noise spreads — threshold kills noise. Universal threshold λ = σ √(2 log N).</p>
+<p><strong>⑤ Empirical wavelet transform (Gilles 2013, IEEE TSP):</strong> adaptively splits the spectrum into N bands, designs a wavelet per band — beats fixed wavelets on non-stationary signals (atypical EEG).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>Cascade / filter bank 視角：</strong>DWT 可視為低通 + 高通 perfect-reconstruction filter bank（quadrature mirror filters, QMF）+ 下採樣。Daubechies 的最大貢獻就是建造出「正交 + 緊支撐 + 給定 vanishing moments」的濾波器組——讓 wavelet 變得實用。</div>
+<div data-lang="en"><strong>Cascade / filter-bank view:</strong> DWT is a low-pass + high-pass perfect-reconstruction filter bank (quadrature mirror filters) with downsampling. Daubechies' breakthrough was constructing orthogonal, compactly supported filters with prescribed vanishing moments — making wavelets practical.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="嘈雜信號的 Haar 多解析度分解與去噪" data-en="Haar Multi-resolution Decomposition and Denoising of a Noisy Signal">嘈雜信號的 Haar 多解析度分解與去噪</h2>
+<div data-lang="zh"><p>下方模擬 5 個 Haar DWT 層級。原信號為「兩個 chirp + 一個 spike」加上 Gaussian 雜訊。<strong>調整 threshold</strong> 看 wavelet shrinkage 去噪效果——只有大係數（事件）被保留。</p></div>
+<div data-lang="en"><p>Five-level Haar DWT below. The original signal is two chirps plus a spike with Gaussian noise. <strong>Adjust threshold</strong> to see wavelet-shrinkage denoising — only large coefficients (events) survive.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="雜訊強度 σ" data-en="Noise σ">σ <span id="vS">0.30</span></label><input type="range" id="sS" min="0" max="1.0" value="0.3" step="0.05"></div>
+<div class="slider-group"><label data-zh="軟閾值 λ" data-en="Soft threshold λ">λ <span id="vT">0.40</span></label><input type="range" id="sT" min="0" max="1.5" value="0.4" step="0.05"></div>
+<div class="slider-group"><label data-zh="分解層數 J" data-en="Decomposition levels J">J <span id="vJ">5</span></label><input type="range" id="sJ" min="2" max="6" value="5" step="1"></div>
+<button id="reseed" style="margin:8px 0 12px;padding:6px 14px;font-size:.85rem;border:1px solid var(--c-border);background:#fff;border-radius:6px;cursor:pointer;" data-zh="🎲 重抽雜訊" data-en="🎲 Re-sample noise">🎲 重抽雜訊</button>
+<div style="position:relative;height:280px;"><canvas id="wvChart"></canvas></div>
+<div id="wvInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🌳 <span data-zh="什麼時候用小波？" data-en="When to use wavelets?">什麼時候用小波？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>非穩態信號</strong>——EEG、calcium imaging、ChIP-seq、Hi-C 沿染色體位置。Fourier 假設 stationarity，小波不需要。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>多尺度事件混合</strong>——CNV (10kb–100Mb)、circadian + ultradian 節律、TAD + sub-TAD。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>需要稀疏表示 + 去噪</strong>——methylation array、Tiling array、HiC。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>純穩態、純單頻信號（FFT 或 Lomb-Scargle 更直接）；不規則時間取樣（需先插值或用 lifting scheme）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>Non-stationary signals</strong> — EEG, calcium imaging, ChIP-seq, Hi-C along chromosome. Fourier assumes stationarity; wavelets don't.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>Mixed multi-scale events</strong> — CNV (10kb–100Mb), circadian + ultradian, TADs + sub-TADs.</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>Need sparse representation + denoising</strong> — methylation arrays, tiling arrays, Hi-C.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>Pure stationary single-frequency signals (use FFT or Lomb-Scargle); irregularly sampled time (need interpolation or lifting scheme).</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="小波在基因體、神經科學與單細胞" data-en="Wavelets in Genomics, Neuroscience, Single-cell">小波在基因體、神經科學與單細胞</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="MetaCycle / 生物節律偵測" data-en="MetaCycle / Circadian detection">MetaCycle / 生物節律偵測</h4>
+<p data-lang="zh">Wu et al. (2016, Bioinformatics) 的 MetaCycle 套件整合 JTK_CYCLE、ARSER、Lomb-Scargle；其中 ARSER 用 wavelet 作為前處理 detrending。Leise (2013, WIREs Dev Biol) 詳述 wavelet 在 circadian 信號（如 PER2::LUC）相位、振幅追蹤的優勢。</p>
+<p data-lang="en">Wu et al. (2016, Bioinformatics) MetaCycle integrates JTK_CYCLE, ARSER, Lomb-Scargle; ARSER uses wavelets for detrending. Leise (2013, WIREs Dev Biol) details how wavelets track phase and amplitude in circadian signals (e.g. PER2::LUC).</p></div>
+
+<div class="card"><h4 data-zh="Calcium imaging spike detection" data-en="Calcium imaging spike detection">Calcium imaging spike detection</h4>
+<p data-lang="zh">Two-photon calcium signal 含緩慢漂移 + 快速 spike。Patel et al. (2013) 用 Haar wavelet shrinkage 去 baseline、Mexican hat CWT 識別 spike，現已整合到 CalmAn (Giovannucci 2019, eLife)。</p>
+<p data-lang="en">Two-photon calcium signals mix slow drift and fast spikes. Patel et al. (2013) used Haar shrinkage to remove baseline and Mexican-hat CWT to detect spikes; now part of CalmAn (Giovannucci 2019, eLife).</p></div>
+
+<div class="card"><h4 data-zh="EEG / ERP 神經科學" data-en="EEG / ERP neuroscience">EEG / ERP 神經科學</h4>
+<p data-lang="zh">EEG 既有 alpha (10 Hz)、beta (20 Hz)、gamma (40+ Hz) 振盪、又有突發 spike & sleep spindle。Morlet CWT 是標準工具——Tallon-Baudry &amp; Bertrand (1999, Trends Cog Sci) 是經典。也用於癲癇 ictal 偵測（Adeli 2003）。</p>
+<p data-lang="en">EEG has alpha (10 Hz), beta (20 Hz), gamma (40+ Hz) plus spikes and sleep spindles. Morlet CWT is the standard tool — Tallon-Baudry &amp; Bertrand (1999, Trends Cog Sci) is classic. Used in epilepsy detection (Adeli 2003).</p></div>
+
+<div class="card"><h4 data-zh="ChIP-seq peak detection" data-en="ChIP-seq peak detection">ChIP-seq peak detection</h4>
+<p data-lang="zh">Mathelier &amp; Carbone (2013, Bioinformatics) 提出 ChIP-Wave 用 CWT 在不同 scale 同時偵測「窄/寬」peak——比 MACS2 對 H3K4me3（窄）與 H3K27me3（寬）兩種型別都更穩健。Hsu et al. (2005, Genome Res) 更早用於 array CGH。</p>
+<p data-lang="en">Mathelier &amp; Carbone (2013, Bioinformatics) proposed ChIP-Wave using CWT to detect narrow + broad peaks simultaneously — more robust than MACS2 for both H3K4me3 (narrow) and H3K27me3 (broad). Hsu et al. (2005, Genome Res) earlier used wavelets for array CGH.</p></div>
+
+<div class="card"><h4 data-zh="WaveletPCA for single-cell time-series" data-en="WaveletPCA for single-cell time-series">WaveletPCA for single-cell time-series</h4>
+<p data-lang="zh">把 single-cell pseudotime trajectory 視為時間序列，先做 wavelet decomposition、再 PCA——可分離「快速 stochastic 變化」與「緩慢 trajectory drift」。Petukhov et al. (2018, Nat Methods 雛形)、Gut et al. (2018) 應用於 cell-cycle 解析。</p>
+<p data-lang="en">Treat single-cell pseudotime trajectories as time series — wavelet decomposition + PCA separates fast stochastic fluctuations from slow trajectory drift. Petukhov et al. (2018, Nat Methods prototype), Gut et al. (2018) applied to cell-cycle resolution.</p></div>
+
+<div class="card"><h4 data-zh="Spatial multi-scale 結構偵測" data-en="Spatial multi-scale structure detection">Spatial multi-scale 結構偵測</h4>
+<p data-lang="zh">2D wavelet 偵測 spatial transcriptomics 中不同尺度的 "hot spot"（單細胞 → tissue domain → tumor zone）。Lo et al. (2024, Nat Commun) WALDO 用 wavelets 整合 Visium / Xenium 跨解析度結構。</p>
+<p data-lang="en">2D wavelets find spatial transcriptomics hot spots at multiple scales (single cell → tissue domain → tumor zone). Lo et al. (2024, Nat Commun) WALDO integrates Visium / Xenium cross-resolution structures via wavelets.</p></div>
+
+<div class="card"><h4 data-zh="Methylation array 平滑" data-en="Methylation array smoothing">Methylation array 平滑</h4>
+<p data-lang="zh">450K / 850K methylation array 沿 genome 排列。Wavelet shrinkage 比 moving average 更能保留 DMR (differentially methylated regions) 邊界——Hansen et al. (2012, Genome Biol) bsseq 提出類似框架。</p>
+<p data-lang="en">450K / 850K methylation arrays are arranged along genome. Wavelet shrinkage preserves DMR boundaries better than moving averages — Hansen et al. (2012, Genome Biol) bsseq uses a related framework.</p></div>
+
+<div class="card"><h4 data-zh="CNV detection with wavelets" data-en="Wavelet CNV detection">CNV detection with wavelets</h4>
+<p data-lang="zh">Hsu et al. (2005, Genome Res) 與 Wang et al. (2006) 把 CGH / read-depth 視為 piecewise-constant 信號——Haar wavelet shrinkage 是最自然分解工具。後續 GADA、Wavelet-CNVnator 等。</p>
+<p data-lang="en">Hsu et al. (2005, Genome Res) and Wang et al. (2006) treat CGH / read-depth as piecewise-constant signals — Haar shrinkage is the natural choice. Successors: GADA, Wavelet-CNVnator.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="小波的進階主題" data-en="Advanced Wavelet Topics">小波的進階主題</h2>
+<div data-lang="zh">
+<h3>① Vanishing moments 與信號平滑度</h3>
+<p>若 wavelet ψ 有 N 個 vanishing moments（∫ t^k ψ(t) dt = 0, k = 0..N−1），則任何 N 階多項式平滑信號的 wavelet 係數 ≈ 0。Daubechies dbN 有 N 個 vanishing moments——越大越能壓縮平滑信號。</p>
+
+<h3>② Lifting scheme (Sweldens 1996, SIAM J Math Anal)</h3>
+<p>"Second generation wavelets"——不用 Fourier 框架，純用 split / predict / update 步驟構造 wavelet。優點：(1) 可在不規則網格上（如不均勻基因組位置）做小波；(2) integer-to-integer，無浮點誤差；(3) 速度比 cascade 快約 2×。</p>
+
+<h3>③ Stationary (Undecimated) Wavelet Transform (SWT)</h3>
+<p>標準 DWT 因 downsample 而 shift-variant——同樣信號移一位，係數變很多。SWT 不做 downsample，保持 shift-invariant，但代價是冗餘。對 peak detection、changepoint detection 比 DWT 更穩。</p>
+
+<h3>④ 2D / 3D wavelets</h3>
+<p>影像用 2D separable wavelet：HH (對角)、HL (水平)、LH (垂直)、LL (低通)。生醫應用：MRI 壓縮、組織病理 H&amp;E 影像 multi-scale feature。Curvelets (Candès &amp; Donoho 2004) 更適合曲線/邊緣。</p>
+
+<h3>⑤ 與 scattering transform 的關係</h3>
+<p>Mallat (2012, Comm Pure Appl Math) 提出 scattering transform：cascade wavelet + |·|，得到 translation-invariant + stable feature——本質是「凍結」CNN 第一層的 wavelet 替代品。在小資料生醫分類常打敗 CNN。</p>
+
+<h3>⑥ Wavelet on graphs / SGWT</h3>
+<p>Hammond, Vandergheynst &amp; Gribonval (2011, Appl Comput Harmon Anal) 把 wavelet 推廣到任意 graph（基於 graph Laplacian spectral domain）。生醫應用：scRNA-seq KNN graph 上的 multi-scale gene expression smoothing。</p>
+
+<h3>⑦ Wavelet coherence</h3>
+<p>Torrence &amp; Compo (1998, BAMS) 的 wavelet coherence 把 cross-spectrum 推廣到時頻域——量度兩信號何時 / 何頻率耦合。常用於 fMRI connectivity、心率變異與呼吸 coupling。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Vanishing moments and signal smoothness</h3>
+<p>If ψ has N vanishing moments (∫ t^k ψ(t) dt = 0, k = 0..N−1), wavelet coefficients of any degree-N polynomial vanish. Daubechies dbN has N vanishing moments — larger N compresses smooth signals more.</p>
+
+<h3>② Lifting scheme (Sweldens 1996, SIAM J Math Anal)</h3>
+<p>"Second generation wavelets" — built via split / predict / update, no Fourier needed. Benefits: (1) wavelets on irregular grids (uneven genomic positions); (2) integer-to-integer, no floating-point error; (3) ~2× faster than cascade.</p>
+
+<h3>③ Stationary (Undecimated) Wavelet Transform (SWT)</h3>
+<p>Standard DWT is shift-variant (downsampling). SWT skips downsampling, preserving shift-invariance at the cost of redundancy. Better than DWT for peak / changepoint detection.</p>
+
+<h3>④ 2D / 3D wavelets</h3>
+<p>Images use 2D separable wavelets: HH (diagonal), HL (horizontal), LH (vertical), LL (low-pass). Biomedical uses: MRI compression, H&amp;E histopathology multi-scale features. Curvelets (Candès &amp; Donoho 2004) suit curves and edges better.</p>
+
+<h3>⑤ Connection to scattering transform</h3>
+<p>Mallat (2012, Comm Pure Appl Math) cascades wavelet + |·| for translation-invariant stable features — essentially a frozen-first-layer CNN replacement. Beats CNNs on small biomedical classification tasks.</p>
+
+<h3>⑥ Wavelets on graphs / SGWT</h3>
+<p>Hammond, Vandergheynst &amp; Gribonval (2011, Appl Comput Harmon Anal) extend wavelets to arbitrary graphs via graph-Laplacian spectrum. Bio use: multi-scale gene-expression smoothing on scRNA-seq KNN graphs.</p>
+
+<h3>⑦ Wavelet coherence</h3>
+<p>Torrence &amp; Compo (1998, BAMS) extend cross-spectra to time-frequency — measures when and at which frequency two signals couple. Used in fMRI connectivity, heart-rate-respiration coupling.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="小波還能改良哪些任務？" data-en="What Else Could Wavelets Improve?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. Wavelet-enhanced spatial transcriptomics</h3>
+<p>Visium/Xenium 同時有單細胞與組織尺度 pattern。<strong>提案：</strong>用 2D wavelet 分解 spatial gene expression，分別處理「組織域 LF」與「細胞型別 HF」，比現有 spot-level analysis 更具尺度感知。</p>
+
+<h3>🎯 2. Multi-scale ATAC-seq peak calling</h3>
+<p>ATAC-seq 訊號有 single-nucleosome (~150 bp) 到 super-enhancer (~10 kb) 多尺度。<strong>提案：</strong>用 SWT 跨尺度 peak calling，比 MACS2 對 broad / narrow 兩類 peak 都穩。</p>
+
+<h3>🎯 3. Wavelet + Diffusion model 生醫去噪</h3>
+<p>單細胞 dropout、低光顯微鏡都需要去噪。<strong>提案：</strong>把 wavelet shrinkage 當 diffusion 的條件 prior，得到 task-aware denoising，比純 deep denoise 更可解釋。</p>
+
+<h3>🎯 4. 時間取樣不規則的 single-cell trajectory</h3>
+<p>實驗 timepoint 通常稀疏不均勻（0h, 6h, 24h, 72h...）。<strong>提案：</strong>用 lifting-scheme wavelet 在不規則時間網格上做 trajectory smoothing 與差異偵測。</p>
+
+<h3>🎯 5. Graph wavelet for scRNA-seq imputation</h3>
+<p>MAGIC / DCA 用 diffusion；<strong>提案：</strong>SGWT 直接在 KNN graph 上做 multi-scale smoothing，可同時保留細胞型別界線與緩解 dropout。</p>
+
+<h3>🎯 6. Wavelet 多解析度 deep learning</h3>
+<p>影像 CNN 用 max-pool 下採樣會丟資訊。<strong>提案：</strong>把 wavelet pyramid 當 backbone（如 Wavelet U-Net 的延伸），用於組織病理 / cryo-EM——保留多尺度紋理。</p>
+
+<h3>🎯 7. Cross-modal wavelet coherence</h3>
+<p>同時量 EEG + fMRI + behavior。<strong>提案：</strong>multi-modal wavelet coherence 找跨模態的時頻 coupling 模式，用於神經精神疾病標記發現。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Wavelet-enhanced spatial transcriptomics</h3>
+<p>Visium/Xenium contain single-cell + tissue patterns. <strong>Proposal:</strong> 2D wavelet decomposition splitting domain-scale LF from cell-type HF — more scale-aware than spot-level analysis.</p>
+
+<h3>🎯 2. Multi-scale ATAC-seq peak calling</h3>
+<p>ATAC signal spans single-nucleosome (~150 bp) to super-enhancer (~10 kb). <strong>Proposal:</strong> SWT-based cross-scale peak calling, robust for both narrow and broad peaks.</p>
+
+<h3>🎯 3. Wavelet + diffusion biomedical denoising</h3>
+<p>Single-cell dropout, low-light microscopy. <strong>Proposal:</strong> wavelet shrinkage as diffusion-prior condition — task-aware, more interpretable than pure deep denoising.</p>
+
+<h3>🎯 4. Irregularly sampled single-cell trajectories</h3>
+<p>Experimental timepoints are sparse, uneven (0h, 6h, 24h, 72h...). <strong>Proposal:</strong> lifting-scheme wavelets on irregular grids for trajectory smoothing + change detection.</p>
+
+<h3>🎯 5. Graph wavelets for scRNA-seq imputation</h3>
+<p>MAGIC / DCA use diffusion. <strong>Proposal:</strong> SGWT on KNN graph for multi-scale smoothing — preserves cell-type boundaries while easing dropout.</p>
+
+<h3>🎯 6. Wavelet multi-resolution deep learning</h3>
+<p>Max-pool loses information. <strong>Proposal:</strong> wavelet-pyramid backbones (Wavelet U-Net extensions) for histopathology / cryo-EM — preserves multi-scale texture.</p>
+
+<h3>🎯 7. Cross-modal wavelet coherence</h3>
+<p>Simultaneous EEG + fMRI + behavior. <strong>Proposal:</strong> multi-modal wavelet coherence to find time-frequency coupling — biomarker discovery for neuropsychiatric disorders.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'py1')">Python / pywt DWT</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py2')">Python / CWT scalogram</button>
+<button class="code-tab-btn" onclick="switchTab(this,'py3')">Python / shrinkage denoise</button>
+<button class="code-tab-btn" onclick="switchTab(this,'r1')">R / wavelets package</button>
+</div>
+
+<div class="code-tab-content active" id="py1"><pre><span class="comment"># pip install pywavelets</span>
+<span class="keyword">import</span> pywt, numpy <span class="keyword">as</span> np
+<span class="comment"># 5-level Daubechies-4 DWT</span>
+x = np.random.randn(<span class="num">1024</span>)
+coeffs = pywt.wavedec(x, <span class="str">'db4'</span>, level=<span class="num">5</span>)
+<span class="comment"># coeffs = [cA5, cD5, cD4, cD3, cD2, cD1]</span>
+<span class="comment"># cA = approximation (low-pass), cD = details (band-pass)</span>
+
+<span class="comment"># Perfect reconstruction</span>
+x_rec = pywt.waverec(coeffs, <span class="str">'db4'</span>)
+print(<span class="str">f"reconstruction error: {np.max(np.abs(x - x_rec[:len(x)])):.2e}"</span>)
+
+<span class="comment"># 2D wavelet (e.g. for image / spatial transcriptomics)</span>
+img = np.random.randn(<span class="num">256</span>, <span class="num">256</span>)
+ca, (ch, cv, cd) = pywt.dwt2(img, <span class="str">'haar'</span>)</pre></div>
+
+<div class="code-tab-content" id="py2"><pre><span class="keyword">import</span> pywt, numpy <span class="keyword">as</span> np
+<span class="comment"># Continuous Wavelet Transform with Morlet</span>
+t = np.linspace(<span class="num">0</span>, <span class="num">2</span>*np.pi, <span class="num">1024</span>)
+sig = np.sin(<span class="num">10</span>*t) + (t&gt;<span class="num">3</span>) * np.sin(<span class="num">40</span>*t)   <span class="comment"># freq changes at t=3</span>
+
+scales = np.arange(<span class="num">1</span>, <span class="num">128</span>)
+coef, freqs = pywt.cwt(sig, scales, <span class="str">'morl'</span>)
+<span class="comment"># |coef|^2 is the scalogram — heatmap of time-frequency power</span>
+
+<span class="comment"># Visualize:</span>
+<span class="comment"># import matplotlib.pyplot as plt</span>
+<span class="comment"># plt.imshow(np.abs(coef), aspect='auto', extent=[0, 2*np.pi, 1, 128]); plt.show()</span></pre></div>
+
+<div class="code-tab-content" id="py3"><pre><span class="keyword">import</span> pywt, numpy <span class="keyword">as</span> np
+
+<span class="keyword">def</span> wavelet_denoise(y, wavelet=<span class="str">'db4'</span>, level=<span class="num">5</span>):
+    <span class="comment"># Estimate noise sigma from finest detail (MAD)</span>
+    coeffs = pywt.wavedec(y, wavelet, level=level)
+    sigma = np.median(np.abs(coeffs[-<span class="num">1</span>])) / <span class="num">0.6745</span>
+    <span class="comment"># Universal threshold (Donoho-Johnstone 1994)</span>
+    lam = sigma * np.sqrt(<span class="num">2</span> * np.log(len(y)))
+    <span class="comment"># Soft-threshold details (not approximation)</span>
+    coeffs[<span class="num">1</span>:] = [pywt.threshold(c, lam, mode=<span class="str">'soft'</span>) <span class="keyword">for</span> c <span class="keyword">in</span> coeffs[<span class="num">1</span>:]]
+    <span class="keyword">return</span> pywt.waverec(coeffs, wavelet)[:len(y)]
+
+clean = np.sin(np.linspace(<span class="num">0</span>,<span class="num">20</span>,<span class="num">1024</span>))
+noisy = clean + <span class="num">0.3</span>*np.random.randn(<span class="num">1024</span>)
+denoised = wavelet_denoise(noisy)</pre></div>
+
+<div class="code-tab-content" id="r1"><pre><span class="comment"># install.packages(c("wavelets","wavethresh"))</span>
+<span class="keyword">library</span>(wavelets)
+
+x &lt;- rnorm(<span class="num">1024</span>) + sin(seq(<span class="num">0</span>, <span class="num">20</span>, length.out=<span class="num">1024</span>))
+dw &lt;- dwt(x, filter=<span class="str">"d4"</span>, n.levels=<span class="num">5</span>, boundary=<span class="str">"periodic"</span>)
+
+<span class="comment"># Access approximation and detail coefficients</span>
+str(dw)              <span class="comment"># dw@V[[j]] approx, dw@W[[j]] details</span>
+
+<span class="comment"># Wavelet shrinkage denoising</span>
+<span class="keyword">library</span>(wavethresh)
+yw &lt;- wd(x, filter.number=<span class="num">4</span>, family=<span class="str">"DaubExPhase"</span>)
+ywt &lt;- threshold(yw, type=<span class="str">"soft"</span>, policy=<span class="str">"universal"</span>)
+xhat &lt;- wr(ywt)</pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">小波相對 Fourier 的關鍵優勢是？</p><p data-lang="en">The key advantage of wavelets over Fourier is?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 小波運算比 Fourier 慢</span><span data-lang="en">A. Wavelets are slower than Fourier</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 小波沒有頻率資訊</span><span data-lang="en">B. Wavelets have no frequency info</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 同時提供時間與頻率的局部化資訊</span><span data-lang="en">C. Provide simultaneous time and frequency localization</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 小波只能用於穩態信號</span><span data-lang="en">D. Wavelets only work on stationary signals</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Mallat pyramid algorithm 的計算複雜度為？</p><p data-lang="en">What is the time complexity of Mallat's pyramid algorithm?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. O(n²)</span><span data-lang="en">A. O(n²)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. O(n)，比 FFT 的 O(n log n) 還快</span><span data-lang="en">B. O(n) — faster than FFT's O(n log n)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. O(2^n)</span><span data-lang="en">C. O(2^n)</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. O(log n)</span><span data-lang="en">D. O(log n)</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">Donoho–Johnstone wavelet shrinkage 去噪的原理為何？</p><p data-lang="en">What is the principle of Donoho–Johnstone wavelet shrinkage denoising?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 信號能量集中於少數大係數、雜訊均勻分散，所以對小係數做 threshold 殺雜訊</span><span data-lang="en">A. Signal energy concentrates in few large coefficients while noise is uniform — thresholding small coefficients removes noise</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 對所有係數加同樣常數</span><span data-lang="en">B. Add a constant to all coefficients</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 用 deep learning 黑盒</span><span data-lang="en">C. Use deep learning blackbox</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 把所有係數設為平均值</span><span data-lang="en">D. Set all coefficients to their mean</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="compressed-sensing.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Prev">← 上一章</span><span class="nav-title" data-zh="Ch 33：Compressed Sensing" data-en="Ch 33: Compressed Sensing">Ch 33：Compressed Sensing</span></a>
+<a href="implicit-neural-rep.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 35：Implicit Neural Rep." data-en="Ch 35: Implicit Neural Rep.">Ch 35：Implicit Neural Rep.</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: Haar DWT denoising =====
+const NSIG=256;
+let noise=null;
+function gauss(){const u=Math.random()||1e-9,v=Math.random()||1e-9;return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+function reseed(){noise=new Array(NSIG);for(let i=0;i<NSIG;i++)noise[i]=gauss();}
+reseed();
+
+function cleanSig(){
+  const x=new Array(NSIG);
+  for(let i=0;i<NSIG;i++){
+    const t=i/NSIG;
+    // Two chirps + a spike
+    const c1=t<0.4?Math.sin(2*Math.PI*(6+20*t)*t):0;
+    const c2=t>0.55&&t<0.95?Math.sin(2*Math.PI*15*(t-0.55))*Math.exp(-3*(t-0.75)**2*8):0;
+    const spike=Math.abs(t-0.5)<0.012?2.5:0;
+    x[i]=c1+c2+spike;
+  }
+  return x;
+}
+
+// Haar DWT — in-place, periodic
+function haarDWT(x, J){
+  const a=x.slice();
+  const details=[];
+  let n=a.length;
+  for(let j=0;j<J;j++){
+    const h=n/2;
+    const newA=new Array(h),d=new Array(h);
+    for(let i=0;i<h;i++){
+      newA[i]=(a[2*i]+a[2*i+1])/Math.SQRT2;
+      d[i]=(a[2*i]-a[2*i+1])/Math.SQRT2;
+    }
+    details.push(d);
+    for(let i=0;i<h;i++)a[i]=newA[i];
+    n=h;
+  }
+  return {approx:a.slice(0,n),details:details};
+}
+
+function haarIDWT(approx, details){
+  let a=approx.slice();
+  for(let j=details.length-1;j>=0;j--){
+    const d=details[j];
+    const h=a.length;
+    const newA=new Array(2*h);
+    for(let i=0;i<h;i++){
+      newA[2*i]=(a[i]+d[i])/Math.SQRT2;
+      newA[2*i+1]=(a[i]-d[i])/Math.SQRT2;
+    }
+    a=newA;
+  }
+  return a;
+}
+
+function softThresh(d, lam){return d.map(arr=>arr.map(c=>{const s=Math.sign(c);const m=Math.max(0,Math.abs(c)-lam);return s*m;}));}
+
+let chart=null;
+function render(){
+  const sigma=+document.getElementById('sS').value;
+  const lam=+document.getElementById('sT').value;
+  const J=+document.getElementById('sJ').value;
+  document.getElementById('vS').textContent=sigma.toFixed(2);
+  document.getElementById('vT').textContent=lam.toFixed(2);
+  document.getElementById('vJ').textContent=J;
+
+  const clean=cleanSig();
+  const noisy=clean.map((v,i)=>v+sigma*noise[i]);
+  const {approx,details}=haarDWT(noisy,J);
+  const dets=softThresh(details,lam);
+  const denoised=haarIDWT(approx,dets);
+
+  // Errors
+  let eN=0,eD=0,sC=0;
+  for(let i=0;i<NSIG;i++){eN+=(clean[i]-noisy[i])**2;eD+=(clean[i]-denoised[i])**2;sC+=clean[i]*clean[i];}
+  const snr_in=10*Math.log10(sC/eN);
+  const snr_out=10*Math.log10(sC/eD);
+
+  // Count non-zero details (kept events)
+  let kept=0,total=0;
+  dets.forEach(d=>{d.forEach(c=>{if(Math.abs(c)>1e-12)kept++;total++;});});
+
+  const labels=Array.from({length:NSIG},(_,i)=>i);
+  if(chart)chart.destroy();
+  const ctx=document.getElementById('wvChart').getContext('2d');
+  chart=new Chart(ctx,{type:'line',data:{labels:labels,datasets:[
+    {label:'Noisy input',data:noisy,borderColor:'rgba(160,160,160,0.55)',backgroundColor:'transparent',borderWidth:1,pointRadius:0,tension:0,order:3},
+    {label:'Clean (truth)',data:clean,borderColor:'rgba(37,99,168,0.95)',backgroundColor:'transparent',borderWidth:1.3,pointRadius:0,tension:0,borderDash:[4,3],order:2},
+    {label:'Wavelet denoised',data:denoised,borderColor:'rgba(192,57,43,1)',backgroundColor:'transparent',borderWidth:1.8,pointRadius:0,tension:0,order:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,animation:false,scales:{x:{ticks:{display:false},grid:{display:false}},y:{title:{display:true,text:'amplitude'}}},plugins:{legend:{position:'top',labels:{boxWidth:14,font:{size:11}}}}}});
+
+  const L=I18n.get();
+  document.getElementById('wvInfo').innerHTML=L==='zh'?
+    `輸入 SNR ≈ <strong>${snr_in.toFixed(2)} dB</strong> → 去噪後 SNR ≈ <strong>${snr_out.toFixed(2)} dB</strong>（提升 ${(snr_out-snr_in).toFixed(2)} dB）。<br>${J} 層 Haar 分解共 ${total} 個 detail 係數，threshold 後保留 <strong>${kept}</strong> 個（${(100*kept/total).toFixed(1)}%）——這就是「事件 = 少數大係數」的稀疏表示。<br>Donoho 推薦的「Universal threshold」≈ σ √(2 log N) = <strong>${(sigma*Math.sqrt(2*Math.log(NSIG))).toFixed(2)}</strong>。`
+    :
+    `Input SNR ≈ <strong>${snr_in.toFixed(2)} dB</strong> → denoised SNR ≈ <strong>${snr_out.toFixed(2)} dB</strong> (gain ${(snr_out-snr_in).toFixed(2)} dB).<br>${J}-level Haar decomposition has ${total} detail coefficients, of which <strong>${kept}</strong> survive thresholding (${(100*kept/total).toFixed(1)}%) — the "events = few large coefficients" sparse representation.<br>Donoho's universal threshold ≈ σ √(2 log N) = <strong>${(sigma*Math.sqrt(2*Math.log(NSIG))).toFixed(2)}</strong>.`;
+}
+
+document.getElementById('sS').addEventListener('input',render);
+document.getElementById('sT').addEventListener('input',render);
+document.getElementById('sJ').addEventListener('input',render);
+document.getElementById('reseed').addEventListener('click',()=>{reseed();render();});
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！時頻局部化正是小波相對 Fourier 的核心優勢。',
+  q1_n:'答案是 C。小波同時提供時間與頻率局部化——這是 Fourier 做不到的。',
+  q2_y:'答對！Mallat 金字塔演算法是 O(n)，比 FFT 更快。',
+  q2_n:'答案是 B。Mallat pyramid 用 cascade filter bank，僅 O(n)。',
+  q3_y:'答對！這就是 Donoho-Johnstone 1994 的精髓。',
+  q3_n:'答案是 A。能量集中於少數大係數是小波去噪的關鍵。'
+},en:{
+  q1_y:'Correct! Time-frequency localization is the core wavelet advantage over Fourier.',
+  q1_n:'Answer is C. Wavelets provide simultaneous time-frequency localization — Fourier cannot.',
+  q2_y:'Correct! Mallat pyramid is O(n), faster than FFT.',
+  q2_n:'Answer is B. Mallat pyramid uses cascade filter banks for O(n).',
+  q3_y:'Correct! This is the essence of Donoho-Johnstone 1994.',
+  q3_n:'Answer is A. Energy concentration in few large coefficients is the key.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

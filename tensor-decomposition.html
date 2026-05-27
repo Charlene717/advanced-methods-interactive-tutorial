@@ -1,0 +1,474 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Tensor Decomposition — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html" class="active">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 22 / 26</div><h1 data-zh="張量分解 (Tensor Decomposition)" data-en="Tensor Decomposition">張量分解 (Tensor Decomposition)</h1>
+<p class="subtitle" data-lang="zh">SVD 把矩陣分解為「行向量 × 列向量」加總；張量分解則把 3D、4D、5D 資料同時拆解出多個 mode 的「共變模式」。在「病人 × 細胞 × 基因 × 時間」這類多 mode 生物資料中，它是揭示因子結構的核心工具。</p>
+<p class="subtitle" data-lang="en">SVD decomposes a matrix into row × column factors; tensor decomposition generalises to 3D, 4D, 5D data, exposing shared modes. For multi-way biological data like "patient × cell × gene × time," it is the core tool for factor structure.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從 SVD 到多階張量" data-en="From SVD to Higher-order Tensors">從 SVD 到多階張量</h2>
+<div data-lang="zh">
+<p>2D 矩陣 M 的 SVD：M = U Σ Vᵀ ≈ Σ_r σ_r u_r v_rᵀ——把矩陣寫為「秩 1」外積的加總。</p>
+<p>對 3-way 張量 T ∈ ℝ^(I×J×K)，最常見的兩種分解：</p>
+<p><strong>① CP / PARAFAC (Carroll &amp; Chang 1970; Harshman 1970)：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">T ≈ Σ<sub>r=1</sub><sup>R</sup> a<sub>r</sub> ⊗ b<sub>r</sub> ⊗ c<sub>r</sub></p>
+<p>每個 component 是 3 個向量的外積。R 就是 tensor rank。優點：可解釋（每個 r 是獨立的「factor」）、在弱條件下 unique。</p>
+<p><strong>② Tucker (Tucker 1966)：</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">T = G ×<sub>1</sub> U ×<sub>2</sub> V ×<sub>3</sub> W</p>
+<p>G 是「核心張量 (core)」、U/V/W 是各 mode 的因子矩陣。比 CP 更彈性（可有 cross-mode 互動），但不 unique，須額外約束。</p>
+<p>其他變體：<strong>Tensor Train (Oseledets 2011)</strong>、<strong>Hierarchical Tucker</strong>、<strong>t-SVD (Kilmer 2011)</strong> 都針對特定結構或計算效率。</p>
+</div>
+<div data-lang="en">
+<p>SVD of 2D matrix: M = U Σ Vᵀ ≈ Σ_r σ_r u_r v_rᵀ — write the matrix as a sum of rank-1 outer products.</p>
+<p>For a 3-way tensor T ∈ ℝ^(I×J×K), two main decompositions:</p>
+<p><strong>① CP / PARAFAC (Carroll &amp; Chang 1970; Harshman 1970):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">T ≈ Σ<sub>r=1</sub><sup>R</sup> a<sub>r</sub> ⊗ b<sub>r</sub> ⊗ c<sub>r</sub></p>
+<p>Each component is the outer product of 3 vectors. R is the tensor rank. Pros: interpretable (each r is an independent factor); unique under mild conditions.</p>
+<p><strong>② Tucker (Tucker 1966):</strong></p>
+<p style="text-align:center;font-family:Georgia,serif;">T = G ×<sub>1</sub> U ×<sub>2</sub> V ×<sub>3</sub> W</p>
+<p>G is the "core tensor," U/V/W are mode-wise factor matrices. More flexible than CP (allows cross-mode interactions) but not unique without extra constraints.</p>
+<p>Other variants: <strong>Tensor Train (Oseledets 2011)</strong>, <strong>Hierarchical Tucker</strong>, <strong>t-SVD (Kilmer 2011)</strong>, each for specific structures or efficiency.</p>
+</div>
+
+<div class="card-grid cols-3">
+<div class="card"><div class="card-icon">📐</div><h4 data-zh="多 mode 結構" data-en="Multi-way structure">多 mode 結構</h4><p data-lang="zh">生物資料天生多 mode：個體、細胞、基因、時間、空間、treatment。張量是自然容器。</p><p data-lang="en">Biology is inherently multi-way: individual × cell × gene × time × space × treatment. Tensors are the natural container.</p></div>
+<div class="card"><div class="card-icon">✨</div><h4 data-zh="CP 的唯一性" data-en="CP uniqueness">CP 的唯一性</h4><p data-lang="zh">Kruskal (1977)：在 mild 條件下 CP 分解 unique（直到 scaling 與 permutation）——可直接「解釋」為獨立 factor。</p><p data-lang="en">Kruskal (1977): under mild conditions CP is unique up to scaling and permutation — factors can be directly interpreted.</p></div>
+<div class="card"><div class="card-icon">⚡</div><h4 data-zh="壓縮與計算" data-en="Compression and computation">壓縮與計算</h4><p data-lang="zh">Tucker(R₁,R₂,R₃) 把 N³ 個元素壓到 R₁R₂R₃ + R₁N + R₂N + R₃N，大幅省空間。</p><p data-lang="en">Tucker(R₁,R₂,R₃) compresses N³ elements to R₁R₂R₃ + R₁N + R₂N + R₃N — huge savings.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="ALS、HOSVD 及其變體" data-en="ALS, HOSVD, and Variants">ALS、HOSVD 及其變體</h2>
+<div data-lang="zh">
+<h3>① CP-ALS (Alternating Least Squares)</h3>
+<p>主流 CP 解法。固定 b、c，把 CP 化簡為 a 的線性 LS 問題；交替更新 a → b → c 直到收斂。每步是封閉形式 (matricized tensor times Khatri-Rao product, MTTKRP)：</p>
+<p style="text-align:center;font-family:Georgia,serif;">A ← T<sub>(1)</sub> (C ⊙ B) (CᵀC ∗ BᵀB)<sup>†</sup></p>
+<p>(其中 ⊙ 是 Khatri-Rao product、∗ 是 Hadamard product)。容易實作但可能陷入 local optima、收斂慢。</p>
+
+<h3>② HOSVD / HOOI（Tucker 解法）</h3>
+<p>Higher-Order SVD (De Lathauwer 2000)：將張量沿每個 mode unfold 為矩陣 → 各取前 R_k 個 left singular vector → 得到 U, V, W。然後 G = T ×₁ Uᵀ ×₂ Vᵀ ×₃ Wᵀ。<strong>HOSVD 給良好初始化但非最佳；Higher-Order Orthogonal Iteration (HOOI) 進一步迭代到最優。</strong></p>
+
+<h3>③ Non-negative / Sparse 變體</h3>
+<p>對 RNA-seq counts 等非負資料用 <strong>NCP (non-negative CP)</strong>——強制 a, b, c ≥ 0；解釋為「parts-based decomposition」（NMF 在張量的推廣）。Sparse-CP 加 L1 → 自動 feature selection。</p>
+
+<h3>④ Online / Streaming 分解</h3>
+<p>當資料分批到達（例如 single-cell perturbation experiment 隨時間累積）：Online Tensor Decomposition (Mardani 2015)、TensorSketch 在 streaming 下更新分解。</p>
+
+<h3>⑤ 統計推論版本</h3>
+<p>Bayesian Tensor Factorization (Rai 2014)：加入 prior 並用 MCMC / VI 給出 uncertainty。對「個人 × 細胞」這類有 missing data 的場景特別有用——能 imputation + uncertainty 一次完成。</p>
+</div>
+<div data-lang="en">
+<h3>① CP-ALS (Alternating Least Squares)</h3>
+<p>The workhorse for CP. Fix b, c; CP reduces to a linear LS problem for a; alternate a → b → c until convergence. Closed-form update (MTTKRP):</p>
+<p style="text-align:center;font-family:Georgia,serif;">A ← T<sub>(1)</sub> (C ⊙ B) (CᵀC ∗ BᵀB)<sup>†</sup></p>
+<p>(⊙ Khatri-Rao, ∗ Hadamard). Easy but may stick at local minima and converges slowly.</p>
+
+<h3>② HOSVD / HOOI (Tucker)</h3>
+<p>Higher-Order SVD (De Lathauwer 2000): unfold along each mode → take top R_k left singular vectors → U, V, W. Then G = T ×₁ Uᵀ ×₂ Vᵀ ×₃ Wᵀ. <strong>HOSVD gives a good init but isn't optimal; Higher-Order Orthogonal Iteration (HOOI) refines.</strong></p>
+
+<h3>③ Non-negative / Sparse variants</h3>
+<p>For non-negative data (RNA-seq counts) use <strong>NCP</strong> with a, b, c ≥ 0 — interpretable as parts-based decomposition (NMF generalised to tensors). Sparse-CP adds L1 → automatic feature selection.</p>
+
+<h3>④ Online / streaming decomposition</h3>
+<p>When data arrives in batches (e.g. accumulating single-cell perturbation experiments): Online Tensor Decomposition (Mardani 2015), TensorSketch.</p>
+
+<h3>⑤ Probabilistic versions</h3>
+<p>Bayesian Tensor Factorization (Rai 2014): priors + MCMC / VI yield uncertainty. Especially useful for "individual × cell" matrices with missing entries — imputation + uncertainty in one shot.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>關鍵差別：</strong>CP unique 但 rigid（component 必須是 rank-1 外積）；Tucker 彈性但 non-unique（可加旋轉自由度）。生物資料常用 CP 求「可解釋的 factor」，Tucker 求「壓縮 / interaction」。</div>
+<div data-lang="en"><strong>Key distinction:</strong> CP is unique but rigid (rank-1 outer products); Tucker is flexible but non-unique (extra rotational freedom). Bio data uses CP for interpretable factors, Tucker for compression / interactions.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="CP 分解：rank 與重建誤差" data-en="CP Decomposition: Rank vs Reconstruction">CP 分解：rank 與重建誤差</h2>
+<div data-lang="zh"><p>下方視覺化 3D 張量（簡化為三個 mode 各 8 個元素），底下三組向量為 CP 分解的 (a_r, b_r, c_r)。拖動 rank R 觀察：R 越大重建誤差越小但 component 越難解釋；R 太小則 underfit。理想 R 應該在「elbow」處——加新 component 不再顯著降低誤差。</p></div>
+<div data-lang="en"><p>Visualise a 3D tensor (simplified, 8 elements per mode); three column groups show the CP factors (a_r, b_r, c_r). Drag rank R: larger R reduces error but produces less interpretable components; too small R underfits. The ideal R is at the "elbow" — adding components no longer significantly reduces error.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="CP rank R" data-en="CP rank R">CP rank R <span id="vR">2</span></label><input type="range" id="sR" min="1" max="6" value="2" step="1"></div>
+<svg id="tdSvg" viewBox="0 0 700 320" style="width:100%;height:320px;background:#fafafa;border-radius:6px;"></svg>
+<div class="card-grid cols-3" style="margin-top:14px;">
+<div class="card"><h4 data-zh="重建誤差" data-en="Reconstruction error">重建誤差</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vErr">—</p><p data-lang="zh" style="font-size:.8rem;">‖T − T̂‖² / ‖T‖²</p><p data-lang="en" style="font-size:.8rem;">‖T − T̂‖² / ‖T‖²</p></div>
+<div class="card" style="border:2px solid var(--c-accent,#1A6B5A);"><h4 data-zh="解釋變異" data-en="Variance explained">解釋變異</h4><p style="font-size:1.4rem;font-weight:700;margin:0;color:var(--c-accent,#1A6B5A);" id="vVar">—</p><p data-lang="zh" style="font-size:.8rem;">1 − error</p><p data-lang="en" style="font-size:.8rem;">1 − error</p></div>
+<div class="card"><h4 data-zh="參數量" data-en="Parameter count">參數量</h4><p style="font-size:1.4rem;font-weight:700;margin:0;" id="vPar">—</p><p data-lang="zh" style="font-size:.8rem;">3·R·8 個</p><p data-lang="en" style="font-size:.8rem;">3·R·8 params</p></div>
+</div>
+<div id="tdInterp" style="margin-top:12px;padding:12px;background:#f7f5f0;border-radius:6px;font-size:.9rem;color:var(--c-ink-light);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="張量分解在生物資訊的應用" data-en="Tensor Decomposition in Bioinformatics">張量分解在生物資訊的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="Tensor-cell2cell (Armingol 2022)" data-en="Tensor-cell2cell (Armingol 2022)">Tensor-cell2cell</h4>
+<p data-lang="zh">Armingol et al. (2022, Nature Communications)：建構「病人 × 細胞型別 pair × LR pair」3-way 張量，用 NCP 找出「跨病人共享的 cell-cell communication factors」。發現了單病人分析看不到的 universal LR 模組與 disease-specific 模組。</p>
+<p data-lang="en">Armingol et al. (2022, Nat Comm): build a "patient × cell-type pair × LR pair" tensor, apply NCP to discover shared cell–cell communication factors across patients. Reveals universal LR modules and disease-specific modules invisible to single-patient analysis.</p></div>
+
+<div class="card"><h4 data-zh="LIGER (Welch 2019)" data-en="LIGER (Welch 2019)">LIGER (iNMF)</h4>
+<p data-lang="zh">Welch et al. (2019, Cell)：integrative NMF（NMF 在多個矩陣的推廣，與 CP 等價）對 cross-species/cross-modal scRNA-seq 整合——學「共享 factor」+「dataset-specific factor」。</p>
+<p data-lang="en">Welch et al. (2019, Cell): integrative NMF (the multi-matrix NMF, equivalent to CP) for cross-species / cross-modal scRNA-seq integration — learns shared factors + dataset-specific factors.</p></div>
+
+<div class="card"><h4 data-zh="MOFA+ (Argelaguet 2020)" data-en="MOFA+ (Argelaguet 2020)">MOFA+</h4>
+<p data-lang="zh">Argelaguet et al. (2020, Genome Biology)：Bayesian group factor analysis 對「多 view × 多 group」的多體學整合。本質上是 Tucker 變體 + sparsity prior，廣泛用於 CITE-seq、multi-tissue 整合。</p>
+<p data-lang="en">Argelaguet et al. (2020, Genome Biol): Bayesian group factor analysis for "multi-view × multi-group" multi-omics integration. Essentially a Tucker variant with sparsity priors — widely used for CITE-seq and multi-tissue integration.</p></div>
+
+<div class="card"><h4 data-zh="病人 × 細胞 × 時間" data-en="Patient × cell × time">病人 × 細胞 × 時間</h4>
+<p data-lang="zh">Hore et al. (2016) 用 Tucker 對「病人 × 細胞 × 基因」表現張量分解——發現某些病人 share 共同免疫反應模組，另一些有 patient-specific 模組。為 immune profiling 開了門。</p>
+<p data-lang="en">Hore et al. (2016) decomposed "patient × cell × gene" expression tensors with Tucker — found shared immune-response modules across patients and patient-specific ones. Opened the door to immune profiling.</p></div>
+
+<div class="card"><h4 data-zh="GWAS × tissue (MultiBLUP)" data-en="GWAS × tissue (MultiBLUP)">MultiBLUP</h4>
+<p data-lang="zh">把「SNP × tissue × phenotype」當張量分解，找跨 tissue 共享 SNP-phenotype 關聯。比單獨 tissue GWAS 統計力更強。</p>
+<p data-lang="en">Decompose "SNP × tissue × phenotype" tensors to find cross-tissue shared SNP-phenotype associations. More powerful than per-tissue GWAS.</p></div>
+
+<div class="card"><h4 data-zh="pTAD — 多病人 Hi-C" data-en="pTAD — multi-patient Hi-C">pTAD（多病人 Hi-C）</h4>
+<p data-lang="zh">Cresswell &amp; Dozmorov (2020) 用 3D 張量（病人 × bin × bin）分解識別 conserved 與 disease-specific TADs。比單樣本 TAD calling 抗噪。</p>
+<p data-lang="en">Cresswell &amp; Dozmorov (2020) decompose a "patient × bin × bin" tensor to identify conserved and disease-specific TADs — more noise-robust than per-sample TAD calling.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="挑張量 rank、unique 條件與計算技巧" data-en="Rank Selection, Uniqueness, Computation">挑張量 rank、unique 條件與計算技巧</h2>
+
+<div data-lang="zh">
+<h3>① 張量 rank 的詭異性</h3>
+<p>2D matrix rank 是「max independent rows = max independent cols」；對張量這兩個未必相等。更糟：3-way 張量的 rank 是 NP-hard 問題（Håstad 1990）！實務上用 <strong>core consistency diagnostic (CORCONDIA)</strong> 或 elbow method 估計合理 R。</p>
+
+<h3>② Kruskal 唯一性條件</h3>
+<p>CP 分解 unique（直到 scaling + permutation）當且僅當 k(A) + k(B) + k(C) ≥ 2R + 2，其中 k(·) 是 Kruskal rank（任 k 行線性獨立的最大 k）。生物資料通常滿足此條件，所以 CP factor 可直接解釋。</p>
+
+<h3>③ Tucker 的旋轉模糊性</h3>
+<p>Tucker 分解 T = G ×₁ U ×₂ V ×₃ W = G' ×₁ (UQ⁻¹) ×₂ V ×₃ W 對任意 invertible Q 都成立。所以 Tucker 「factor」沒有唯一意義，需用 orthogonality 或 sparsity 約束選定 canonical form。</p>
+
+<h3>④ Sketching / Randomized 加速</h3>
+<p>Battaglino et al. (2018) 提出 randomized CP-ALS：每步只用隨機 sketch 解 LS，把單次迭代從 O(N²R) 降到 O(NR log N)。對 10⁸ 元素張量 (1000 cells × 1000 genes × 100 time) 數小時 → 數分鐘。</p>
+
+<h3>⑤ Coupled / Joint Tensor Factorization</h3>
+<p>當多個張量「共享一個 mode」（例如 RNA tensor 與 ATAC tensor 共享 cell mode）：Coupled-CP 強制 cell factor matrix 相同，跨資料學共享 factor。是 multi-omics 張量整合的核心。</p>
+
+<h3>⑥ Tensor Train 與深度學習</h3>
+<p>Oseledets (2011) 的 Tensor Train (TT) 把 d-way 張量寫為 d 個 3-way tensor 的「序列」收縮——適合 d ≥ 5 的高階張量。在 deep learning 中用於壓縮 weight tensor (TT-Net, Novikov 2015)。</p>
+
+<h3>⑦ Bures-Tensor 與 quantum information</h3>
+<p>張量分解與 quantum many-body physics 的 Matrix Product State / Tensor Network 完全是同一數學——Penrose graphical notation、tensor contraction。生物學家用 TT 時，本質上是在做 quantum-style state representation。</p>
+
+<h3>⑧ Differentiable Tensor Decomposition</h3>
+<p>把 CP-ALS 替換成 SGD on |T − Σ a_r ⊗ b_r ⊗ c_r|²，使整個分解可微 → 直接嵌入 deep learning pipeline。tensorly-torch、JAX 版本都支援。可學「tensor factor 為下游任務最佳」而非「最小重建誤差」。</p>
+</div>
+
+<div data-lang="en">
+<h3>① The quirks of tensor rank</h3>
+<p>For matrices, rank = max independent rows = max independent cols. For tensors these are unequal. Worse: tensor rank is NP-hard (Håstad 1990). In practice use <strong>core consistency diagnostic (CORCONDIA)</strong> or the elbow method to pick R.</p>
+
+<h3>② Kruskal uniqueness</h3>
+<p>CP is unique (up to scaling + permutation) iff k(A) + k(B) + k(C) ≥ 2R + 2, where k(·) is the Kruskal rank. Biological data usually meets this — CP factors are directly interpretable.</p>
+
+<h3>③ Tucker rotational ambiguity</h3>
+<p>Tucker T = G ×₁ U ×₂ V ×₃ W = G' ×₁ (UQ⁻¹) ×₂ V ×₃ W for any invertible Q. So Tucker factors have no canonical meaning unless additional constraints (orthogonality, sparsity) pick a unique form.</p>
+
+<h3>④ Sketching / randomized speedup</h3>
+<p>Battaglino et al. (2018): randomized CP-ALS uses sketches per LS step, reducing one iteration from O(N²R) to O(NR log N). For 10⁸-element tensors (1000 cells × 1000 genes × 100 time): hours → minutes.</p>
+
+<h3>⑤ Coupled / joint tensor factorization</h3>
+<p>When multiple tensors share a mode (RNA and ATAC tensors share the cell mode): Coupled-CP forces the cell factor matrix to be shared, learning common factors across data. Core to multi-omics tensor integration.</p>
+
+<h3>⑥ Tensor Train and deep learning</h3>
+<p>Oseledets (2011) Tensor Train (TT) decomposes a d-way tensor into a sequence of 3-way contractions — ideal for d ≥ 5. Used in deep learning to compress weight tensors (TT-Net, Novikov 2015).</p>
+
+<h3>⑦ Tensor networks meet quantum many-body physics</h3>
+<p>Tensor decomposition is mathematically identical to quantum Matrix Product States / Tensor Networks — same Penrose notation, same contractions. Biologists using TT are effectively doing quantum-style state representations.</p>
+
+<h3>⑧ Differentiable tensor decomposition</h3>
+<p>Replace CP-ALS with SGD on |T − Σ a_r ⊗ b_r ⊗ c_r|² → fully differentiable, embeds in deep learning. Supported by tensorly-torch, JAX variants. Learn factors optimal for a downstream task, not just minimum reconstruction.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="張量分解的潛在新應用" data-en="Potential New Applications">張量分解的潛在新應用</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 連續時間 × 個人 × 細胞型別 × 基因 (5D)</h3>
+<p>單細胞時序資料 + 多病人：建構「病人 × 細胞型別 × 基因 × time bin × treatment」5-way 張量，CP / Tucker 分解學「跨多個 mode 共享的 dynamics factor」。預期能分離出 disease progression、treatment response、circadian 三類 dynamics。</p>
+
+<h3>🎯 2. 藥物 × 細胞 × 時間 × 基因（drug screen）</h3>
+<p>把 LINCS L1000 + 動態 scRNA-seq 整合為 4-way 張量。CP factor 可作為「drug mode of action」的數位指紋——比 Connectivity Map 的 ranked list 更語意化。</p>
+
+<h3>🎯 3. 癌症亞型 × 治療 × 時間張量</h3>
+<p>對 TCGA + 臨床追蹤建構「病人亞型 × treatment × follow-up time × phenotype」張量，找出「對特定治療有反應的亞型 × 時間」聯合 factor。預期能 stratify trial 設計。</p>
+
+<h3>🎯 4. Spatial × time × gene tensor</h3>
+<p>多時間點 spatial transcriptomics：(spatial_x, spatial_y, gene, time) 4D 張量。CP factor 同時揭示「空間模式 × 時間動態」——例如 wound healing 的空間擴散波。</p>
+
+<h3>🎯 5. Multi-modal Perturb-seq 張量</h3>
+<p>「perturbation × cell × gene × modality (RNA/ATAC/protein)」4D 張量。Coupled-CP 學「跨模態保守的擾動 factor」——抓出真正的 mechanism、過濾 modality-specific noise。</p>
+
+<h3>🎯 6. Cross-species developmental atlas</h3>
+<p>「species × cell type × developmental stage × gene」張量。Tucker 分解的 core G 直接量化「跨物種發育保守性」。預期可找出 evo-devo 的關鍵 master regulator。</p>
+
+<h3>🎯 7. Single-cell Hi-C 張量分析</h3>
+<p>「cell × bin × bin」張量，CP 找出 cell-state-specific chromatin organization factor——比 per-cell TAD calling 更穩。</p>
+
+<h3>🎯 8. EHR + omics 整合</h3>
+<p>「病人 × 訪視時間 × clinical feature × omics feature」高階張量。Bayesian CP 處理 missing data，imputation + factor 分析一次完成。對長期慢性病管理有潛力。</p>
+
+<h3>🎯 9. Tensor-based GRN</h3>
+<p>「TF × target × tissue × condition」4D tensor，CP 學 condition-specific regulation factor。比每個 tissue 單獨建 GRN 更高效且利用 cross-tissue info。</p>
+
+<h3>🎯 10. Differentiable tensor decomposition + scLLM</h3>
+<p>把 scGPT/Geneformer 的 latent reshape 為「cell × gene × layer」張量，做 differentiable CP——學「跨層共享的語意 factor」。對 scLLM 可解釋性與壓縮都有貢獻。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Continuous time × individual × cell type × gene (5D)</h3>
+<p>Single-cell time series + multiple patients: build a "patient × cell type × gene × time bin × treatment" 5-way tensor, CP / Tucker learns shared dynamics factors. Expected to separate disease progression, treatment response, and circadian dynamics.</p>
+
+<h3>🎯 2. Drug × cell × time × gene (drug screen)</h3>
+<p>Integrate LINCS L1000 + dynamic scRNA-seq into a 4-way tensor. CP factors form "drug mode of action" digital fingerprints — more semantic than Connectivity Map ranked lists.</p>
+
+<h3>🎯 3. Cancer subtype × treatment × time tensor</h3>
+<p>TCGA + clinical follow-up: "subtype × treatment × follow-up time × phenotype" tensor finds joint factors "subtype × time responsive to specific treatment." Could stratify clinical trials.</p>
+
+<h3>🎯 4. Spatial × time × gene tensor</h3>
+<p>Multi-timepoint spatial transcriptomics: (spatial_x, spatial_y, gene, time) 4D tensor. CP factors capture spatial pattern × time dynamics — e.g. wound healing diffusion waves.</p>
+
+<h3>🎯 5. Multi-modal Perturb-seq tensors</h3>
+<p>"perturbation × cell × gene × modality (RNA/ATAC/protein)" 4D tensor. Coupled-CP learns modality-conserved perturbation factors — true mechanism, filtering modality-specific noise.</p>
+
+<h3>🎯 6. Cross-species developmental atlas</h3>
+<p>"species × cell type × developmental stage × gene" tensor. The Tucker core G directly quantifies cross-species developmental conservation, surfacing evo-devo master regulators.</p>
+
+<h3>🎯 7. Single-cell Hi-C tensors</h3>
+<p>"cell × bin × bin" tensor with CP factors finds cell-state-specific chromatin organization, more robust than per-cell TAD calling.</p>
+
+<h3>🎯 8. EHR + omics integration</h3>
+<p>"patient × visit time × clinical feature × omics feature" high-order tensor. Bayesian CP handles missing data — imputation + factor analysis in one step. Promising for chronic disease management.</p>
+
+<h3>🎯 9. Tensor-based GRN</h3>
+<p>"TF × target × tissue × condition" 4D tensor, CP learns condition-specific regulation. More efficient than per-tissue GRNs and leverages cross-tissue information.</p>
+
+<h3>🎯 10. Differentiable tensor decomposition + scLLM</h3>
+<p>Reshape scGPT/Geneformer latents as "cell × gene × layer" tensors with differentiable CP — learn cross-layer semantic factors. Improves both interpretability and compression of scLLMs.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'tly')">Python / tensorly</button>
+<button class="code-tab-btn" onclick="switchTab(this,'c2c')">tensor-cell2cell</button>
+<button class="code-tab-btn" onclick="switchTab(this,'rten')">R / rTensor</button>
+</div>
+<div class="code-tab-content active" id="tly"><pre><span class="keyword">import</span> tensorly <span class="keyword">as</span> tl
+<span class="keyword">from</span> tensorly.decomposition <span class="keyword">import</span> parafac, tucker, non_negative_parafac
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># T shape: (patient, cell_type, gene)</span>
+T = tl.tensor(np.random.rand(<span class="num">20</span>, <span class="num">15</span>, <span class="num">3000</span>))
+
+<span class="comment"># CP decomposition with rank=10</span>
+weights, factors = parafac(T, rank=<span class="num">10</span>, n_iter_max=<span class="num">100</span>)
+patient_F, cell_F, gene_F = factors   <span class="comment"># each (mode_dim, R)</span>
+
+<span class="comment"># Non-negative CP for counts / abundance</span>
+weights, factors_nn = non_negative_parafac(T, rank=<span class="num">10</span>)
+
+<span class="comment"># Tucker with multilinear ranks (5, 4, 20)</span>
+core, factors_t = tucker(T, rank=[<span class="num">5</span>, <span class="num">4</span>, <span class="num">20</span>])</pre></div>
+
+<div class="code-tab-content" id="c2c"><pre><span class="keyword">import</span> cell2cell <span class="keyword">as</span> c2c
+<span class="comment"># Tensor: (sample, lr_pair, sender_celltype, receiver_celltype)</span>
+tensor = c2c.tensor.InteractionTensor(
+    rnaseq_matrices={s: adata_dict[s] <span class="keyword">for</span> s <span class="keyword">in</span> samples},
+    metadata=meta_dict,
+    interaction_columns=(<span class="str">"ligand"</span>, <span class="str">"receptor"</span>),
+    communication_score=<span class="str">"expression_mean"</span>)
+tensor.compute_tensor_factorization(rank=<span class="num">8</span>, init=<span class="str">"random"</span>)
+<span class="comment"># Output: per-sample factor loadings, per-LR factor loadings</span>
+c2c.plotting.factor_plot.plot_factors(tensor.factors)</pre></div>
+
+<div class="code-tab-content" id="rten"><pre><span class="comment"># install.packages("rTensor")</span>
+<span class="keyword">library</span>(rTensor)
+
+T &lt;- as.tensor(array(rnorm(<span class="num">20</span>*<span class="num">15</span>*<span class="num">3000</span>), c(<span class="num">20</span>,<span class="num">15</span>,<span class="num">3000</span>)))
+
+<span class="comment"># CP decomposition</span>
+cp_fit &lt;- cp(T, num_components = <span class="num">10</span>, max_iter = <span class="num">100</span>)
+cp_fit$U                          <span class="comment"># list of factor matrices</span>
+cp_fit$norm_percent               <span class="comment"># variance explained</span>
+
+<span class="comment"># Tucker decomposition</span>
+tk_fit &lt;- tucker(T, ranks = c(<span class="num">5</span>,<span class="num">4</span>,<span class="num">20</span>))
+tk_fit$Z@data                     <span class="comment"># core tensor</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">CP 分解相對於 Tucker 分解的主要優勢是？</p><p data-lang="en">What's the main advantage of CP over Tucker?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 永遠收斂更快</span><span data-lang="en">A. Always converges faster</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 計算複雜度低</span><span data-lang="en">B. Lower complexity</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Kruskal 條件下 unique → factor 可直接解釋</span><span data-lang="en">C. Under Kruskal's condition CP is unique → factors directly interpretable</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不需要選 rank</span><span data-lang="en">D. No rank selection needed</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">Tensor-cell2cell (Armingol 2022) 的核心想法為何？</p><p data-lang="en">What's the core idea of Tensor-cell2cell (Armingol 2022)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 用 Pearson 找 ligand-receptor</span><span data-lang="en">A. Use Pearson to find LR pairs</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 把「病人 × 細胞型別 pair × LR pair」做張量分解，找跨病人共享 CCC factor</span><span data-lang="en">B. Decompose a "patient × cell-type pair × LR pair" tensor for shared CCC factors</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 取代 scVI 做整合</span><span data-lang="en">C. Replace scVI for integration</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 純 Hi-C 分析工具</span><span data-lang="en">D. A pure Hi-C analysis tool</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">下列哪個是 CP-ALS 的「主成本」步驟？</p><p data-lang="en">Which is the dominant cost in CP-ALS?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. Matricized Tensor Times Khatri-Rao Product (MTTKRP)</span><span data-lang="en">A. Matricized Tensor Times Khatri-Rao Product (MTTKRP)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 計算 SVD</span><span data-lang="en">B. Computing SVD</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. Eigenvalue decomposition</span><span data-lang="en">C. Eigenvalue decomposition</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. FFT</span><span data-lang="en">D. FFT</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="information-bottleneck.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 21：資訊瓶頸" data-en="Ch 21: Information Bottleneck">Ch 21：資訊瓶頸</span></a>
+<a href="contrastive-learning.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 23：對比學習" data-en="Ch 23: Contrastive Learning">Ch 23：對比學習</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: CP decomposition visualization =====
+const N = 8;   // mode dimension
+// Build a synthetic rank-3 tensor T with mild noise
+const trueR = 3;
+const trueA = [], trueB = [], trueC = [];
+function sigmoid(x){return 1/(1+Math.exp(-x));}
+for(let r=0;r<trueR;r++){
+  const a=[], b=[], c=[];
+  for(let i=0;i<N;i++){
+    a.push(Math.sin((i+1)*(r+1)*0.5)*0.7 + 0.5);
+    b.push(Math.cos((i+1)*(r+0.7)*0.4)*0.7 + 0.5);
+    c.push(sigmoid((i - 3 - r) * 1.5));
+  }
+  trueA.push(a); trueB.push(b); trueC.push(c);
+}
+const T = [];
+for(let i=0;i<N;i++){const ti=[];for(let j=0;j<N;j++){const tj=[];for(let k=0;k<N;k++){
+  let s=0; for(let r=0;r<trueR;r++) s += trueA[r][i]*trueB[r][j]*trueC[r][k];
+  tj.push(s + (Math.random()-0.5)*0.05);
+}ti.push(tj);}T.push(ti);}
+function tnorm2(X){let s=0; for(let i=0;i<N;i++)for(let j=0;j<N;j++)for(let k=0;k<N;k++) s+=X[i][j][k]*X[i][j][k]; return s;}
+const Tn2 = tnorm2(T);
+
+// Simple CP-ALS
+function cpALS(R, n_iter){
+  let A=[],B=[],C=[];
+  for(let r=0;r<R;r++){const a=[],b=[],c=[];for(let i=0;i<N;i++){a.push(Math.random());b.push(Math.random());c.push(Math.random());}A.push(a);B.push(b);C.push(c);}
+  // ALS via least squares on unfoldings (simplified)
+  for(let it=0;it<n_iter;it++){
+    // Update A: T_(1) = A (C khatri-rao B)^T ; solve A = T_(1) (C khatri-rao B) [(C'C * B'B)]^-1
+    // For simplicity do per-element update
+    // Reconstruct then refine factors with gradient steps
+    const lr = 0.05;
+    for(let r=0;r<R;r++){
+      for(let i=0;i<N;i++){
+        let ga=0; for(let j=0;j<N;j++)for(let k=0;k<N;k++){
+          let pred=0; for(let s=0;s<R;s++) pred += A[s][i]*B[s][j]*C[s][k];
+          ga += (pred - T[i][j][k]) * B[r][j]*C[r][k];
+        }
+        A[r][i] -= lr * ga / (N*N);
+      }
+      for(let j=0;j<N;j++){
+        let gb=0; for(let i=0;i<N;i++)for(let k=0;k<N;k++){
+          let pred=0; for(let s=0;s<R;s++) pred += A[s][i]*B[s][j]*C[s][k];
+          gb += (pred - T[i][j][k]) * A[r][i]*C[r][k];
+        }
+        B[r][j] -= lr * gb / (N*N);
+      }
+      for(let k=0;k<N;k++){
+        let gc=0; for(let i=0;i<N;i++)for(let j=0;j<N;j++){
+          let pred=0; for(let s=0;s<R;s++) pred += A[s][i]*B[s][j]*C[s][k];
+          gc += (pred - T[i][j][k]) * A[r][i]*B[r][j];
+        }
+        C[r][k] -= lr * gc / (N*N);
+      }
+    }
+  }
+  // Reconstruction error
+  let err = 0;
+  for(let i=0;i<N;i++)for(let j=0;j<N;j++)for(let k=0;k<N;k++){
+    let pred=0; for(let s=0;s<R;s++) pred += A[s][i]*B[s][j]*C[s][k];
+    err += (T[i][j][k] - pred)**2;
+  }
+  return {A, B, C, err: err / Tn2};
+}
+
+function renderTD(){
+  const R = +document.getElementById('sR').value;
+  document.getElementById('vR').textContent = R;
+  const fit = cpALS(R, 30);
+  // Draw: three columns of factors, each row is a component
+  const colW = 200, colX = [50, 270, 490], headY = 26;
+  const barW = 16, gap = 4, rowH = 50;
+  let svg = '';
+  // Labels
+  svg += `<text x="${colX[0]+colW/2}" y="${headY-6}" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b5a">a_r (mode 1: patient)</text>`;
+  svg += `<text x="${colX[1]+colW/2}" y="${headY-6}" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b5a">b_r (mode 2: cell type)</text>`;
+  svg += `<text x="${colX[2]+colW/2}" y="${headY-6}" text-anchor="middle" font-size="13" font-weight="700" fill="#1a6b5a">c_r (mode 3: gene)</text>`;
+  const palette = ['#1A6B5A','#D4A03C','#C83C3C','#5A6BD4','#3CA85A','#A03CD4'];
+  for(let r=0;r<R;r++){
+    const yBase = headY + 10 + r*rowH;
+    svg += `<text x="20" y="${yBase + rowH/2 + 4}" font-size="11" font-weight="600" fill="${palette[r%6]}">r=${r+1}</text>`;
+    for(let m=0;m<3;m++){
+      const f = (m===0?fit.A:m===1?fit.B:fit.C)[r];
+      for(let i=0;i<N;i++){
+        const v = f[i];
+        const h = Math.min(rowH-6, Math.abs(v)*40);
+        const yTop = v >= 0 ? yBase + (rowH-6)/2 - h : yBase + (rowH-6)/2;
+        svg += `<rect x="${colX[m] + i*(barW+gap)}" y="${yTop}" width="${barW}" height="${h}" fill="${palette[r%6]}" opacity="0.85"/>`;
+      }
+      svg += `<line x1="${colX[m]}" y1="${yBase + (rowH-6)/2}" x2="${colX[m]+colW}" y2="${yBase + (rowH-6)/2}" stroke="#aaa" stroke-width="0.5"/>`;
+    }
+  }
+  document.getElementById('tdSvg').innerHTML = svg;
+  document.getElementById('vErr').textContent = fit.err.toFixed(3);
+  document.getElementById('vVar').textContent = (1 - fit.err).toFixed(3);
+  document.getElementById('vPar').textContent = 3*R*N;
+  const L = I18n.get();
+  let msg;
+  if(R < 3) msg = L==='zh'?'R 過小 → underfit。真實張量大致有 3 個因子，R=' + R + ' 沒抓全。':'R too small → underfit. True tensor has ~3 factors; R=' + R + ' misses them.';
+  else if(R <= 4) msg = L==='zh'?'R ≈ 真實 rank → 在 elbow。誤差最低、解釋性最好。':'R ≈ true rank → at the elbow. Lowest error and best interpretability.';
+  else msg = L==='zh'?'R 過大 → overfit 噪音。新增 component 主要是擬合噪聲，解釋性下降。':'R too large → fitting noise. Extra components mostly fit noise; interpretability degrades.';
+  document.getElementById('tdInterp').innerHTML = msg;
+}
+document.getElementById('sR').addEventListener('input', renderTD);
+document.addEventListener('langchange', renderTD);
+renderTD();
+
+window._QF={zh:{
+q1_y:'答對！CP 在 Kruskal 條件下 unique，所以 factor 直接對應「真實」獨立成分。',
+q1_n:'答案是 C。CP 的 Kruskal 唯一性條件讓 factor 可解釋。',
+q2_y:'答對！這正是 Armingol 2022 跨病人 CCC 分析的核心。',
+q2_n:'答案是 B。Tensor-cell2cell 把多病人 CCC 組成張量，再做分解找共享 factor。',
+q3_y:'答對！MTTKRP 是 CP-ALS 每步的核心運算，主導計算成本。',
+q3_n:'答案是 A。MTTKRP 是 CP-ALS 的主成本，現代 GPU 實作都針對它優化。'
+},en:{
+q1_y:'Correct! CP is unique under Kruskal — factors correspond to true independent components.',
+q1_n:'Answer is C. Kruskal uniqueness makes CP factors interpretable.',
+q2_y:'Correct! That is exactly the cross-patient CCC analysis of Armingol 2022.',
+q2_n:'Answer is B. Tensor-cell2cell builds multi-patient CCC tensors and decomposes them.',
+q3_y:'Correct! MTTKRP is the dominant per-step cost of CP-ALS; GPUs target it.',
+q3_n:'Answer is A. MTTKRP dominates CP-ALS cost.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

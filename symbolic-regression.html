@@ -1,0 +1,408 @@
+<!DOCTYPE html><html lang="zh-Hant"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Symbolic Regression — Adv. Methods Tutorial</title>
+<link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner">
+<a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a>
+<ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html" class="active">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav>
+<div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero">
+<div class="step-badge">CH 24 / 26</div>
+<h1 data-zh="符號回歸 (Symbolic Regression)" data-en="Symbolic Regression">符號回歸 (Symbolic Regression)</h1>
+<p class="subtitle" data-lang="zh">不是擬合一個黑盒神經網路，而是直接從數據反推出「封閉形式」的數學方程式——把 Kepler 行星軌道、SINDy 動力系統、scRNA velocity 的 ODE 全寫成可讀的公式。</p>
+<p class="subtitle" data-lang="en">Instead of fitting a black-box network, symbolic regression recovers closed-form equations directly from data — writing Kepler's orbits, SINDy dynamics, and scRNA velocity ODEs as readable formulas.</p>
+</header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="從資料到方程式" data-en="From Data to Equations">從資料到方程式</h2>
+<div data-lang="zh">
+<p>傳統機器學習擬合一個 <em>參數豐富</em> 的函數 f<sub>θ</sub>(x) 來逼近 y——準確但不可解釋。<strong>符號回歸 (Symbolic Regression, SR)</strong> 改而搜尋一個 <em>方程式樹</em>（由加、乘、sin、exp、log、變數、常數構成），使該樹評估的數值能逼近資料。輸出不是「14 萬個權重」，而是 <code>y = a · sin(b·x) + c</code> 這樣的 closed-form 表達式。</p>
+<p>為什麼有意義？因為 <strong>方程式有物理單位、有對稱性、能外推</strong>——對發現自然律 (Kepler, Newton) 與生物動力系統 (mRNA 動力學、基因調控) 至關重要。</p>
+</div>
+<div data-lang="en">
+<p>Classical ML fits a heavily-parameterized f<sub>θ</sub>(x) — accurate but inscrutable. <strong>Symbolic Regression (SR)</strong> instead searches over <em>expression trees</em> (built from +, ×, sin, exp, log, variables, constants) for one whose evaluation matches the data. The output is not "140k weights" but a closed-form equation like <code>y = a · sin(b·x) + c</code>.</p>
+<p>Why does this matter? Because <strong>equations carry units, symmetries, and extrapolate</strong> — crucial for rediscovering natural laws (Kepler, Newton) and biological dynamics (mRNA kinetics, gene regulation).</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">📜</div><h4 data-zh="可解釋" data-en="Interpretable">可解釋</h4><p data-lang="zh">輸出是人類可讀的公式，有單位、有對稱性。</p><p data-lang="en">Output is human-readable; units and symmetries are explicit.</p></div>
+  <div class="card"><div class="card-icon">🚀</div><h4 data-zh="可外推" data-en="Extrapolates">可外推</h4><p data-lang="zh">在訓練範圍外仍可信賴——神經網路做不到。</p><p data-lang="en">Trustworthy beyond the training range — unlike neural nets.</p></div>
+  <div class="card"><div class="card-icon">🧬</div><h4 data-zh="物理意義" data-en="Physical meaning">物理意義</h4><p data-lang="zh">能對應到化學動力學、ODE、PDE 等真實機制。</p><p data-lang="en">Maps onto kinetics, ODEs, PDEs — real mechanistic models.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="主要演算法家族" data-en="Main Algorithm Families">主要演算法家族</h2>
+
+<div data-lang="zh">
+<h3>① 遺傳規劃 Genetic Programming (GP)</h3>
+<p>把方程式編碼成「樹狀基因」：節點是運算子、葉子是變數或常數。從隨機樹族群開始，每代執行：(1) <strong>選擇</strong>——適應度 = 擬合誤差 + 複雜度懲罰；(2) <strong>交叉</strong>——交換子樹；(3) <strong>突變</strong>——隨機改節點。代表工具：<a href="#">PySR (Cranmer 2023)</a>、gplearn、Eureqa。</p>
+
+<h3>② SINDy — Sparse Identification of Nonlinear Dynamics (Brunton 2016)</h3>
+<p>專門找 ODE 形式 ẋ = f(x)。流程：(a) 從資料估 ẋ；(b) 建一個 <strong>candidate library</strong> Θ(x) = [1, x, x², sin x, ...]；(c) 用 sparse regression（LASSO 或 sequentially-thresholded least squares）找一個稀疏係數向量 ξ，使 ẋ ≈ Θ(x) · ξ。輸出：少數幾項的線性組合即為動力方程式。</p>
+
+<h3>③ AI Feynman (Udrescu &amp; Tegmark 2020)</h3>
+<p>物理啟發的「分而治之」策略：先檢測函數是否具備 <strong>對稱性</strong>（平移、尺度、可分離）、<strong>單調性</strong> 等性質，據此把多維問題拆成低維子問題，遞迴呼叫。在 Feynman 100 條物理方程式 benchmark 上正確率 ~100%。</p>
+
+<h3>④ Neural-Symbolic Hybrid</h3>
+<p>用神經網路先學一個 <em>柔軟</em> 的近似，再「蒸餾」(distill) 出符號式。Cranmer (2020) 從 GNN 中萃取 force law、Kim (2021) 用 NN attention 找方程結構。最新趨勢：Transformer + symbolic decoder (Kamienny 2022, NeurIPS) — 像翻譯模型一樣「翻譯」資料為方程式。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Genetic Programming (GP)</h3>
+<p>Encode equations as trees: operators on internal nodes, variables/constants at leaves. Each generation: (1) <strong>selection</strong> on fitness = fit error + complexity penalty; (2) <strong>crossover</strong> swaps subtrees; (3) <strong>mutation</strong> alters nodes. Tools: PySR (Cranmer 2023), gplearn, Eureqa.</p>
+
+<h3>② SINDy — Sparse Identification of Nonlinear Dynamics (Brunton 2016)</h3>
+<p>Targets ODEs ẋ = f(x). Steps: (a) estimate ẋ from data; (b) build a <strong>candidate library</strong> Θ(x) = [1, x, x², sin x, ...]; (c) sparse regression (LASSO or sequentially-thresholded LS) finds a sparse ξ such that ẋ ≈ Θ(x) · ξ. The few non-zero terms are the discovered dynamics.</p>
+
+<h3>③ AI Feynman (Udrescu &amp; Tegmark 2020)</h3>
+<p>Physics-inspired divide-and-conquer: detect <strong>symmetry</strong> (translation, scale, separability) and <strong>monotonicity</strong>, then recursively split high-dim problems into low-dim subproblems. Reaches ~100% accuracy on the Feynman 100-equation benchmark.</p>
+
+<h3>④ Neural-Symbolic Hybrid</h3>
+<p>Fit a soft NN approximation then "distill" symbolic form. Cranmer (2020) distilled force laws from GNNs; Kim (2021) used NN attention for equation structure. Trend: Transformer + symbolic decoder (Kamienny 2022, NeurIPS) — "translates" data into equations like a language model.</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>SINDy 的祕密武器：</strong>稀疏性假設 = 「自然律通常用 ≤ 5 項表達」。這個 Occam's razor 先驗讓 SINDy 在低資料情境下勝過神經 ODE。</div>
+<div data-lang="en"><strong>SINDy's secret weapon:</strong> sparsity prior = "natural laws usually need ≤ 5 terms." This Occam's-razor bias beats neural ODEs in low-data regimes.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="符號回歸現場" data-en="Symbolic Regression Live">符號回歸現場</h2>
+<div data-lang="zh"><p>選擇一個「真實方程式」生成 noisy 資料（藍點），按 <strong>Run SR</strong> 觀察演算法逐代搜尋出 candidate 方程式（紅線），右側顯示候選池與最佳擬合。</p></div>
+<div data-lang="en"><p>Pick a "ground-truth equation," see the noisy data (blue dots), press <strong>Run SR</strong> and watch generations of candidate equations (red curve) evolve. The right panel lists the candidate pool and the current best fit.</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group">
+  <label data-zh="真實方程式" data-en="Ground-truth equation">真實方程式</label>
+  <select id="srEq" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="quadratic">y = 0.8·x² − 0.5</option>
+    <option value="sine" selected>y = sin(2x) + 0.3·x</option>
+    <option value="hill">y = x² / (1 + x²) [Hill]</option>
+    <option value="exp">y = exp(−0.5·x²) [Gaussian]</option>
+  </select>
+</div>
+<div class="slider-group"><label data-zh="噪音" data-en="Noise">噪音 <span id="srNoiseV">0.10</span></label><input type="range" id="srNoise" min="0" max="0.4" value="0.1" step="0.02"></div>
+<div style="display:flex;gap:10px;margin:10px 0;flex-wrap:wrap;">
+  <button id="srRun" style="padding:8px 18px;background:var(--c-accent,#1A6B5A);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">▶ Run SR</button>
+  <button id="srReset" style="padding:8px 18px;background:#aaa;color:white;border:none;border-radius:6px;cursor:pointer;">Reset</button>
+  <span id="srGen" style="align-self:center;font-size:.9rem;color:var(--c-ink-light);"></span>
+</div>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;">
+<div class="chart-container" style="height:280px;"><canvas id="srChart"></canvas></div>
+<div id="srPool" style="background:#fafafa;border-radius:6px;padding:10px;font-family:Consolas,monospace;font-size:.78rem;line-height:1.6;max-height:280px;overflow-y:auto;border:1px solid #e0dcd0;"></div>
+</div>
+<div id="srBest" style="margin-top:12px;padding:12px;background:#f0f6f4;border-radius:6px;font-size:.95rem;border-left:4px solid var(--c-accent,#1A6B5A);"></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="SR 在生物資訊的應用" data-en="SR in Bioinformatics">SR 在生物資訊的應用</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="RNA velocity 的 ODE 反推" data-en="RNA velocity ODE recovery">RNA velocity ODE 反推</h4>
+<p data-lang="zh">把 SINDy 套到 unspliced / spliced RNA 量上，反推 mRNA 動力系統的 ODE 形式——可超越 La Manno (2018) 的 linear-α 假設，發現 bursting、bistability 等非線性項。</p>
+<p data-lang="en">Applying SINDy to unspliced/spliced counts recovers mRNA kinetic ODEs — going beyond La Manno (2018)'s linear-α assumption to find bursting and bistability terms.</p></div>
+
+<div class="card"><h4 data-zh="GRN 方程式 (Mangan 2016)" data-en="GRN equations (Mangan 2016)">GRN 方程式</h4>
+<p data-lang="zh">Mangan et al. (2016, IEEE TMBMC) 把 SINDy 套到基因網路，從 time-series 表現資料反推 Hill function 形式的 TF–target 動力學。</p>
+<p data-lang="en">Mangan et al. (2016, IEEE TMBMC) applied SINDy to gene networks, recovering Hill-function TF–target kinetics from time-series expression.</p></div>
+
+<div class="card"><h4 data-zh="PK/PD 模型發現" data-en="PK/PD model discovery">PK/PD 模型發現</h4>
+<p data-lang="zh">藥物濃度-時間曲線傳統用 compartment ODE。SR 從臨床資料直接反推 ODE 形式——可發現新的非經典代謝路徑。</p>
+<p data-lang="en">Pharmacokinetics traditionally uses compartment ODEs. SR recovers ODE form directly from clinical data, sometimes finding non-classical metabolic pathways.</p></div>
+
+<div class="card"><h4 data-zh="代謝通量方程式" data-en="Metabolic flux equations">代謝通量方程式</h4>
+<p data-lang="zh">從 13C-MFA 同位素標記資料推導非線性代謝通量律——比固定 Michaelis-Menten 形式更靈活。</p>
+<p data-lang="en">From 13C-MFA isotope tracing, SR derives non-linear flux laws — more flexible than fixed Michaelis-Menten forms.</p></div>
+
+<div class="card"><h4 data-zh="Turing pattern 發現" data-en="Turing pattern discovery">Turing pattern 發現</h4>
+<p data-lang="zh">用 SINDy-PDE 從空間轉錄體時序資料反推 reaction-diffusion 方程，發現組織形態發生的隱藏律。</p>
+<p data-lang="en">SINDy-PDE on spatial-transcriptomics time series recovers reaction-diffusion equations, uncovering hidden laws of tissue morphogenesis.</p></div>
+
+<div class="card"><h4 data-zh="Mango (Maslennikov 2023)" data-en="Mango (Maslennikov 2023)">Mango (2023)</h4>
+<p data-lang="zh">把 SR 套到 single-cell pseudotime 動態，找出每個 cell type 的「dynamics signature」——一個 closed-form 表達式而非 vector field。</p>
+<p data-lang="en">Mango (Maslennikov 2023) applies SR to single-cell pseudotime dynamics, deriving each cell type's closed-form dynamics signature instead of a vector field.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="SR 還能改良哪些 omics 任務？" data-en="Where else could SR improve?">SR 還能改良哪些 omics 任務？</h2>
+<div data-lang="zh">
+<h3>🎯 1. scRNA-seq + RNA velocity → GRN ODE 系統</h3>
+<p>結合 velocity（時間導數估計）與 SINDy，從單一快照反推 multi-gene ODE 系統，自動發現「主節點 TF + Hill 邏輯」。可超越目前 SCENIC 的線性回歸框架。</p>
+<h3>🎯 2. Perturbation dose-response 方程式</h3>
+<p>對 sci-Plex / LINCS 多劑量資料用 SR 找最佳擬合的 Hill / Emax / log-logistic 方程式，比固定模型更彈性。</p>
+<h3>🎯 3. 新的細胞–細胞通訊定律</h3>
+<p>從多 paired 空間轉錄體資料用 SR 找「ligand 濃度→ receptor 訊號」的 functional form——可能不是線性、不是 mass action，而是某種非經典 saturation。</p>
+<h3>🎯 4. Cell cycle 循環 ODE 發現</h3>
+<p>結合 Ch 8 cycle following 與 SINDy，重建細胞週期的 phase portrait ODE，定量「卡關點」與 oscillator frequency。</p>
+<h3>🎯 5. 給 scLLM 結果加上 closed-form 解釋</h3>
+<p>對 scGPT 的 attention map 用 SR 找「哪幾個 gene 的 Hill 組合 = 該 attention head」——讓 scLLM 變成「公式 ensemble」而非黑盒。</p>
+</div>
+<div data-lang="en">
+<h3>🎯 1. scRNA-seq + RNA velocity → GRN ODE system</h3>
+<p>Combine velocity (time derivative estimate) with SINDy to recover multi-gene ODE systems from a single snapshot, automatically discovering "hub TF + Hill logic" — beyond SCENIC's linear regression.</p>
+<h3>🎯 2. Perturbation dose-response equations</h3>
+<p>On sci-Plex / LINCS multi-dose data, SR fits the best Hill / Emax / log-logistic equation per gene — more flexible than fixed models.</p>
+<h3>🎯 3. New cell–cell communication laws</h3>
+<p>From paired spatial transcriptomics, SR finds the functional form of "ligand → receptor signal" — may not be linear, may not be mass-action, but some saturation regime.</p>
+<h3>🎯 4. Cell-cycle ODE discovery</h3>
+<p>Combining Ch 8 cycle-following with SINDy reconstructs the cell-cycle phase portrait ODE, quantifying stall points and oscillator frequency.</p>
+<h3>🎯 5. Closed-form explanations for scLLM outputs</h3>
+<p>SR on scGPT attention maps finds the Hill combination of a few genes equating to a given attention head — turning scLLMs into a "formula ensemble" instead of a black box.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'pysr')">PySR</button>
+<button class="code-tab-btn" onclick="switchTab(this,'sindy')">PySINDy</button>
+<button class="code-tab-btn" onclick="switchTab(this,'gplearn')">gplearn</button>
+</div>
+
+<div class="code-tab-content active" id="pysr"><pre><span class="comment"># pip install pysr  (Julia backend)</span>
+<span class="keyword">from</span> pysr <span class="keyword">import</span> PySRRegressor
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+X = np.random.uniform(-3, 3, (200, 2))
+y = X[:, 0]**<span class="num">2</span> + np.sin(X[:, 1])
+
+model = PySRRegressor(
+    niterations=<span class="num">40</span>,
+    binary_operators=[<span class="str">"+"</span>, <span class="str">"*"</span>, <span class="str">"-"</span>, <span class="str">"/"</span>],
+    unary_operators=[<span class="str">"sin"</span>, <span class="str">"exp"</span>, <span class="str">"log"</span>],
+    model_selection=<span class="str">"best"</span>,
+)
+model.fit(X, y)
+print(model.sympy())   <span class="comment"># symbolic equation</span></pre></div>
+
+<div class="code-tab-content" id="sindy"><pre><span class="comment"># pip install pysindy</span>
+<span class="keyword">import</span> pysindy <span class="keyword">as</span> ps
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># X(t) and its derivative</span>
+t = np.linspace(<span class="num">0</span>, <span class="num">10</span>, <span class="num">1000</span>)
+X = simulate_ode(t)              <span class="comment"># shape (1000, n_states)</span>
+
+model = ps.SINDy(
+    feature_library=ps.PolynomialLibrary(degree=<span class="num">3</span>),
+    optimizer=ps.STLSQ(threshold=<span class="num">0.05</span>),
+)
+model.fit(X, t=t)
+model.print()                    <span class="comment"># prints discovered ODE</span></pre></div>
+
+<div class="code-tab-content" id="gplearn"><pre><span class="comment"># pip install gplearn</span>
+<span class="keyword">from</span> gplearn.genetic <span class="keyword">import</span> SymbolicRegressor
+
+est = SymbolicRegressor(
+    population_size=<span class="num">5000</span>,
+    generations=<span class="num">20</span>,
+    function_set=(<span class="str">'add'</span>, <span class="str">'sub'</span>, <span class="str">'mul'</span>, <span class="str">'div'</span>, <span class="str">'sin'</span>, <span class="str">'cos'</span>),
+    parsimony_coefficient=<span class="num">0.001</span>,
+    p_crossover=<span class="num">0.7</span>,
+    p_subtree_mutation=<span class="num">0.1</span>,
+)
+est.fit(X_train, y_train)
+print(est._program)              <span class="comment"># discovered expression</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">SINDy 的關鍵假設是什麼？</p><p data-lang="en">What is SINDy's key assumption?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 動力系統一定是線性的</span><span data-lang="en">A. Dynamics must be linear</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 變數必須是無單位的</span><span data-lang="en">B. Variables must be unitless</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 真實方程式在 candidate library 中只用少數幾項表達（稀疏性）</span><span data-lang="en">C. The true equation is sparse in the candidate library</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 資料必須無噪音</span><span data-lang="en">D. Data must be noise-free</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">符號回歸相對於神經網路的主要優勢是？</p><p data-lang="en">What is SR's main advantage over neural networks?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 訓練速度快很多</span><span data-lang="en">A. Much faster training</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 可解釋性 + 外推能力（封閉形式有物理意義）</span><span data-lang="en">B. Interpretability + extrapolation (closed-form has physical meaning)</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 只需要少量資料</span><span data-lang="en">C. Needs less data</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 不需要選擇損失函數</span><span data-lang="en">D. No loss function needed</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">遺傳規劃 (PySR) 用什麼避免「越來越大的方程式樹」過擬合？</p><p data-lang="en">How does GP-based SR (PySR) avoid overfitting to ever-larger trees?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 複雜度懲罰 (parsimony / MDL)</span><span data-lang="en">A. Complexity penalty (parsimony / MDL)</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 限制只能用線性運算</span><span data-lang="en">B. Allow only linear operations</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 用大量 dropout</span><span data-lang="en">C. Heavy dropout</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 完全不會過擬合</span><span data-lang="en">D. It never overfits</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="contrastive-learning.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 23：對比學習" data-en="Ch 23: Contrastive">Ch 23：對比學習</span></a>
+<a href="sheaf-cellular.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 25：Sheaf" data-en="Ch 25: Sheaf">Ch 25：Sheaf</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive: simulated SR =====
+const trueFns = {
+  quadratic: {f:x=>0.8*x*x - 0.5, label:'0.8·x² − 0.5'},
+  sine:      {f:x=>Math.sin(2*x) + 0.3*x, label:'sin(2x) + 0.3·x'},
+  hill:      {f:x=>(x*x)/(1+x*x), label:'x² / (1 + x²)'},
+  exp:       {f:x=>Math.exp(-0.5*x*x), label:'exp(−0.5·x²)'},
+};
+
+// Candidate equation pool — pretends to be the GP population
+const candidates = {
+  quadratic:[
+    {fn:x=>x, label:'x', err:9},
+    {fn:x=>x*x, label:'x²', err:1.5},
+    {fn:x=>0.5*x*x, label:'0.5·x²', err:0.6},
+    {fn:x=>0.8*x*x, label:'0.8·x²', err:0.21},
+    {fn:x=>0.8*x*x-0.5, label:'0.8·x² − 0.5', err:0.02},
+  ],
+  sine:[
+    {fn:x=>x, label:'x', err:7},
+    {fn:x=>Math.sin(x), label:'sin(x)', err:3.2},
+    {fn:x=>Math.sin(2*x), label:'sin(2x)', err:1.4},
+    {fn:x=>Math.sin(2*x)+0.2*x, label:'sin(2x) + 0.2·x', err:0.6},
+    {fn:x=>Math.sin(2*x)+0.3*x, label:'sin(2x) + 0.3·x', err:0.03},
+  ],
+  hill:[
+    {fn:x=>x, label:'x', err:4},
+    {fn:x=>x*x, label:'x²', err:2.5},
+    {fn:x=>1-Math.exp(-x*x), label:'1 − exp(−x²)', err:0.9},
+    {fn:x=>(x*x)/(0.5+x*x), label:'x²/(0.5+x²)', err:0.4},
+    {fn:x=>(x*x)/(1+x*x), label:'x²/(1+x²)', err:0.02},
+  ],
+  exp:[
+    {fn:x=>1-0.3*x*x, label:'1 − 0.3·x²', err:1.5},
+    {fn:x=>Math.exp(-x), label:'exp(−x)', err:2.4},
+    {fn:x=>Math.exp(-Math.abs(x)), label:'exp(−|x|)', err:0.7},
+    {fn:x=>Math.exp(-0.3*x*x), label:'exp(−0.3·x²)', err:0.2},
+    {fn:x=>Math.exp(-0.5*x*x), label:'exp(−0.5·x²)', err:0.02},
+  ],
+};
+
+let srData=[], srGen=0, srRunning=false, srBest=null;
+
+function genSRData(){
+  const eq = document.getElementById('srEq').value;
+  const noise = +document.getElementById('srNoise').value;
+  const fn = trueFns[eq].f;
+  srData = [];
+  for(let i=0;i<60;i++){
+    const x = -3 + 6*(i/59);
+    const y = fn(x) + (Math.random()-0.5)*2*noise;
+    srData.push({x, y});
+  }
+  document.getElementById('srNoiseV').textContent=noise.toFixed(2);
+}
+
+const srChart = new Chart(document.getElementById('srChart'),{
+  type:'line',
+  data:{datasets:[
+    {type:'scatter', label:'data', data:[], backgroundColor:'rgba(50,100,180,0.7)', pointRadius:3},
+    {type:'line', label:'fit', data:[], borderColor:'#c33', borderWidth:2, pointRadius:0, fill:false, tension:0.2},
+  ]},
+  options:{responsive:true, maintainAspectRatio:false, animation:false,
+    plugins:{legend:{display:false}},
+    scales:{x:{type:'linear', title:{display:true,text:'x'}}, y:{title:{display:true,text:'y'}}}}
+});
+
+function renderSR(){
+  srChart.data.datasets[0].data = srData.map(d=>({x:d.x,y:d.y}));
+  if(srBest){
+    const fit = [];
+    for(let i=0;i<=80;i++){const x=-3+6*(i/80); fit.push({x, y:srBest.fn(x)});}
+    srChart.data.datasets[1].data = fit;
+  } else {
+    srChart.data.datasets[1].data = [];
+  }
+  srChart.update('none');
+}
+
+function refreshPool(){
+  const eq = document.getElementById('srEq').value;
+  const pool = candidates[eq].slice(0, srGen+1);
+  const L = (typeof I18n!=='undefined') ? I18n.get() : 'zh';
+  let html = `<div style="font-weight:600;color:var(--c-accent,#1A6B5A);margin-bottom:6px;">${L==='zh'?'候選池 (代 '+srGen+')':'Pool (gen '+srGen+')'}</div>`;
+  pool.forEach((c,k)=>{
+    const star = (k===pool.length-1) ? ' ★' : '';
+    html += `<div style="${k===pool.length-1?'color:var(--c-accent,#1A6B5A);font-weight:600;':'color:#888;'}">${c.label}${star} <span style="float:right;">err=${c.err.toFixed(2)}</span></div>`;
+  });
+  document.getElementById('srPool').innerHTML = html;
+  if(srBest){
+    const trueLabel = trueFns[eq].label;
+    const match = srBest.label === trueLabel;
+    document.getElementById('srBest').innerHTML = L==='zh'
+      ? `<strong>當前最佳：</strong><code>${srBest.label}</code>${match?' &nbsp; ✅ 已找到真實方程式！':''}<br><span style="color:#888;font-size:.85rem;">真實方程式：${trueLabel}</span>`
+      : `<strong>Current best:</strong> <code>${srBest.label}</code>${match?' &nbsp; ✅ Recovered the true equation!':''}<br><span style="color:#888;font-size:.85rem;">Ground truth: ${trueLabel}</span>`;
+  } else {
+    document.getElementById('srBest').innerHTML = L==='zh' ? '按 Run SR 開始搜尋...' : 'Press Run SR to start...';
+  }
+}
+
+function runStep(){
+  const eq = document.getElementById('srEq').value;
+  const pool = candidates[eq];
+  if(srGen < pool.length-1){
+    srGen++;
+    srBest = pool[srGen];
+    document.getElementById('srGen').textContent = (I18n.get()==='zh'?'代':'Gen')+' '+srGen+'/'+(pool.length-1);
+    refreshPool(); renderSR();
+    setTimeout(runStep, 600);
+  } else {
+    srRunning = false;
+    document.getElementById('srRun').disabled = false;
+  }
+}
+
+document.getElementById('srRun').addEventListener('click',()=>{
+  if(srRunning) return;
+  srRunning = true;
+  document.getElementById('srRun').disabled = true;
+  srGen = -1; srBest = null;
+  runStep();
+});
+document.getElementById('srReset').addEventListener('click',()=>{
+  srGen = -1; srBest = null; srRunning = false;
+  document.getElementById('srRun').disabled = false;
+  document.getElementById('srGen').textContent = '';
+  genSRData(); refreshPool(); renderSR();
+});
+document.getElementById('srEq').addEventListener('change',()=>{
+  srGen=-1; srBest=null; genSRData(); refreshPool(); renderSR();
+});
+document.getElementById('srNoise').addEventListener('input',()=>{ genSRData(); renderSR(); });
+document.addEventListener('langchange', refreshPool);
+genSRData(); refreshPool(); renderSR();
+
+window._QF={zh:{
+  q1_y:'答對！稀疏性是 SINDy 的關鍵——「真實律只用 ≤ 5 項表達」。',
+  q1_n:'答案是 C。SINDy 假設真實方程式在 candidate library 中稀疏表達。',
+  q2_y:'答對！可讀公式 + 物理意義 + 外推能力是 SR 的核心優勢。',
+  q2_n:'答案是 B。SR 的核心優勢在可解釋性與外推。',
+  q3_y:'答對！parsimony coefficient 懲罰節點數量，是 Occam 剃刀的數值化。',
+  q3_n:'答案是 A。複雜度懲罰防止樹無限膨脹。'
+},en:{
+  q1_y:'Correct! Sparsity is SINDy\'s key prior — "true laws use ≤ 5 terms."',
+  q1_n:'Answer is C. SINDy assumes the true law is sparse in the library.',
+  q2_y:'Correct! Readable formula + physical meaning + extrapolation.',
+  q2_n:'Answer is B. Interpretability and extrapolation are the wins.',
+  q3_y:'Correct! Parsimony coefficient penalizes node count — Occam\'s razor.',
+  q3_n:'Answer is A. Complexity penalty stops trees from exploding.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>

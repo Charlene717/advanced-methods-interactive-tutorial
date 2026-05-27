@@ -1,0 +1,561 @@
+<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Tensor Networks (MPS / PEPS) — Adv. Methods Tutorial</title><link rel="stylesheet" href="styles.css"></head><body>
+
+<nav class="top-nav"><div class="top-nav-inner"><a href="index.html" class="top-nav-brand"><span>🧠</span> <span data-zh="進階方法演算法" data-en="Adv. Methods">進階方法演算法</span></a><ul class="top-nav-links">
+<li><a href="chatterjee.html">Chatterjee ξ</a></li><li><a href="hsic-dcor.html">HSIC/dCor</a></li><li><a href="mutual-information.html">MI</a></li><li><a href="optimal-transport.html">OT</a></li><li><a href="persistent-homology.html">TDA</a></li><li><a href="manifold-learning.html">Manifold</a></li><li><a href="rna-velocity.html">Velocity</a></li><li><a href="cycle-following.html">Cycle</a></li><li><a href="graph-signal-gnn.html">GSP/GNN</a></li><li><a href="spatial-statistics.html">Spatial</a></li><li><a href="variational-inference.html">VAE</a></li><li><a href="diffusion-models.html">Diffusion</a></li><li><a href="scllms.html">scLLMs</a></li><li><a href="causal-inference.html">Causal</a></li>
+<li><a href="hyperbolic-embeddings.html">Hyper</a></li><li><a href="neural-ode.html">NODE</a></li><li><a href="flow-matching.html">FM</a></li><li><a href="state-space-mamba.html">SSM</a></li><li><a href="conformal-prediction.html">Conf</a></li><li><a href="active-learning.html">AL</a></li><li><a href="information-bottleneck.html">IB</a></li><li><a href="tensor-decomposition.html">Tensor</a></li><li><a href="contrastive-learning.html">CL</a></li><li><a href="symbolic-regression.html">SymReg</a></li><li><a href="sheaf-cellular.html">Sheaf</a></li><li><a href="geometric-dl.html">GDL</a></li>
+<li><a href="modern-hopfield.html">Hopfield</a></li><li><a href="energy-based-dca.html">EBM</a></li><li><a href="hawkes-point-processes.html">Hawkes</a></li><li><a href="reinforcement-learning.html">RL</a></li><li><a href="random-matrix-theory.html">RMT</a></li><li><a href="sliced-wasserstein.html">SlicedW</a></li><li><a href="compressed-sensing.html">CompSense</a></li><li><a href="wavelets-multires.html">Wavelet</a></li><li><a href="implicit-neural-rep.html">INR</a></li><li><a href="dpp.html">DPP</a></li><li><a href="federated-learning.html">Federated</a></li><li><a href="hypergraph-learning.html">Hyper-G</a></li>
+<li><a href="normalizing-flows.html">NF</a></li><li><a href="gflownets.html">GFlow</a></li><li><a href="hmc-nuts.html">HMC</a></li><li><a href="knockoff.html">Knockoff</a></li><li><a href="dynamic-time-warping.html">DTW</a></li><li><a href="survival-deepsurv.html">Surv</a></li><li><a href="changepoint.html">ChgPt</a></li><li><a href="functional-data.html">FDA</a></li><li><a href="mixture-of-experts.html">MoE</a></li><li><a href="nmf-ica-sparse.html">NMF</a></li><li><a href="tensor-networks.html" class="active">TN</a></li><li><a href="neuro-symbolic.html">NSym</a></li>
+<li><a href="references/index.html" data-zh="📚 參考資料" data-en="📚 References">📚 參考資料</a></li>
+</ul></div></nav><div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+
+<header class="page-hero"><div class="step-badge">CH 49 / 50</div><h1 data-zh="張量網路 (Tensor Networks)：MPS / PEPS" data-en="Tensor Networks (MPS / PEPS)">張量網路 (Tensor Networks)：MPS / PEPS</h1>
+<p class="subtitle" data-lang="zh">物理學家 90 年代用來壓縮量子多體波函數的工具，意外成為高維資料壓縮的利器。MPS（矩陣乘積態）把長度 L 的 d-state 系統從 d^L 壓縮到 L · d · χ²；DMRG (White 1992) 可變分求解；ML 上稱 Tensor Train (Oseledets 2011)。已被用於基因組壓縮、長序列建模、量子啟發 ML。</p>
+<p class="subtitle" data-lang="en">A tool physicists invented in the 90s to compress quantum many-body wavefunctions, repurposed as a powerful high-dimensional data compressor. MPS (Matrix Product State) compresses an L-site d-state system from d^L to L · d · χ². DMRG (White 1992) provides a variational solver; in ML it appears as Tensor Train (Oseledets 2011). Applied to genome compression, long-sequence modeling, and quantum-inspired ML.</p></header>
+
+<main class="content-wrap">
+
+<section class="section"><div class="section-label" data-zh="核心概念" data-en="CONCEPT">核心概念</div>
+<h2 data-zh="維度詛咒與 bond dimension" data-en="Curse of Dimensionality and Bond Dimension">維度詛咒與 bond dimension</h2>
+<div data-lang="zh">
+<p><strong>問題：</strong>一個長度 L、每個位置有 d 種狀態的系統，完整描述需要 d^L 個參數（例如 L = 100 個 spin-½ 量子位元需要 2^100 ≈ 10^30 個複數）。<strong>不可能存進記憶體。</strong></p>
+<p><strong>關鍵洞見：</strong>大部分物理上「有意義」的態（gapped Hamiltonian 的 ground state、局部相關性衰減的態）<strong>並不在這個 d^L 維空間的隨機角落，而是位於一個「低糾纏 (low-entanglement) 流形」上。</strong> 這個流形可以用「張量網路」高效參數化。</p>
+<p><strong>MPS (Matrix Product State)：</strong>把整個高階張量 Ψ_{s₁s₂...s_L} 寫成一串矩陣連乘：</p>
+<p style="text-align:center;font-family:Georgia,serif;">Ψ_{s₁...s_L} = A^{s₁}_{1,α₁} · A^{s₂}_{α₁,α₂} · ⋯ · A^{s_L}_{α_{L−1},1}</p>
+<p>每個 A^{s_k} 是 (χ × d × χ) 的張量，α 是「bond index」，bond dimension χ 控制可表達的糾纏熵上限 S ≤ log χ。<strong>總參數量：L · d · χ²</strong>（線性而非指數）。</p>
+<p><strong>PEPS (Projected Entangled Pair State, Verstraete 2004)：</strong>把 MPS 從 1D 鏈推廣到 2D 網格——每個 site 連接 4 個 bond（上下左右）。可表達 2D 量子系統與「面積律」糾纏。代價：精確收縮 PEPS 是 #P-hard，需要近似 algorithm（CTMRG、boundary MPS）。</p>
+<p><strong>ML 視角：Tensor Train (Oseledets 2011, SIAM J Sci Comput)。</strong>數學上與 MPS 完全等價，但語境是「高維函數 / 張量壓縮」而非量子物理。被用於 neural network weight 壓縮、recommendation system、PDE 求解。</p>
+</div>
+<div data-lang="en">
+<p><strong>The problem:</strong> a length-L system with d states per site needs d^L parameters (L = 100 spin-½ qubits ≈ 2^100 ≈ 10^30 complex numbers). <strong>Impossible to store.</strong></p>
+<p><strong>Key insight:</strong> physically meaningful states (gapped Hamiltonian ground states, locally correlated states) <strong>do not occupy random corners of this d^L space — they live on a "low-entanglement manifold"</strong> efficiently parameterized by tensor networks.</p>
+<p><strong>MPS (Matrix Product State):</strong> write the high-order tensor Ψ_{s₁s₂...s_L} as a chain of matrix products:</p>
+<p style="text-align:center;font-family:Georgia,serif;">Ψ_{s₁...s_L} = A^{s₁}_{1,α₁} · A^{s₂}_{α₁,α₂} · ⋯ · A^{s_L}_{α_{L−1},1}</p>
+<p>Each A^{s_k} is (χ × d × χ), α is a "bond index", and bond dimension χ caps the entanglement entropy S ≤ log χ. <strong>Total parameters: L · d · χ²</strong> — linear, not exponential.</p>
+<p><strong>PEPS (Projected Entangled Pair State, Verstraete 2004):</strong> generalize MPS from a 1D chain to a 2D grid — each site has 4 bonds (up/down/left/right). Captures 2D quantum systems with area-law entanglement. Caveat: exact PEPS contraction is #P-hard — requires approximations (CTMRG, boundary-MPS).</p>
+<p><strong>ML view: Tensor Train (Oseledets 2011, SIAM J Sci Comput).</strong> Mathematically identical to MPS, but framed as "high-dim function / tensor compression" rather than quantum physics. Used for neural-network weight compression, recommendation systems, PDE solvers.</p>
+</div>
+
+<div class="card-grid cols-3">
+  <div class="card"><div class="card-icon">🔗</div><h4 data-zh="MPS：1D 鏈" data-en="MPS: 1D chain">MPS：1D 鏈</h4><p data-lang="zh">L · d · χ² 參數可表達 d^L 維 tensor。χ = bond dimension。</p><p data-lang="en">L · d · χ² parameters represent a d^L tensor. χ = bond dimension.</p></div>
+  <div class="card"><div class="card-icon">🕸</div><h4 data-zh="PEPS：2D 網格" data-en="PEPS: 2D grid">PEPS：2D 網格</h4><p data-lang="zh">Lattice 上每個 site 4 bonds，捕捉 2D 結構（如 Hi-C 染色質）。</p><p data-lang="en">Each site has 4 bonds on a lattice — captures 2D structure (e.g. Hi-C chromatin).</p></div>
+  <div class="card"><div class="card-icon">🎚</div><h4 data-zh="bond dimension χ" data-en="bond dimension χ">bond dimension χ</h4><p data-lang="zh">χ → ∞ 為完整表示，χ 小則「低糾纏近似」。控制精度 vs 計算成本。</p><p data-lang="en">χ → ∞ is exact; small χ is a low-entanglement approximation. Trades accuracy for cost.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="演算法" data-en="ALGORITHM">演算法</div>
+<h2 data-zh="DMRG, TEBD, VMPS, Tensor Train" data-en="DMRG, TEBD, VMPS, Tensor Train">DMRG, TEBD, VMPS, Tensor Train</h2>
+<div data-lang="zh">
+<p><strong>① DMRG (White 1992, Phys Rev Lett)：</strong>密度矩陣重整化群——MPS 出現前的偉大發明，事後被 Östlund &amp; Rommer (1995) 證實 DMRG 就是在優化 MPS。演算法：</p>
+<ul>
+<li>從隨機 MPS 出發，<strong>sweep</strong> 過每個 site：固定其他張量，對當前兩個相鄰 site 解 local eigenproblem，得到最佳 (χ × d² × χ) block tensor。</li>
+<li>對其做 SVD 並截斷至 χ → 把 block 拆回成兩個 site tensors，bond dimension 控制在 χ。</li>
+<li>左右來回 sweep 直到能量收斂。</li>
+</ul>
+<p>DMRG 是 1D gapped Hamiltonian ground state 的 gold standard——比 quantum Monte Carlo 對許多模型更精準。</p>
+<p><strong>② TEBD (Time-Evolving Block Decimation, Vidal 2003)：</strong>用 Trotter 分解時間演化算符 e^{−iHt} 為 local gates，每個 gate 作用在相鄰兩個 site 上 → 再 SVD 截斷。這就是「在 MPS 上跑量子動力學」。</p>
+<p><strong>③ VMPS (Variational MPS)：</strong>把 MPS 當參數化變分態，直接梯度下降 / Adam 優化（不只 DMRG 的 sweep）。便於整合進現代 ML pipeline（PyTorch、JAX）。</p>
+<p><strong>④ Tensor Train (TT) decomposition：</strong>對給定的 d^L 維 tensor X，用 TT-SVD 演算法（Oseledets 2011）：</p>
+<ol>
+<li>把 X reshape 為 (d) × (d^{L−1}) 矩陣，做 SVD → 截斷至 χ。</li>
+<li>對 V^T reshape 為 (χd) × (d^{L−2}) 再 SVD → 截斷。</li>
+<li>反覆做 L−1 次 → 得到 L 個 core tensors 即 TT 表示。</li>
+</ol>
+<p><strong>⑤ TT-Cross / DMRG-Cross：</strong>當完整 X 無法存進記憶體（這正是 TT 的應用情境），TT-Cross 用 maximum-volume sub-matrix 啟發式（Oseledets &amp; Tyrtyshnikov 2010）僅查詢 O(L · χ²) 個 entry 就可重建。</p>
+<p><strong>⑥ Tensor Network classifier (Stoudenmire &amp; Schwab 2016, NeurIPS)：</strong>把 input image 經 feature map 變成 product state，再用 MPS 做 contraction 輸出 logit。等價於 SVM with implicit kernel；可解釋（每個 bond 是「資訊瓶頸」）。</p>
+</div>
+<div data-lang="en">
+<p><strong>① DMRG (White 1992, Phys Rev Lett):</strong> density matrix renormalization group — a pre-MPS invention, later shown by Östlund &amp; Rommer (1995) to optimize an MPS. Algorithm:</p>
+<ul>
+<li>Start with a random MPS; <strong>sweep</strong> across sites — fix all but two adjacent tensors and solve a local eigenproblem on the (χ × d² × χ) block.</li>
+<li>SVD-truncate to χ → split back into two site tensors.</li>
+<li>Sweep left-right until energy converges.</li>
+</ul>
+<p>DMRG is the gold standard for 1D gapped-Hamiltonian ground states — often more accurate than quantum Monte Carlo.</p>
+<p><strong>② TEBD (Time-Evolving Block Decimation, Vidal 2003):</strong> Trotterize e^{−iHt} into local two-site gates; apply each gate + SVD truncate. Quantum dynamics on an MPS.</p>
+<p><strong>③ VMPS (Variational MPS):</strong> treat MPS as a parametric ansatz and optimize by gradient descent / Adam (not only DMRG sweeps). Plays nicely with modern ML stacks (PyTorch, JAX).</p>
+<p><strong>④ Tensor Train (TT) decomposition:</strong> given a d^L tensor X, apply TT-SVD (Oseledets 2011):</p>
+<ol>
+<li>Reshape X as (d) × (d^{L−1}) and SVD → truncate to χ.</li>
+<li>Reshape V^T as (χd) × (d^{L−2}) and SVD → truncate.</li>
+<li>Repeat L−1 times → L core tensors form the TT.</li>
+</ol>
+<p><strong>⑤ TT-Cross / DMRG-Cross:</strong> when X is too large to fit in memory (the typical TT use case), TT-Cross (Oseledets &amp; Tyrtyshnikov 2010) uses maximum-volume sub-matrices to reconstruct using only O(L · χ²) queries.</p>
+<p><strong>⑥ Tensor Network classifier (Stoudenmire &amp; Schwab 2016, NeurIPS):</strong> feature-map the input image into a product state, contract with an MPS to output logits. Equivalent to an SVM with implicit kernel; interpretable (each bond is an information bottleneck).</p>
+</div>
+
+<div class="callout"><div data-lang="zh"><strong>記憶法：</strong>χ = 1 → product state（每個 site 獨立，零糾纏）。χ → ∞ → 完整 d^L 表示（任意糾纏）。中間 χ 是「在多少糾纏上限下的最佳近似」。area-law 系統可用小 χ；critical / random 系統需大 χ。</div>
+<div data-lang="en"><strong>Mnemonic:</strong> χ = 1 → product state (independent sites, zero entanglement). χ → ∞ → exact d^L representation. Intermediate χ → "best approximation under an entanglement budget". Area-law systems work with small χ; critical / random systems need large χ.</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="互動模擬" data-en="INTERACTIVE">互動模擬</div>
+<h2 data-zh="MPS 壓縮：拖動 bond dimension 看壓縮率與誤差" data-en="MPS Compression: Bond Dimension vs Compression and Error">MPS 壓縮：拖動 bond dimension 看壓縮率與誤差</h2>
+<div data-lang="zh"><p>下方 SVG 模擬一個長度 L = 8、每個 site 維度 d = 4 的張量（共 4^8 = 65,536 元素）。圓圈代表 site tensors，連線粗細代表 bond dimension χ。<strong>拖動 χ 滑桿</strong> 觀察：(i) 參數量隨 χ² 成長；(ii) 重建誤差隨 χ 下降；(iii) 壓縮比 = 65,536 / (L · d · χ²)。L 與 d 也可調。注意一旦 χ ≥ d^(L/2) = 16 即達到完整表達（無壓縮優勢）。</p></div>
+<div data-lang="en"><p>The SVG simulates a length L = 8, site dimension d = 4 tensor (4^8 = 65,536 elements). Circles are site tensors, line widths show bond dimension χ. <strong>Drag the χ slider</strong> to see: (i) params scale as χ²; (ii) reconstruction error drops with χ; (iii) compression ratio = 65,536 / (L · d · χ²). L and d are adjustable. Once χ ≥ d^(L/2) = 16 the MPS becomes exact (no compression advantage).</p></div>
+
+<div class="interactive-panel">
+<div class="slider-group"><label data-zh="序列長度 L" data-en="length L">序列長度 L <span id="vL">8</span></label><input type="range" id="sL" min="4" max="12" value="8" step="1"></div>
+<div class="slider-group"><label data-zh="每位點維度 d" data-en="site dim d">每位點維度 d <span id="vD">4</span></label><input type="range" id="sD" min="2" max="8" value="4" step="1"></div>
+<div class="slider-group"><label data-zh="bond dimension χ" data-en="bond dimension χ">bond dimension χ <span id="vC">4</span></label><input type="range" id="sCh" min="1" max="32" value="4" step="1"></div>
+<div class="slider-group">
+  <label data-zh="目標態類型" data-en="Target state">目標態類型</label>
+  <select id="state" style="padding:6px 12px;border-radius:6px;border:1px solid var(--c-border);font-size:.9rem;">
+    <option value="gapped" selected>Gapped (area-law, 易壓縮)</option>
+    <option value="critical">Critical (log-violation)</option>
+    <option value="random">Random (volume-law, 難壓)</option>
+  </select>
+</div>
+<svg id="tnSvg" viewBox="0 0 700 360" style="width:100%;height:360px;background:#fafafa;border-radius:6px;"></svg>
+<div id="tnInfo" style="margin-top:10px;padding:10px 14px;background:#f0ede6;border-radius:6px;font-size:.88rem;color:var(--c-ink-light);"></div>
+</div>
+
+<div class="decision-tree"><h4>🎯 <span data-zh="什麼時候用 Tensor Network？" data-en="When to use tensor networks?">什麼時候用 Tensor Network？</span></h4>
+<div data-lang="zh">
+<div class="dt-node"><span class="dt-q">情境1:</span><div><strong>1D 量子系統 ground state / dynamics</strong> → MPS + DMRG / TEBD。物理事實標準。</div></div>
+<div class="dt-node"><span class="dt-q">情境2:</span><div><strong>2D / lattice 系統</strong>（quantum magnet, Hi-C grid, image patches）→ PEPS 或 2D-MPS（snake ordering）。</div></div>
+<div class="dt-node"><span class="dt-q">情境3:</span><div><strong>高維 tensor 壓縮</strong>（基因組長序列、神經網路 weight、PDE 解）→ Tensor Train / TT-Cross。</div></div>
+<div class="dt-node"><span class="dt-q">情境4:</span><div><strong>量子啟發 ML classifier</strong>（MNIST、small biological tabular）→ TN classifier (Stoudenmire 2016)。可解釋、無 over-fitting。</div></div>
+<div class="dt-node"><span class="dt-q">不適合:</span><div>高糾纏 / volume-law 系統（隨機矩陣、deep transformer activations）χ 須隨 L 指數爆。改用其他壓縮（如 quantization）。</div></div>
+</div>
+<div data-lang="en">
+<div class="dt-node"><span class="dt-q">Case 1:</span><div><strong>1D quantum ground state / dynamics</strong> → MPS + DMRG / TEBD. Physics gold standard.</div></div>
+<div class="dt-node"><span class="dt-q">Case 2:</span><div><strong>2D / lattice systems</strong> (quantum magnets, Hi-C grids, image patches) → PEPS or 2D-MPS (snake ordering).</div></div>
+<div class="dt-node"><span class="dt-q">Case 3:</span><div><strong>High-dim tensor compression</strong> (long genome sequences, NN weights, PDE solutions) → Tensor Train / TT-Cross.</div></div>
+<div class="dt-node"><span class="dt-q">Case 4:</span><div><strong>Quantum-inspired ML classifier</strong> (MNIST, small biological tabular) → TN classifier (Stoudenmire 2016). Interpretable, resists over-fitting.</div></div>
+<div class="dt-node"><span class="dt-q">Not for:</span><div>High-entanglement / volume-law systems (random matrices, deep transformer activations) — χ must grow exponentially in L. Use other compression (e.g. quantization).</div></div>
+</div></div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="生物應用" data-en="BIOLOGY">生物應用</div>
+<h2 data-zh="Tensor Networks 在生物資訊" data-en="Tensor Networks in Bioinformatics">Tensor Networks 在生物資訊</h2>
+<div class="card-grid cols-2">
+<div class="card"><h4 data-zh="基因組壓縮" data-en="Genome compression">基因組壓縮</h4>
+<p data-lang="zh">基因組序列在物種內高度相似（&gt;99% identity）；可看作 4-state（ACGT）長序列張量的低糾纏近似。Cheng et al. (2019) 用 MPS 壓縮人類基因組 reference，與 gzip-like 工具比較壓縮率更好且支援隨機讀取（局部 contraction）。</p>
+<p data-lang="en">Genomes within a species are &gt;99% identical — a 4-state (ACGT) long-sequence tensor with low entanglement. Cheng et al. (2019) compress human reference genomes with MPS, achieving better ratios than gzip-like tools while supporting random access via local contraction.</p></div>
+
+<div class="card"><h4 data-zh="蛋白質結構壓縮 (Glasser 2018)" data-en="Protein structure compression">蛋白質結構壓縮</h4>
+<p data-lang="zh">Glasser et al. (2018, Phys Rev X) 把 MPS / TN 用於蛋白質序列 / 結構聯合表示——比 hidden Markov model 表達更豐富，能捕捉長距 contact map 結構。Tensor Network ↔ HMM 等價對應關係也在這篇釐清。</p>
+<p data-lang="en">Glasser et al. (2018, Phys Rev X) use MPS / TN for joint protein sequence / structure representation — more expressive than HMMs, captures long-range contact-map structure. They also formalize the TN ↔ HMM correspondence.</p></div>
+
+<div class="card"><h4 data-zh="Quantum-inspired ML for genomics" data-en="Quantum-inspired ML for genomics">量子啟發 ML for 基因組</h4>
+<p data-lang="zh">Liu et al. (2019, PRX Quantum) 用 TN classifier 做基因表達分類——把 RNA-seq sample 經 normalization 變成 product state，MPS 收縮輸出 cancer subtype。性能與 SVM 相當但每個 bond 可解釋為「site-pair 互動」。</p>
+<p data-lang="en">Liu et al. (2019, PRX Quantum) classify gene expression with TN — RNA-seq samples become product states; the MPS contraction outputs cancer subtype. Matches SVM performance, but each bond is interpretable as a "site-pair interaction".</p></div>
+
+<div class="card"><h4 data-zh="TN-based GRN compression" data-en="TN-based GRN compression">基因調控網路壓縮</h4>
+<p data-lang="zh">基因調控網路含 ~20k 個基因、每對基因可能互動——完整聯合分布是 2^20000。用 MPS 把 transcriptome 視為 1D chain，χ ~ 32 即可重建 80%+ 變異——比 PCA 表達能力更高。</p>
+<p data-lang="en">A gene regulatory network has ~20k genes with potential pairwise interactions — the full joint distribution is 2^20000. MPS treats the transcriptome as a 1D chain; χ ~ 32 reconstructs 80%+ of variance — more expressive than PCA.</p></div>
+
+<div class="card"><h4 data-zh="Stoudenmire 2016 MPS classifier" data-en="Stoudenmire 2016 MPS classifier">MPS classifier</h4>
+<p data-lang="zh">Stoudenmire &amp; Schwab (2016, NeurIPS) 開創「supervised tensor-network learning」——MNIST classifier 用 MPS bond dimension χ = 10 達到 ~99% 準確率，後續被應用於 small biological tabular datasets（cancer-vs-normal、disease subtyping）。</p>
+<p data-lang="en">Stoudenmire &amp; Schwab (2016, NeurIPS) pioneer "supervised tensor-network learning" — MNIST with MPS bond χ = 10 reaches ~99% accuracy. Later applied to small biological tabular datasets (cancer-vs-normal, disease subtyping).</p></div>
+
+<div class="card"><h4 data-zh="Tensorized RNN（替代 SSM）" data-en="Tensorized RNN (alternative to SSM)">Tensorized RNN</h4>
+<p data-lang="zh">Yang et al. (2017, ICML) 把 RNN 的 weight 用 TT 分解——對 long-context 任務（如全 genome 序列建模）顯著節省參數。可視為「結構化線性 attention」，與 Mamba / S4 等 SSM 不同設計理念但有交集。</p>
+<p data-lang="en">Yang et al. (2017, ICML) decompose RNN weights via TT — dramatic parameter savings on long-context tasks (e.g. full-genome modeling). Can be viewed as "structured linear attention", complementary to but distinct from Mamba / S4 SSMs.</p></div>
+
+<div class="card"><h4 data-zh="多重組學 high-dim tensor" data-en="Multi-omics high-dim tensor">多重組學高維張量</h4>
+<p data-lang="zh">病人 × 基因 × organ × time × omic 是天然 5-way tensor，元素數量爆炸。TT 表示可在 O(L · χ²) 參數內近似，配合 PARAFAC / Tucker 比較。<strong>已有 prototypes 用於 TCGA 多 modality 整合。</strong></p>
+<p data-lang="en">A patient × gene × organ × time × omic dataset is naturally a 5-way tensor with explosive size. TT represents it in O(L · χ²) parameters, complementing PARAFAC / Tucker. Prototypes exist for TCGA multi-modality integration.</p></div>
+
+<div class="card"><h4 data-zh="MPS for Hi-C / chromatin 結構" data-en="MPS for Hi-C / chromatin">MPS for Hi-C / 染色質結構</h4>
+<p data-lang="zh">Hi-C contact map 是 (loci × loci) 矩陣，但更複雜的多體 contact（triple-way contact）需要 high-order tensor。MPS / PEPS 可在 area-law 假設下高效表達——若 chromatin 滿足近似 area-law（TAD-like 局部結構），壓縮比可達 10⁴×。</p>
+<p data-lang="en">Hi-C contact maps are (loci × loci); but multi-body contacts (triple-way) need high-order tensors. MPS / PEPS represent them efficiently under area-law assumptions — if chromatin is approximately area-law (TAD-local structure), compression up to 10⁴×.</p></div>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="深入解析" data-en="DEEP DIVE">深入解析</div>
+<h2 data-zh="進階主題" data-en="Advanced Topics">進階主題</h2>
+<div data-lang="zh">
+<h3>① Area-law 是 MPS 可行的關鍵</h3>
+<p>Hastings (2007, J Stat Mech) 證明：1D gapped Hamiltonian 的 ground state 滿足 area law（糾纏熵 S ~ const，不隨 L 成長），因此 MPS bond dimension χ 不依賴 L。Critical 系統有 log-corrected area law（S ~ log L），需 χ ~ poly(L)。高溫 thermal state / random state 滿足 volume law（S ~ L），MPS 失效。</p>
+
+<h3>② Tensor Network 分類學</h3>
+<ul>
+<li><strong>MPS</strong>（1D chain）— 量子物理 + Tensor Train</li>
+<li><strong>PEPS / PEPO</strong>（2D / 3D lattice）— 2D 量子相</li>
+<li><strong>MERA</strong>（Multi-scale Entanglement Renormalization Ansatz, Vidal 2007）— 含 disentangler 與 isometry，對 critical systems 表達 log L 糾纏</li>
+<li><strong>Tree Tensor Network</strong>（TTN）— 樹狀拓撲，介於 MPS 與 MERA 之間</li>
+<li><strong>Branching MERA</strong>（Evenbly &amp; Vidal 2014）— 對 fermionic critical systems</li>
+</ul>
+
+<h3>③ Canonical form 與數值穩定</h3>
+<p>MPS 有「測度自由度」（gauge freedom）：對相鄰兩個 site tensors 同時做 A → A G, B → G⁻¹ B 不改變 contraction。實務上需把 MPS 帶到 <strong>canonical form</strong>（left/right/mixed canonical）以穩定 SVD truncation 與 expectation value 計算。iTensor / TeNPy 自動處理。</p>
+
+<h3>④ PEPS contraction 為何 #P-hard</h3>
+<p>MPS 的 contraction 可線性時間完成（從左到右）；PEPS 必須收縮 2D 網格，contraction order 沒有「天然」的 path。Schuch et al. (2007) 證明精確 contraction 是 #P-hard。實務用 boundary-MPS：把第一行看成 MPS，逐列吸收剩餘 sites（保留 bond dim χ_b）。</p>
+
+<h3>⑤ Tensor Network 與 ML 的橋樑</h3>
+<ul>
+<li><strong>TN ≈ structured neural network</strong>：MPS 可看作「線性 RNN with structured weight」。</li>
+<li><strong>TN ≈ kernel method</strong>：MPS classifier 等價於「product feature map + linear classifier」。</li>
+<li><strong>TN ≈ probabilistic graphical model</strong>：MPS = HMM 的非負矩陣版本；PEPS = MRF。</li>
+</ul>
+
+<h3>⑥ 自動微分與 TN library</h3>
+<p>現代 TN library（quimb, TensorNetwork, jax-tn）支援 <strong>JAX/PyTorch 自動微分</strong>——可把 MPS contraction 串進 deep learning pipeline 並用 Adam 訓練。對 PEPS 而言，approximate contraction 也可微分，但梯度可能不穩。</p>
+
+<h3>⑦ 量子計算與經典模擬的交界</h3>
+<p>當前最強的量子模擬器（如 ITensor、TeNPy、quimb 的 tensor network 模擬器）能在筆電上模擬數百 qubit 的「淺電路」——只要糾纏熵不爆。Google Sycamore quantum supremacy 主張被 Pan et al. (2022) 的 TN 模擬挑戰，把預期 10,000 年降到幾小時。</p>
+</div>
+
+<div data-lang="en">
+<h3>① Area law makes MPS work</h3>
+<p>Hastings (2007, J Stat Mech) proved: 1D gapped Hamiltonian ground states satisfy area law (S ~ const, independent of L), so MPS bond χ doesn't grow with L. Critical systems have log-corrected area law (S ~ log L), requiring χ ~ poly(L). Thermal / random states satisfy volume law (S ~ L) — MPS fails.</p>
+
+<h3>② Tensor Network taxonomy</h3>
+<ul>
+<li><strong>MPS</strong> (1D chain) — quantum physics + Tensor Train</li>
+<li><strong>PEPS / PEPO</strong> (2D / 3D lattice) — 2D quantum phases</li>
+<li><strong>MERA</strong> (Multi-scale Entanglement Renormalization Ansatz, Vidal 2007) — disentangler + isometry; expresses log-L entanglement of critical systems</li>
+<li><strong>Tree Tensor Network</strong> (TTN) — tree topology, between MPS and MERA</li>
+<li><strong>Branching MERA</strong> (Evenbly &amp; Vidal 2014) — fermionic critical systems</li>
+</ul>
+
+<h3>③ Canonical form and numerical stability</h3>
+<p>MPS has gauge freedom: A → A G, B → G⁻¹ B leaves contractions invariant. In practice we put MPS in <strong>canonical form</strong> (left/right/mixed) to stabilize SVD truncation and expectation values. iTensor / TeNPy handle this automatically.</p>
+
+<h3>④ Why PEPS contraction is #P-hard</h3>
+<p>MPS contraction is linear-time (left to right); PEPS lacks a natural contraction order. Schuch et al. (2007) showed exact contraction is #P-hard. Practitioners use boundary-MPS: treat the first row as an MPS, absorb remaining rows column by column (keep χ_b).</p>
+
+<h3>⑤ Bridges to ML</h3>
+<ul>
+<li><strong>TN ≈ structured neural network</strong>: MPS as "linear RNN with structured weights".</li>
+<li><strong>TN ≈ kernel method</strong>: MPS classifier = "product feature map + linear classifier".</li>
+<li><strong>TN ≈ probabilistic graphical model</strong>: MPS = non-negative-matrix HMM; PEPS = MRF.</li>
+</ul>
+
+<h3>⑥ Autodiff and TN libraries</h3>
+<p>Modern TN libraries (quimb, TensorNetwork, jax-tn) support <strong>JAX/PyTorch autodiff</strong> — MPS contractions plug into deep-learning pipelines trained with Adam. PEPS approximate contractions are differentiable but gradients can be unstable.</p>
+
+<h3>⑦ Quantum computing vs classical simulation</h3>
+<p>The best modern quantum simulators (ITensor, TeNPy, quimb) simulate hundreds of qubits with "shallow circuits" on a laptop — as long as entanglement doesn't explode. Google's Sycamore quantum-supremacy claim was challenged by Pan et al. (2022) with TN simulation that cut the expected 10,000 years to hours.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="潛在改良應用" data-en="POTENTIAL APPLICATIONS">潛在改良應用</div>
+<h2 data-zh="還能改良哪些任務？" data-en="What Else Could Be Improved?">還能改良哪些任務？</h2>
+
+<div data-lang="zh">
+<h3>🎯 1. 全基因組長序列建模</h3>
+<p>HyenaDNA / EVO 用 SSM 處理長基因組——但其實基因組是強局部相關（gene → exon → codon）的 area-law 序列。<strong>提案：</strong>MPS / TT 替代 SSM 做基因組 LM，χ 控制 receptive field，可解釋為 site-pair 互動。</p>
+
+<h3>🎯 2. Hi-C contact map 的 PEPS 模型</h3>
+<p>2D Hi-C 滿足 area-law（TAD-local 結構）——天然 PEPS 候選。<strong>提案：</strong>PEPS-based Hi-C reconstruction，從稀疏 contact 還原 dense map；bond dimension 為「TAD structure complexity」。</p>
+
+<h3>🎯 3. 多病人多模態 tensor 整合</h3>
+<p>(病人 × 基因 × organ × time × omic) 5-way tensor。<strong>提案：</strong>TT 分解 + 缺失填補；每個 core 對應一個 modality 的「latent program」，可比 PARAFAC 更高表達能力。</p>
+
+<h3>🎯 4. 蛋白質 conformation ensemble 的 TN 表示</h3>
+<p>蛋白質結構是 N 個 residue × 3 座標的 high-order tensor，conformations 構成低糾纏流形。<strong>提案：</strong>MPS-conformer：用 MPS 表示 IDR / 構象集合，自動 enforce 物理約束（bond length、angles）。</p>
+
+<h3>🎯 5. CRISPR screen 的 sparse tensor 建模</h3>
+<p>(guide × gene × cell × time) sparse tensor。<strong>提案：</strong>TT-Cross 從少數採樣 entry 重建整個 screen 的 perturbation landscape，加速 design-of-experiment。</p>
+
+<h3>🎯 6. TN-attention：替代 transformer 的 O(L²)</h3>
+<p>transformer attention 是 (Q K^T) → O(L²) 矩陣。<strong>提案：</strong>用 MPS 表達 attention matrix（structured low-rank + locality），對長 context 從 O(L²) 降到 O(L · χ²)。</p>
+
+<h3>🎯 7. 量子啟發的 scRNA-seq classifier</h3>
+<p><strong>提案：</strong>MPS-RNAseq classifier — 把單細胞 expression 編碼為 product state，MPS 收縮輸出 cell type。每個 bond 可解釋為「基因 pair interaction」，比 deep learning 更可解釋且訓練快。</p>
+
+<h3>🎯 8. PEPS for spatial transcriptomics</h3>
+<p>Spatial 是 2D lattice 的 cell type 分布。<strong>提案：</strong>PEPS-based spatial cell-cell interaction modeling，捕捉超越 nearest-neighbor 的 emergent tissue structure。</p>
+</div>
+
+<div data-lang="en">
+<h3>🎯 1. Whole-genome long-sequence modeling</h3>
+<p>HyenaDNA / EVO use SSMs for long genomes — but genomes have strong local correlations (gene → exon → codon), an area-law sequence. <strong>Proposal:</strong> MPS / TT alternatives where χ controls receptive field and bonds are interpretable.</p>
+
+<h3>🎯 2. PEPS model for Hi-C contact maps</h3>
+<p>2D Hi-C satisfies area law (TAD locality) — a natural PEPS candidate. <strong>Proposal:</strong> PEPS-based Hi-C reconstruction from sparse contacts; bond dimension = "TAD structural complexity".</p>
+
+<h3>🎯 3. Multi-patient multi-modal tensor integration</h3>
+<p>(patient × gene × organ × time × omic) 5-way tensor. <strong>Proposal:</strong> TT decomposition + missingness; each core is a modality-specific latent program — more expressive than PARAFAC.</p>
+
+<h3>🎯 4. Protein conformation-ensemble TN</h3>
+<p>Protein structure is an N-residue × 3-coord high-order tensor; conformations live on a low-entanglement manifold. <strong>Proposal:</strong> MPS-conformer for IDR / conformation ensembles, auto-enforcing physical constraints (bond lengths, angles).</p>
+
+<h3>🎯 5. Sparse-tensor CRISPR-screen modeling</h3>
+<p>(guide × gene × cell × time) sparse tensor. <strong>Proposal:</strong> TT-Cross reconstructs the perturbation landscape from few measurements, accelerating design-of-experiment.</p>
+
+<h3>🎯 6. TN-attention as O(L²)→O(L·χ²) substitute</h3>
+<p>Transformer attention is (Q K^T), O(L²). <strong>Proposal:</strong> express the attention matrix as an MPS (structured low-rank + locality), dropping cost to O(L · χ²) for long context.</p>
+
+<h3>🎯 7. Quantum-inspired scRNA-seq classifier</h3>
+<p><strong>Proposal:</strong> MPS-RNAseq classifier — encode single-cell expression as product state; MPS contraction → cell-type label. Each bond is "gene-pair interaction" — interpretable and fast to train.</p>
+
+<h3>🎯 8. PEPS for spatial transcriptomics</h3>
+<p>Spatial is a 2D cell-type lattice. <strong>Proposal:</strong> PEPS-based modeling of cell-cell interactions beyond nearest neighbor, capturing emergent tissue structure.</p>
+</div>
+</section>
+
+<section class="section"><div class="section-label" data-zh="程式碼" data-en="CODE">程式碼</div>
+<h2 data-zh="實作範例" data-en="Code Examples">實作範例</h2>
+<div class="code-tabs"><div class="code-tab-btns">
+<button class="code-tab-btn active" onclick="switchTab(this,'quimb')">Python / quimb</button>
+<button class="code-tab-btn" onclick="switchTab(this,'tt')">tensorly Tensor Train</button>
+<button class="code-tab-btn" onclick="switchTab(this,'tngoogle')">Google TensorNetwork</button>
+<button class="code-tab-btn" onclick="switchTab(this,'cls')">MPS classifier</button>
+</div>
+
+<div class="code-tab-content active" id="quimb"><pre><span class="comment"># pip install quimb</span>
+<span class="keyword">import</span> quimb.tensor <span class="keyword">as</span> qtn
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># Build random MPS (10 sites, physical dim 2, bond dim 8)</span>
+mps = qtn.MPS_rand_state(L=<span class="num">10</span>, bond_dim=<span class="num">8</span>, phys_dim=<span class="num">2</span>)
+print(mps)        <span class="comment"># Tensor network with 10 sites</span>
+
+<span class="comment"># Build the transverse-field Ising Hamiltonian as an MPO</span>
+H = qtn.MPO_ham_ising(L=<span class="num">10</span>, j=<span class="num">1.0</span>, bx=<span class="num">0.5</span>)
+
+<span class="comment"># DMRG to find ground state</span>
+dmrg = qtn.DMRG2(H, bond_dims=[<span class="num">8</span>, <span class="num">16</span>, <span class="num">32</span>])
+dmrg.solve(tol=<span class="num">1e-6</span>, verbosity=<span class="num">1</span>)
+gs = dmrg.state                 <span class="comment"># the ground state MPS</span>
+
+<span class="comment"># Expectation value &lt;Z_5&gt;</span>
+Z = qtn.spin_operator(<span class="str">'Z'</span>)
+print(gs.local_expectation(Z, where=<span class="num">5</span>))
+
+<span class="comment"># Compress an existing MPS to lower bond dim</span>
+mps_compressed = mps.compress(max_bond=<span class="num">4</span>, cutoff=<span class="num">1e-8</span>)</pre></div>
+
+<div class="code-tab-content" id="tt"><pre><span class="comment"># pip install tensorly</span>
+<span class="keyword">import</span> tensorly <span class="keyword">as</span> tl
+<span class="keyword">from</span> tensorly.decomposition <span class="keyword">import</span> tensor_train
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># Example: a 5-way 4×4×4×4×4 tensor (1024 entries)</span>
+X = np.random.rand(<span class="num">4</span>, <span class="num">4</span>, <span class="num">4</span>, <span class="num">4</span>, <span class="num">4</span>)
+
+<span class="comment"># TT decomposition with rank profile [1, 3, 3, 3, 3, 1]</span>
+tt = tensor_train(X, rank=[<span class="num">1</span>, <span class="num">3</span>, <span class="num">3</span>, <span class="num">3</span>, <span class="num">3</span>, <span class="num">1</span>])
+<span class="comment"># tt is a list of 5 core tensors</span>
+
+<span class="comment"># Parameter count: sum r_{k-1} * d_k * r_k vs d^L</span>
+n_params = sum(c.size <span class="keyword">for</span> c <span class="keyword">in</span> tt)
+print(<span class="str">f"TT params: {n_params}, full: {X.size}"</span>)
+<span class="comment"># TT params ~ 117, full = 1024</span>
+
+<span class="comment"># Reconstruct + check error</span>
+X_recon = tl.tt_to_tensor(tt)
+err = tl.norm(X - X_recon) / tl.norm(X)
+print(<span class="str">f"Relative error: {err:.4f}"</span>)</pre></div>
+
+<div class="code-tab-content" id="tngoogle"><pre><span class="comment"># pip install tensornetwork</span>
+<span class="keyword">import</span> tensornetwork <span class="keyword">as</span> tn
+<span class="keyword">import</span> numpy <span class="keyword">as</span> np
+
+<span class="comment"># Build a simple MPS by hand</span>
+L, d, chi = <span class="num">6</span>, <span class="num">2</span>, <span class="num">4</span>
+cores = []
+<span class="comment"># left edge</span>
+cores.append(tn.Node(np.random.randn(<span class="num">1</span>, d, chi)))
+<span class="keyword">for</span> _ <span class="keyword">in</span> range(L - <span class="num">2</span>):
+    cores.append(tn.Node(np.random.randn(chi, d, chi)))
+cores.append(tn.Node(np.random.randn(chi, d, <span class="num">1</span>)))
+
+<span class="comment"># Connect bond edges left-to-right</span>
+<span class="keyword">for</span> i <span class="keyword">in</span> range(L - <span class="num">1</span>):
+    cores[i][<span class="num">2</span>] ^ cores[i + <span class="num">1</span>][<span class="num">0</span>]
+
+<span class="comment"># Contract everything to get full 2^6 amplitude tensor</span>
+result = tn.contractors.greedy(cores, output_edge_order=[
+    c[<span class="num">1</span>] <span class="keyword">for</span> c <span class="keyword">in</span> cores])
+print(result.tensor.shape)      <span class="comment"># (2, 2, 2, 2, 2, 2)</span></pre></div>
+
+<div class="code-tab-content" id="cls"><pre><span class="comment"># Stoudenmire 2016-style MPS classifier with TorchMPS</span>
+<span class="comment"># pip install torchmps</span>
+<span class="keyword">import</span> torch
+<span class="keyword">from</span> torchmps <span class="keyword">import</span> MPS
+
+<span class="comment"># MNIST as 28*28 = 784 sites, 10 classes, bond dim 10</span>
+model = MPS(input_dim=<span class="num">784</span>,
+            output_dim=<span class="num">10</span>,
+            bond_dim=<span class="num">10</span>,
+            feature_dim=<span class="num">2</span>,           <span class="comment"># sin/cos feature map</span>
+            adaptive_mode=<span class="keyword">True</span>,
+            periodic_bc=<span class="keyword">False</span>)
+
+opt = torch.optim.Adam(model.parameters(), lr=<span class="num">1e-3</span>)
+loss_fn = torch.nn.CrossEntropyLoss()
+
+<span class="keyword">for</span> x, y <span class="keyword">in</span> train_loader:
+    x = x.flatten(<span class="num">1</span>)                  <span class="comment"># (B, 784)</span>
+    logits = model(x)                <span class="comment"># MPS contraction → logits</span>
+    loss = loss_fn(logits, y)
+    opt.zero_grad(); loss.backward(); opt.step()
+
+<span class="comment"># Each bond stores ~chi^2 numbers; entire model is ~70k params</span>
+<span class="comment"># for ~99% MNIST. Compare to a CNN's millions.</span></pre></div>
+</div>
+</section>
+
+<section class="quiz-section"><h3>📝 <span data-zh="自我檢測" data-en="Self-Check">自我檢測</span></h3>
+
+<div class="quiz-q" data-answer="2"><p data-lang="zh">MPS 為什麼能把 d^L 維張量壓縮到 L · d · χ² 個參數？</p><p data-lang="en">Why can MPS compress a d^L tensor into L · d · χ² parameters?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 隨機投影</span><span data-lang="en">A. By random projection</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. 因為總是無損</span><span data-lang="en">B. Because it is always lossless</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. 因為「物理上有意義」的態多滿足 area law 糾纏，bond dimension χ 即可上限這個糾纏</span><span data-lang="en">C. "Physically meaningful" states satisfy area-law entanglement; bond dimension χ caps this entanglement</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. 把 L 改成 log L</span><span data-lang="en">D. By replacing L with log L</span></div>
+</div><div class="quiz-feedback" id="fb1"></div></div>
+
+<div class="quiz-q" data-answer="1"><p data-lang="zh">DMRG 與 Tensor Train (TT) 的關係是什麼？</p><p data-lang="en">What is the relationship between DMRG and Tensor Train (TT)?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. 完全不同的演算法</span><span data-lang="en">A. Completely unrelated algorithms</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. TT 與 MPS 數學上等價；DMRG 是優化 MPS 的演算法，物理與 ML 圈各自命名</span><span data-lang="en">B. TT and MPS are mathematically equivalent; DMRG is the algorithm to optimize an MPS — different names in physics vs ML</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. TT 只能處理 2D 資料</span><span data-lang="en">C. TT works only on 2D data</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. DMRG 不再被使用</span><span data-lang="en">D. DMRG is obsolete</span></div>
+</div><div class="quiz-feedback" id="fb2"></div></div>
+
+<div class="quiz-q" data-answer="0"><p data-lang="zh">為什麼 PEPS 比 MPS 難算？</p><p data-lang="en">Why is PEPS harder to compute than MPS?</p>
+<div class="quiz-options">
+<div class="quiz-opt" data-idx="0"><span data-lang="zh">A. PEPS 是 2D 網格，contraction order 沒有「天然路徑」，精確 contraction 是 #P-hard，需用 boundary-MPS 近似</span><span data-lang="en">A. PEPS is on a 2D lattice with no natural contraction order; exact contraction is #P-hard — needs boundary-MPS approximations</span></div>
+<div class="quiz-opt" data-idx="1"><span data-lang="zh">B. PEPS 沒有 bond dimension</span><span data-lang="en">B. PEPS has no bond dimension</span></div>
+<div class="quiz-opt" data-idx="2"><span data-lang="zh">C. PEPS 只能用量子電腦</span><span data-lang="en">C. PEPS only works on quantum hardware</span></div>
+<div class="quiz-opt" data-idx="3"><span data-lang="zh">D. MPS 比 PEPS 多一個維度</span><span data-lang="en">D. MPS has more dimensions than PEPS</span></div>
+</div><div class="quiz-feedback" id="fb3"></div></div>
+</section>
+
+<nav class="page-nav">
+<a href="nmf-ica-sparse.html"><span class="nav-dir" data-zh="← 上一章" data-en="← Previous">← 上一章</span><span class="nav-title" data-zh="Ch 48：NMF / ICA / Sparse" data-en="Ch 48: NMF / ICA / Sparse">Ch 48：NMF / ICA / Sparse</span></a>
+<a href="neuro-symbolic.html"><span class="nav-dir" data-zh="下一章 →" data-en="Next →">下一章 →</span><span class="nav-title" data-zh="Ch 50：Neuro-Symbolic AI" data-en="Ch 50: Neuro-Symbolic AI">Ch 50：Neuro-Symbolic AI</span></a></nav>
+</main>
+
+<footer class="site-footer">© Charlene — Advanced Methods &amp; Algorithms Interactive Tutorial</footer>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script><script src="i18n.js"></script>
+<script>
+window.addEventListener("scroll",()=>{const h=document.documentElement;document.getElementById("progressBar").style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100+"%";});
+function switchTab(b,id){const p=b.closest(".code-tabs");p.querySelectorAll(".code-tab-btn").forEach(x=>x.classList.remove("active"));p.querySelectorAll(".code-tab-content").forEach(x=>x.classList.remove("active"));b.classList.add("active");document.getElementById(id).classList.add("active");}
+
+// ===== Interactive MPS bond-dim compression =====
+const SVG=document.getElementById('tnSvg');
+
+function compressionInfo(){
+  const L=+document.getElementById('sL').value;
+  const d=+document.getElementById('sD').value;
+  const chi=+document.getElementById('sCh').value;
+  const state=document.getElementById('state').value;
+  // Total params for full tensor: d^L
+  const fullParams=Math.pow(d,L);
+  // MPS params: 2 boundary (d*chi) + (L-2)*(chi*d*chi)
+  const mpsParams=2*d*chi + (L-2)*chi*chi*d;
+  // For "true" theoretical chi needed to be exact: d^(L/2)
+  const exactChi=Math.pow(d, L/2);
+
+  // Approximate reconstruction error model
+  // Gapped (area law): S = const → error ~ exp(-chi/chi0)
+  // Critical (log law): S ~ log L → error ~ (chi/L)^{-a}
+  // Random (volume): S ~ L → error ~ exp(-chi/exactChi)
+  let err;
+  if(state==='gapped'){
+    err = Math.exp(-chi/3.0); // exponential decay
+  } else if(state==='critical'){
+    err = Math.pow(Math.max(chi,1), -1.2) * Math.pow(L, 0.8) / 8;
+  } else {
+    err = Math.exp(-chi/exactChi);
+  }
+  err = Math.min(1, Math.max(0, err));
+  if(chi>=exactChi) err = 0;
+
+  return {L,d,chi,state,fullParams,mpsParams,exactChi,err};
+}
+
+function render(){
+  const info=compressionInfo();
+  const {L,d,chi,state,fullParams,mpsParams,exactChi,err}=info;
+  document.getElementById('vL').textContent=L;
+  document.getElementById('vD').textContent=d;
+  document.getElementById('vC').textContent=chi;
+
+  const W=700, H=360;
+  const cy=170;
+  const margin=60;
+  const span=W-2*margin;
+  const dx=L>1?span/(L-1):0;
+
+  // Bond-line width proportional to chi (clip to 1..10 px)
+  const bondW=Math.max(1, Math.min(14, chi/2));
+  const bondCol=`rgba(26,107,90,${0.25+Math.min(0.75,chi/exactChi)})`;
+
+  let svg='';
+  // Title
+  svg+=`<text x="${W/2}" y="20" text-anchor="middle" font-size="13" fill="#333" font-weight="700">MPS — Matrix Product State (L=${L}, d=${d}, χ=${chi})</text>`;
+
+  // Bonds (lines between sites)
+  for(let i=0;i<L-1;i++){
+    const x1=margin+i*dx, x2=margin+(i+1)*dx;
+    svg+=`<line x1="${x1}" y1="${cy}" x2="${x2}" y2="${cy}" stroke="${bondCol}" stroke-width="${bondW}" stroke-linecap="round"/>`;
+    // bond dim label between sites
+    if(L<=10){
+      svg+=`<text x="${(x1+x2)/2}" y="${cy-12}" text-anchor="middle" font-size="10" fill="#888">χ=${chi}</text>`;
+    }
+  }
+  // Site circles + physical legs going down
+  for(let i=0;i<L;i++){
+    const x=margin+i*dx;
+    svg+=`<line x1="${x}" y1="${cy}" x2="${x}" y2="${cy+30}" stroke="#888" stroke-width="1.8"/>`;
+    svg+=`<rect x="${x-4}" y="${cy+30}" width="8" height="8" fill="#c0392b"/>`;
+    svg+=`<text x="${x}" y="${cy+55}" text-anchor="middle" font-size="10" fill="#888">s${i+1} (d=${d})</text>`;
+    svg+=`<circle cx="${x}" cy="${cy}" r="${L>10?9:13}" fill="#1a6b5a" stroke="#fff" stroke-width="2"/>`;
+    svg+=`<text x="${x}" y="${cy+4}" text-anchor="middle" font-size="${L>10?9:11}" fill="#fff" font-weight="700">A${i+1}</text>`;
+  }
+
+  // Stats panel
+  const compRatio=fullParams/mpsParams;
+  const xStats=margin;
+  svg+=`<g transform="translate(0,235)">
+    <rect x="${margin}" y="0" width="${span}" height="100" fill="#fff" stroke="#d5cfc0" stroke-width="1" rx="6"/>
+    <text x="${margin+12}" y="22" font-size="11.5" fill="#333">參數量比較 / Parameter count:</text>
+    <text x="${margin+12}" y="42" font-size="11" fill="#c0392b" font-family="monospace">  full tensor:  d^L = ${d}^${L} = ${fullParams.toLocaleString()}</text>
+    <text x="${margin+12}" y="60" font-size="11" fill="#1a6b5a" font-family="monospace">  MPS (χ=${chi}):  L·d·χ² ≈ ${mpsParams.toLocaleString()}</text>
+    <text x="${margin+12}" y="78" font-size="11" fill="#2563a8" font-family="monospace">  compression ratio = ${compRatio>=1?compRatio.toFixed(1)+'×':'(no benefit)'}</text>
+    <text x="${margin+12}" y="94" font-size="10.5" fill="#888">exact requires χ = d^(L/2) = ${exactChi}; current χ ${chi>=exactChi?'≥':'<'} exact</text>
+  </g>`;
+
+  // Error bar (right side of stats)
+  const barX=margin+span-200, barY=255;
+  svg+=`<text x="${barX}" y="${barY-8}" font-size="11" fill="#444">reconstruction error</text>`;
+  svg+=`<rect x="${barX}" y="${barY}" width="180" height="14" fill="#f0ede6" stroke="#999" stroke-width="0.5" rx="3"/>`;
+  const fillCol=err<0.05?'#1a6b5a':(err<0.2?'#c8aa3e':'#c0392b');
+  svg+=`<rect x="${barX}" y="${barY}" width="${Math.max(2,err*180)}" height="14" fill="${fillCol}" rx="3"/>`;
+  svg+=`<text x="${barX+185}" y="${barY+11}" font-size="11" fill="#444" font-family="monospace">${(err*100).toFixed(2)}%</text>`;
+
+  SVG.innerHTML=svg;
+
+  const L_=I18n.get();
+  const stateName={gapped:'gapped (area-law)',critical:'critical (log-law)',random:'random (volume-law)'}[state];
+  const inter = err<0.01? (L_==='zh'?'已達近乎精確重建——MPS 對此態極為高效':'near-exact reconstruction — MPS is highly efficient for this state')
+              : err<0.1 ? (L_==='zh'?'良好近似——再增加 χ 收益遞減':'good approximation — further χ yields diminishing returns')
+              : (L_==='zh'?'高糾纏態的近似還不夠，需要更大 χ 或不同 ansatz':'high-entanglement state — needs larger χ or a different ansatz');
+  document.getElementById('tnInfo').innerHTML=L_==='zh'?
+    `目標態：<strong>${stateName}</strong>。當前 MPS 用 <strong>${mpsParams.toLocaleString()}</strong> 個參數近似 <strong>${fullParams.toLocaleString()}</strong> 個自由度，壓縮比 ${compRatio>=1?compRatio.toFixed(1)+'×':'<1×'}，相對誤差 ${(err*100).toFixed(2)}%。<br>${inter}。Gapped 1D ground state 的糾纏熵不隨 L 成長（area law），χ 是 O(1)；critical 系統需 χ ~ poly(L)；隨機 / volume-law 態需 χ ~ d^(L/2)（指數成長，MPS 失效）。`
+    :
+    `Target state: <strong>${stateName}</strong>. Current MPS uses <strong>${mpsParams.toLocaleString()}</strong> params to approximate <strong>${fullParams.toLocaleString()}</strong> degrees of freedom — compression ${compRatio>=1?compRatio.toFixed(1)+'×':'<1×'}, relative error ${(err*100).toFixed(2)}%.<br>${inter}. Gapped 1D ground states have entanglement S = O(1) (area law) → χ = O(1); critical systems need χ ~ poly(L); random / volume-law states need χ ~ d^(L/2) (exponential — MPS fails).`;
+}
+
+document.getElementById('sL').addEventListener('input',render);
+document.getElementById('sD').addEventListener('input',render);
+document.getElementById('sCh').addEventListener('input',render);
+document.getElementById('state').addEventListener('change',render);
+document.addEventListener('langchange',render);
+render();
+
+window._QF={zh:{
+  q1_y:'答對！MPS 的效率本質來自 area-law 糾纏，bond dim χ 上限糾纏熵 S ≤ log χ。',
+  q1_n:'答案是 C。物理上有意義的態多滿足 area law，糾纏熵不隨 L 爆，χ 可保持有限。',
+  q2_y:'答對！物理叫 MPS，ML 圈叫 Tensor Train，DMRG 即 MPS 的優化演算法。',
+  q2_n:'答案是 B。MPS = Tensor Train（不同名字、相同數學），DMRG 是優化它的 sweep 演算法。',
+  q3_y:'答對！PEPS 沒有 1D 鏈的天然 contraction 順序，精確 contraction #P-hard。',
+  q3_n:'答案是 A。Schuch et al. (2007) 證明 PEPS contraction 在 2D 是 #P-hard，需用 boundary-MPS 等近似。'
+},en:{
+  q1_y:'Correct! MPS efficiency comes from area-law entanglement; χ caps S ≤ log χ.',
+  q1_n:'Answer is C. Physically meaningful states satisfy area law — entanglement doesn\'t scale with L, so χ stays finite.',
+  q2_y:'Correct! Physics calls it MPS, ML calls it Tensor Train; DMRG is the MPS-optimization sweep.',
+  q2_n:'Answer is B. MPS = Tensor Train; DMRG is the sweep algorithm that optimizes it.',
+  q3_y:'Correct! PEPS lacks a natural contraction order, and exact contraction is #P-hard.',
+  q3_n:'Answer is A. Schuch et al. (2007) showed PEPS contraction is #P-hard in 2D — boundary-MPS approximations are needed.'
+}};
+const QF=window._QF||{};document.querySelectorAll(".quiz-q").forEach((q,qi)=>{const ans=+q.dataset.answer;q.querySelectorAll(".quiz-opt").forEach(o=>{o.addEventListener("click",()=>{if(q.classList.contains("answered"))return;q.classList.add("answered");const fb=document.getElementById("fb"+(qi+1));const ok=+o.dataset.idx===ans;o.classList.add(ok?"correct":"wrong");if(!ok)q.querySelectorAll(".quiz-opt")[ans].classList.add("correct");const L=I18n.get();fb.className="quiz-feedback show "+(ok?"correct-fb":"wrong-fb");fb.textContent=(ok?"✅ ":"❌ ")+(QF[L]&&QF[L]["q"+(qi+1)+"_"+(ok?"y":"n")]||"");});});});
+</script>
+</body></html>
